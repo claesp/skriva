@@ -10,14 +10,18 @@ The result is the image `localhost/skriva:latest`.
 
 ## Run the container
 
-The example uses a Podman secret for the client secret.
+The example uses Podman secrets for the encryption key and the client
+secret.
 
 ```sh
+head -c 32 /dev/urandom | base64 | podman secret create skriva-key -
 printf '%s' 'the-client-secret' | podman secret create skriva-oidc -
 
 podman run -d --name skriva -p 8080:8080 \
-  --secret skriva-oidc \
+  --secret skriva-key --secret skriva-oidc \
+  -e SKRIVA_ENCRYPTION_KEY_FILE=/run/secrets/skriva-key \
   -e SKRIVA_OIDC_CLIENT_SECRET_FILE=/run/secrets/skriva-oidc \
+  -e SKRIVA_SYSTEM_ADMIN_GROUP=wiki-system-admins \
   -e SKRIVA_DATABASE_URL='postgres://skriva@db.example.com/skriva?sslmode=verify-full' \
   -e SKRIVA_BASE_URL=https://wiki.example.com \
   -e SKRIVA_OIDC_ISSUER=https://sso.example.com/realms/example \
@@ -51,11 +55,12 @@ keep no state in memory, except a cache of the OIDC provider data.
 ## Logs
 
 The server writes JSON logs to standard error. Each request gives one
-log line with the method, path, status, duration and user ID. The logs
+log line with the method, path, status, duration, tenant and user ID. The logs
 also record these events:
 
 - Sign-in of a user.
-- Deletion of a page.
+- Creation, change and deletion of tenants and spaces.
+- Deletion of folders and documents.
 - Changes to users, roles and role bindings.
 - Failed CSRF checks and failed sign-ins.
 
@@ -67,8 +72,9 @@ The server deletes expired sessions and login data every 10 minutes.
 
 ## Backup
 
-All data is in PostgreSQL. Use `pg_dump` or the backup system of your
-database. Example:
+All data is in PostgreSQL. Also make a backup of the encryption key.
+Without the key, the server cannot read the client secrets of the
+tenants. Use `pg_dump` or the backup system of your database. Example:
 
 ```sh
 pg_dump --format=custom --file=skriva.dump "$SKRIVA_DATABASE_URL"

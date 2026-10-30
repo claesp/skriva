@@ -1,62 +1,110 @@
 # Configuration
 
-The server reads its settings from environment variables. The server
-does not start if a necessary setting is missing or not valid.
+There are two levels of configuration:
 
-## Settings
+- **Installation settings.** Environment variables. They apply to the
+  full installation.
+- **Tenant settings.** They are in the database. A system administrator
+  changes them on the page `/admin/`. See [Administration](administration.md).
+
+The server does not start if a necessary environment variable is
+missing or not valid.
+
+## Environment variables
 
 | Variable                         | Default                 | Description |
 |----------------------------------|-------------------------|-------------|
-| `SKRIVA_DATABASE_URL`            | (necessary)             | PostgreSQL URL, for example `postgres://user:pw@host:5432/skriva?sslmode=require`. |
-| `SKRIVA_OIDC_ISSUER`             | (necessary)             | The issuer URL of the OIDC provider. |
+| `SKRIVA_DATABASE_URL`            | (necessary)             | PostgreSQL URL, for example `postgres://user@host:5432/skriva?sslmode=verify-full`. |
+| `SKRIVA_ENCRYPTION_KEY`          | (necessary)             | 32 random bytes in base64. The key encrypts the client secrets of the tenants. |
+| `SKRIVA_ENCRYPTION_KEY_FILE`     |                         | A file that contains the key. Use this or the previous variable. |
+| `SKRIVA_OIDC_ISSUER`             | (necessary)             | The issuer URL of the system identity provider. |
 | `SKRIVA_OIDC_CLIENT_ID`          | (necessary)             | The client ID. |
 | `SKRIVA_OIDC_CLIENT_SECRET`      | (necessary)             | The client secret. |
-| `SKRIVA_OIDC_CLIENT_SECRET_FILE` |                         | A file that contains the client secret. Use this or the previous variable. |
+| `SKRIVA_OIDC_CLIENT_SECRET_FILE` |                         | A file that contains the client secret. |
 | `SKRIVA_OIDC_SCOPES`             | `openid profile email`  | The scopes. Use spaces between the scopes. |
 | `SKRIVA_OIDC_GROUPS_CLAIM`       | `groups`                | The ID token claim with the group names. |
-| `SKRIVA_BASE_URL`                | `http://localhost:8080` | The public URL of the server. |
+| `SKRIVA_SYSTEM_ADMIN_GROUP`      |                         | The OIDC group of the system administrators. If it is empty, nobody can sign in at `/admin/`. |
+| `SKRIVA_ADMIN_GROUP`             |                         | The admin group of the default tenant, if the tenant has none. |
+| `SKRIVA_GROUP_ROLES`             |                         | More group roles in the default tenant, for example `editors=editor,writers=maintainer`. |
+| `SKRIVA_SESSION_TTL`             | `4h`                    | The maximum life of a system administrator session. |
+| `SKRIVA_BASE_URL`                | `http://localhost:8080` | The public URL of the server. It must not have a path. |
 | `SKRIVA_LISTEN_ADDR`             | `:8080`                 | The address for the HTTP server. |
-| `SKRIVA_ADMIN_GROUP`             |                         | An OIDC group. At start, the server gives the `admin` role to this group. |
-| `SKRIVA_GROUP_ROLES`             |                         | More group roles, for example `editors=editor,writers=maintainer`. |
-| `SKRIVA_DEFAULT_ROLE`            | `viewer`                | The role of all signed-in users. Use `none` for no role. |
-| `SKRIVA_SESSION_TTL`             | `12h`                   | The maximum life of a session. |
+
+## The system identity provider
+
+The `SKRIVA_OIDC_*` variables set the identity provider for the system
+administration at `/admin/`. A user can sign in there only if the groups
+claim contains `SKRIVA_SYSTEM_ADMIN_GROUP`.
+
+At start, the server also does these steps for the default tenant:
+
+1. If the tenant has no identity provider, it gets the `SKRIVA_OIDC_*`
+   settings.
+2. If the tenant has no admin group, it gets `SKRIVA_ADMIN_GROUP`.
+3. Each group in `SKRIVA_GROUP_ROLES` gets its role.
+
+Then the admin group of each tenant gets the `admin` role.
+
+## The encryption key
+
+Make a key with this command:
+
+```sh
+head -c 32 /dev/urandom | base64
+```
+
+Keep the key in a secret store. Make a backup of the key. Without the
+key, the server cannot read the client secrets of the tenants. Then a
+system administrator must type each client secret again.
 
 ## Base URL
 
 The server uses `SKRIVA_BASE_URL` for these items:
 
-- The redirect URL for OIDC: `<base URL>/auth/callback`.
-- The URL after logout: `<base URL>/signed-out`.
+- The redirect URLs: `<base URL>/admin/auth/callback` and
+  `<base URL>/{tenant}/auth/callback`.
+- The URLs after logout: `<base URL>/admin/signed-out` and
+  `<base URL>/{tenant}/signed-out`.
 - The cookie mode. If the URL starts with `https`, the cookies get the
   `Secure` attribute and the `__Host-` prefix. The server also sends the
   `Strict-Transport-Security` header.
 
 Use an `https` URL in production.
 
-## OIDC provider
+## OIDC clients
 
-Make a confidential client at the provider with these settings:
+Make a confidential client at each provider with these settings:
 
 1. Set the flow to "authorization code".
-2. Set the redirect URI to `<base URL>/auth/callback`.
-3. Set the post-logout redirect URI to `<base URL>/signed-out`.
-4. Add the group names to the ID token, in the claim
-   `SKRIVA_OIDC_GROUPS_CLAIM`. The claim must be a list of strings.
+2. Add the redirect URIs:
+   - For the system administration: `<base URL>/admin/auth/callback`.
+   - For each tenant that uses the provider:
+     `<base URL>/{tenant}/auth/callback`.
+3. Add the post-logout redirect URIs in the same way, with
+   `signed-out` in place of `auth/callback`.
+4. Add the group names to the ID token, in the groups claim. The claim
+   must be a list of strings.
 5. Enable PKCE with the method `S256`. Skriva always sends PKCE.
 
-The file `deploy/keycloak/realm-skriva.json` shows a correct Keycloak
-client. In Keycloak, set "Full group path" to off. Then the group names
-do not start with `/`.
+The tenant page in the system administration shows the two URIs for
+the tenant.
+
+The file `deploy/keycloak/realm-skriva.json` shows a Keycloak client for
+development. It permits all redirect URIs on `http://localhost:8080`. Do
+not use a wildcard in production. In Keycloak, set "Full group path" to
+off. Then the group names do not start with `/`.
 
 ## Secrets
 
-Do not put the client secret in an environment variable in production.
-Put the secret in a file. Set `SKRIVA_OIDC_CLIENT_SECRET_FILE` to the
-path of the file. With Podman, use `podman secret`:
+Do not put secrets in environment variables in production. Put each
+secret in a file. Set the `_FILE` variable to the path of the file. With
+Podman, use `podman secret`:
 
 ```sh
+head -c 32 /dev/urandom | base64 | podman secret create skriva-key -
 printf '%s' 'the-secret' | podman secret create skriva-oidc -
-podman run --secret skriva-oidc \
+podman run --secret skriva-key --secret skriva-oidc \
+  -e SKRIVA_ENCRYPTION_KEY_FILE=/run/secrets/skriva-key \
   -e SKRIVA_OIDC_CLIENT_SECRET_FILE=/run/secrets/skriva-oidc ...
 ```
 

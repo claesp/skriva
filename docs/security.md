@@ -2,6 +2,39 @@
 
 This document describes the security controls of Skriva.
 
+## Tenant isolation
+
+- Each tenant has its own identity provider, users, groups, roles and
+  sessions.
+- The session cookie has the name `skriva_<tenant code>`. A session is
+  valid only for its tenant. The server checks the tenant of the
+  session and of the user at each request.
+- Each store function for tenant data has the tenant ID as a parameter,
+  and each query uses it. Composite foreign keys in the database also
+  make sure that group members, role bindings and parent nodes are in
+  the correct tenant or space.
+- The system administration has its own cookie (`skriva_system`) and its
+  own sessions. A system session has no permissions in a tenant. A
+  tenant session gives no access to the system administration.
+
+## Client secrets
+
+- The server encrypts the OIDC client secret of each tenant with
+  AES-256-GCM. The key is `SKRIVA_ENCRYPTION_KEY`.
+- The associated data of the encryption contains the tenant code. Thus a
+  person who can write to the database cannot move a secret to a
+  different tenant.
+- The tenant page never shows the secret. A system administrator can
+  only replace or remove it.
+
+## Document IDs
+
+The ID of a document is a random value with 12 characters from a set of
+62 characters (approximately 71 bits). The server makes it with
+`crypto/rand`. Thus nobody can find documents with a list of guessed
+IDs. The ID is not the access control: the server checks the permissions
+at each request.
+
 ## Authentication
 
 - The server uses the OIDC authorization code flow.
@@ -12,17 +45,25 @@ This document describes the security controls of Skriva.
   minutes.
 - The server verifies the signature, issuer, audience, expiry and nonce
   of the ID token.
-- The server identifies a user by the pair (issuer, subject). It does
-  not use the e-mail address or the user name for identification.
+- The server identifies a user by the tenant, the issuer and the
+  subject. It does not use the e-mail address or the user name for
+  identification.
+- The server accepts a `state` value only for the tenant (or the system
+  administration) that started the login.
+- An issuer URL must use `https`. An `http` URL is permitted only for
+  `localhost`.
 
 ## Sessions
 
 - The session token is a random value with 128 bits.
 - The database keeps only the SHA-256 hash of the token. Thus a copy of
   the database does not give access to sessions.
-- The cookie has `HttpOnly` and `SameSite=Lax`. With an `https` base URL,
+- The cookie has `HttpOnly` and `SameSite=Lax`.
+- Each tenant has its own cookie. Thus a browser can have sessions in
+  more than one tenant. With an `https` base URL,
   the cookie also has `Secure` and the `__Host-` prefix.
-- A session has a fixed maximum life (`SKRIVA_SESSION_TTL`).
+- A session has a fixed maximum life. Each tenant has its own value. The
+  system administration uses `SKRIVA_SESSION_TTL`.
 - At each sign-in, the server makes a new token. This prevents session
   fixation.
 - Logout deletes the session in the database. Then the server sends the
@@ -65,6 +106,11 @@ The server sends these headers with each response:
 | `Cache-Control` | `no-store` (not for static files) |
 | `Strict-Transport-Security` | Only with an `https` base URL |
 
+## Destructive actions
+
+The deletion of a tenant or a space removes much data. The user must
+type the code of the tenant or the space to confirm.
+
 ## Open redirects
 
 The server accepts a `return_to` value only if it is a path on the same
@@ -74,12 +120,14 @@ control characters.
 ## Limits
 
 - The maximum request body is 2 MiB.
-- The maximum page text is 1 MiB.
+- The maximum document text is 1 MiB. Each tenant can set a lower
+  limit.
 - The maximum time for a request is 30 seconds.
 - The server permits a maximum of 20 login starts per second, for all
   clients together. Each login start writes one row to the database.
   The limit prevents that anonymous clients fill the database.
-- The server accepts only page versions that fit in 32 bits.
+- The server accepts only document versions that fit in 32 bits.
+- The tree of a space shows a maximum of 10000 items.
 - The HTTP server has timeouts for headers, reading, writing and idle
   connections.
 
