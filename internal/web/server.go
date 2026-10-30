@@ -159,7 +159,7 @@ func (s *Server) dispatchTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(segs) == 1 {
-		http.Redirect(w, r, "/"+code+"/", http.StatusMovedPermanently)
+		http.Redirect(w, r, "/"+code+"/", http.StatusMovedPermanently) // #nosec G710 -- code matches tenantCodeRE.
 		return
 	}
 

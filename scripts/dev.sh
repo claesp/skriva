@@ -19,6 +19,9 @@ DB_PORT=${DB_PORT:-15432}
 KC_PORT=8180
 APP_PORT=8080
 
+# The encryption key for development. Do not use it in production.
+DEV_KEY=ZGV2LWtleS1kZXYta2V5LWRldi1rZXktZGV2LWtleSE=
+
 wait_for() {
 	name=$1
 	url=$2
@@ -80,11 +83,14 @@ app() {
 		-e SKRIVA_OIDC_ISSUER="http://localhost:$KC_PORT/realms/skriva" \
 		-e SKRIVA_OIDC_CLIENT_ID=skriva \
 		-e SKRIVA_OIDC_CLIENT_SECRET=skriva-dev-secret \
+		-e SKRIVA_ENCRYPTION_KEY="$DEV_KEY" \
+		-e SKRIVA_SYSTEM_ADMIN_GROUP=skriva-system \
 		-e SKRIVA_ADMIN_GROUP=skriva-admins \
 		-e SKRIVA_GROUP_ROLES=skriva-editors=editor \
 		"$APP_IMAGE"
 	wait_for app "http://localhost:$APP_PORT/readyz"
 	echo "Skriva:     http://localhost:$APP_PORT (users: alice/alice, bob/bob, carol/carol)"
+	echo "System:     http://localhost:$APP_PORT/admin/ (user: root/root)"
 }
 
 down() {

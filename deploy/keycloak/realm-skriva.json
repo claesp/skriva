@@ -7,8 +7,15 @@
   "loginWithEmailAllowed": true,
   "bruteForceProtected": true,
   "groups": [
-    { "name": "skriva-admins" },
-    { "name": "skriva-editors" }
+    {
+      "name": "skriva-admins"
+    },
+    {
+      "name": "skriva-editors"
+    },
+    {
+      "name": "skriva-system"
+    }
   ],
   "users": [
     {
@@ -18,8 +25,16 @@
       "emailVerified": true,
       "firstName": "Alice",
       "lastName": "Admin",
-      "credentials": [{ "type": "password", "value": "alice", "temporary": false }],
-      "groups": ["/skriva-admins"]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/skriva-admins"
+      ]
     },
     {
       "username": "bob",
@@ -28,8 +43,16 @@
       "emailVerified": true,
       "firstName": "Bob",
       "lastName": "Editor",
-      "credentials": [{ "type": "password", "value": "bob", "temporary": false }],
-      "groups": ["/skriva-editors"]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "bob",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/skriva-editors"
+      ]
     },
     {
       "username": "carol",
@@ -38,7 +61,31 @@
       "emailVerified": true,
       "firstName": "Carol",
       "lastName": "Reader",
-      "credentials": [{ "type": "password", "value": "carol", "temporary": false }]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "carol",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "root",
+      "enabled": true,
+      "email": "root@example.com",
+      "emailVerified": true,
+      "firstName": "Root",
+      "lastName": "System",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "root",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/skriva-system"
+      ]
     }
   ],
   "clients": [
@@ -54,11 +101,15 @@
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["http://localhost:8080/auth/callback"],
-      "webOrigins": ["http://localhost:8080"],
+      "redirectUris": [
+        "http://localhost:8080/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8080"
+      ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:8080/signed-out"
+        "post.logout.redirect.uris": "http://localhost:8080/*"
       },
       "protocolMappers": [
         {

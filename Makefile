@@ -39,6 +39,8 @@ run: build
 	SKRIVA_OIDC_ISSUER=http://localhost:8180/realms/skriva \
 	SKRIVA_OIDC_CLIENT_ID=skriva \
 	SKRIVA_OIDC_CLIENT_SECRET=skriva-dev-secret \
+	SKRIVA_ENCRYPTION_KEY=ZGV2LWtleS1kZXYta2V5LWRldi1rZXktZGV2LWtleSE= \
+	SKRIVA_SYSTEM_ADMIN_GROUP=skriva-system \
 	SKRIVA_ADMIN_GROUP=skriva-admins \
 	SKRIVA_GROUP_ROLES=skriva-editors=editor \
 	./bin/skriva

@@ -20,12 +20,14 @@ import (
 var (
 	formActionRE = regexp.MustCompile(`<form[^>]+id="kc-form-login"[^>]+action="([^"]+)"`)
 	csrfRE       = regexp.MustCompile(`name="csrf_token" value="([^"]+)"`)
+	docIDRE      = regexp.MustCompile(`/d/([0-9A-Za-z]{12})(/|$)`)
 )
 
 type browser struct {
 	t    *testing.T
 	base string
 	c    *http.Client
+	csrf string
 }
 
 func newBrowser(t *testing.T) *browser {
@@ -45,6 +47,9 @@ func (b *browser) do(req *http.Request) (*http.Response, string) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
+	if m := csrfRE.FindStringSubmatch(string(body)); m != nil {
+		b.csrf = m[1]
+	}
 	return resp, string(body)
 }
 
@@ -56,16 +61,19 @@ func (b *browser) get(path string) (*http.Response, string) {
 func (b *browser) post(target string, form url.Values) (*http.Response, string) {
 	if !strings.HasPrefix(target, "http") {
 		target = b.base + target
+		if _, ok := form["csrf_token"]; !ok {
+			form.Set("csrf_token", b.csrf)
+		}
 	}
 	req, _ := http.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return b.do(req)
 }
 
-// login signs in through the Keycloak login form.
-func (b *browser) login(user, password string) string {
+// login opens path and signs in through the Keycloak login form.
+func (b *browser) login(path, user, password string) {
 	b.t.Helper()
-	_, body := b.get("/wiki/")
+	_, body := b.get(path)
 	m := formActionRE.FindStringSubmatch(body)
 	if m == nil {
 		b.t.Fatalf("no Keycloak login form:\n%s", body)
@@ -73,60 +81,110 @@ func (b *browser) login(user, password string) string {
 	resp, body := b.post(html.UnescapeString(m[1]), url.Values{
 		"username": {user}, "password": {password}, "credentialId": {""},
 	})
-	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/wiki/" {
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != path {
 		b.t.Fatalf("login ended at %s with status %d:\n%s", resp.Request.URL, resp.StatusCode, body)
 	}
-	c := csrfRE.FindStringSubmatch(body)
-	if c == nil {
-		b.t.Fatalf("no CSRF token after login:\n%s", body)
-	}
-	return c[1]
 }
 
-func TestLoginEditAndRBAC(t *testing.T) {
-	slug := "e2e-" + time.Now().UTC().Format("20060102150405")
+func wantCode(t *testing.T, resp *http.Response, body string, want int) {
+	t.Helper()
+	if resp.StatusCode != want {
+		t.Fatalf("%s %s: status %d, want %d\n%s", resp.Request.Method, resp.Request.URL, resp.StatusCode, want, body)
+	}
+}
+
+func TestTenantDocumentsAndRBAC(t *testing.T) {
+	const sp = "/dflt/default0"
+	stamp := time.Now().UTC().Format("150405")
 
 	bob := newBrowser(t)
-	csrf := bob.login("bob", "bob")
-	resp, body := bob.post("/wiki/"+slug+"/edit", url.Values{
-		"csrf_token": {csrf}, "title": {"E2E " + slug}, "body": {"# From the e2e test"},
-		"version": {"0"}, "action": {"save"},
-	})
-	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "From the e2e test") {
-		t.Fatalf("save failed with status %d:\n%s", resp.StatusCode, body)
+	bob.login(sp+"/", "bob", "bob")
+	resp, body := bob.post(sp+"/new", url.Values{"kind": {"folder"}, "title": {"E2E folder " + stamp}, "action": {"save"}})
+	wantCode(t, resp, body, http.StatusOK)
+	m := docIDRE.FindStringSubmatch(resp.Request.URL.Path)
+	if m == nil {
+		t.Fatalf("folder URL %s", resp.Request.URL)
 	}
+	folder := m[1]
+	resp, body = bob.post(sp+"/new", url.Values{"kind": {"document"}, "parent": {folder},
+		"title": {"E2E doc " + stamp}, "body": {"# From the e2e test"}, "action": {"save"}})
+	wantCode(t, resp, body, http.StatusOK)
+	if !strings.Contains(body, "From the e2e test") || !strings.Contains(body, "E2E folder "+stamp) {
+		t.Fatalf("document page:\n%s", body)
+	}
+	doc := docIDRE.FindStringSubmatch(resp.Request.URL.Path)[1]
 
-	// Carol has only the default role "viewer".
 	carol := newBrowser(t)
-	csrf = carol.login("carol", "carol")
-	if resp, _ := carol.get("/wiki/" + slug); resp.StatusCode != http.StatusOK {
-		t.Fatalf("carol cannot read the page: %d", resp.StatusCode)
-	}
-	resp, _ = carol.post("/wiki/"+slug+"/edit", url.Values{
-		"csrf_token": {csrf}, "title": {"x"}, "body": {"x"}, "version": {"1"}, "action": {"save"},
-	})
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("carol can edit: %d", resp.StatusCode)
-	}
-	if resp, _ := carol.get("/admin/users"); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("carol can open administration: %d", resp.StatusCode)
-	}
+	carol.login(sp+"/", "carol", "carol")
+	resp, body = carol.get(sp + "/d/" + doc)
+	wantCode(t, resp, body, http.StatusOK)
+	resp, body = carol.post(sp+"/edit/"+doc, url.Values{"title": {"x"}, "body": {"x"}, "version": {"1"}})
+	wantCode(t, resp, body, http.StatusForbidden)
 
-	// Alice is in the group skriva-admins.
 	alice := newBrowser(t)
-	csrf = alice.login("alice", "alice")
-	resp, body = alice.get("/admin/users")
-	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "carol") {
-		t.Fatalf("alice cannot see users: %d", resp.StatusCode)
-	}
-	resp, _ = alice.post("/wiki/"+slug+"/delete", url.Values{"csrf_token": {csrf}})
-	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/wiki/" {
-		t.Fatalf("delete failed: %d at %s", resp.StatusCode, resp.Request.URL)
-	}
+	alice.login("/dflt/", "alice", "alice")
+	resp, body = alice.get("/dflt/admin/users")
+	wantCode(t, resp, body, http.StatusOK)
+	resp, body = alice.post(sp+"/delete/"+folder, url.Values{})
+	wantCode(t, resp, body, http.StatusOK)
+	resp, body = alice.get(sp + "/d/" + doc)
+	wantCode(t, resp, body, http.StatusNotFound)
 
-	// Logout goes through Keycloak and back to the signed-out page.
-	resp, _ = alice.post("/logout", url.Values{"csrf_token": {csrf}})
-	if resp.Request.URL.Path != "/signed-out" {
+	resp, _ = alice.post("/dflt/logout", url.Values{})
+	if resp.Request.URL.Path != "/dflt/signed-out" {
 		t.Fatalf("logout ended at %s", resp.Request.URL)
 	}
+}
+
+func TestSystemAdminAndSecondTenant(t *testing.T) {
+	code := "e" + time.Now().UTC().Format("150405")[3:]
+
+	// A tenant user cannot sign in to the system administration.
+	alice := newBrowser(t)
+	alice.login("/dflt/", "alice", "alice")
+	_, body := alice.get("/admin/")
+	if m := formActionRE.FindStringSubmatch(body); m != nil {
+		t.Fatal("unexpected login form: Keycloak has no session")
+	}
+	if !strings.Contains(body, "does not have access") {
+		t.Fatalf("alice in system administration:\n%s", body)
+	}
+
+	root := newBrowser(t)
+	root.login("/admin/", "root", "root")
+	resp, body := root.post("/admin/tenants", url.Values{
+		"code": {code}, "name": {"E2E tenant"}, "oidc_issuer": {"http://localhost:8180/realms/skriva"},
+		"oidc_client_id": {"skriva"}, "oidc_client_secret": {"skriva-dev-secret"},
+		"oidc_scopes": {"openid profile email"}, "oidc_groups_claim": {"groups"},
+		"admin_group": {"skriva-editors"}, "default_role": {""},
+		"session_ttl": {"1h"}, "max_doc_kib": {"64"},
+	})
+	wantCode(t, resp, body, http.StatusOK)
+	resp, body = root.post("/admin/tenants/"+code+"/spaces", url.Values{"name": {"E2E space"}, "slug": {"e2espace"}})
+	wantCode(t, resp, body, http.StatusOK)
+
+	// Bob is in skriva-editors, the admin group of the new tenant.
+	bob := newBrowser(t)
+	bob.login("/"+code+"/e2espace/", "bob", "bob")
+	resp, body = bob.get("/" + code + "/admin/users")
+	wantCode(t, resp, body, http.StatusOK)
+
+	// Carol has no role in the new tenant: no default role.
+	carol := newBrowser(t)
+	_, body = carol.get("/" + code + "/")
+	m := formActionRE.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("no login form:\n%s", body)
+	}
+	resp, body = carol.post(html.UnescapeString(m[1]), url.Values{"username": {"carol"}, "password": {"carol"}})
+	wantCode(t, resp, body, http.StatusForbidden)
+
+	// The new tenant cannot see the default space.
+	resp, body = bob.get("/" + code + "/default0/")
+	wantCode(t, resp, body, http.StatusNotFound)
+
+	resp, body = root.post("/admin/tenants/"+code+"/delete", url.Values{"confirm": {code}})
+	wantCode(t, resp, body, http.StatusOK)
+	resp, body = bob.get("/" + code + "/")
+	wantCode(t, resp, body, http.StatusNotFound)
 }
