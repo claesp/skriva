@@ -101,7 +101,8 @@ space `default0` ("Default").
    - A 4-character code goes to the tenant. The dispatcher loads the
      tenant and the session for that tenant.
 3. If the second part of the path has 8 characters, the dispatcher loads
-   the space. Then the space router handles the request. Otherwise the
+   the space and the permissions of the user in that space. Then the
+   space router handles the request. Otherwise the
    tenant router handles the request.
 4. The handler checks the permission. Then it reads or changes the data.
 
@@ -110,7 +111,7 @@ space `default0` ("Default").
 | Table              | Contents |
 |--------------------|----------|
 | `tenants`          | Tenants and their settings. The client secret is encrypted. |
-| `spaces`           | Spaces. Each space belongs to one tenant. |
+| `spaces`           | Spaces. Each space belongs to one tenant. A space can have its own default role. |
 | `nodes`            | Folders and documents. `parent_id` makes the tree. |
 | `revisions`        | All versions of each node. |
 | `users`            | Users. The key is (tenant, issuer, subject). A user with no tenant is a system administrator. |
@@ -118,7 +119,7 @@ space `default0` ("Default").
 | `group_members`    | The members of each group. |
 | `roles`            | Built-in roles (no tenant) and custom roles (one tenant). |
 | `role_permissions` | The permissions of each role. |
-| `role_bindings`    | Each row gives one role to one user or to one group of a tenant. |
+| `role_bindings`    | Each row gives one role to one user or to one group of a tenant, in all spaces or in one space. |
 | `sessions`         | Browser sessions. The table keeps only a token hash. |
 | `oidc_states`      | Data for logins that are in progress. |
 | `schema_migrations`| The migrations that the server applied. |
@@ -128,7 +129,8 @@ space `default0` ("Default").
 The database prevents data from different tenants in one relation:
 
 - Composite foreign keys make sure that a group member and its group are
-  in the same tenant. The same applies to role bindings.
+  in the same tenant. The same applies to role bindings and to the space
+  of a role binding.
 - A composite foreign key makes sure that the parent of a node is in the
   same space.
 - Each store function that reads or changes tenant data has the tenant

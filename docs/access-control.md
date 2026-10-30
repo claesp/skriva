@@ -7,8 +7,9 @@
 | Permission   | The right to do one action, for example `doc.edit`. |
 | Role         | A named set of permissions. |
 | Group        | A set of users of one tenant. |
-| Role binding | A connection that gives one role to one user or to one group. |
-| Default role | A role that all signed-in users of a tenant get. |
+| Role binding | A connection that gives one role to one user or to one group. The binding applies in all spaces or in one space. |
+| Default role | A role that all signed-in users of a tenant get. A space can have its own default role. |
+| Space permission | A document permission (`doc.*`). Only these permissions can apply to one space. |
 
 All roles, groups and role bindings apply to one tenant. A user of one
 tenant has no access to a different tenant. The same person can be a
@@ -27,7 +28,11 @@ and its own roles for that person.
 | `tenant.manage` | Manage users, groups, roles and role bindings of the tenant. |
 
 The permissions are part of the program code. An administrator cannot
-add permissions. The permissions apply to all spaces of the tenant.
+add permissions.
+
+The `doc.*` permissions are space permissions. They can apply to all
+spaces or to one space. `space.manage` and `tenant.manage` always apply
+to the full tenant.
 
 ## Built-in roles
 
@@ -43,17 +48,68 @@ tenant administrator can make custom roles on the page
 "Administration > Roles". A custom role belongs to one tenant. It cannot
 have the name of a built-in role.
 
+## Scope of a role binding
+
+A role binding has one of two scopes:
+
+| Scope      | Effect |
+|------------|--------|
+| All spaces | The binding gives all permissions of the role, in all spaces of the tenant. |
+| One space  | The binding gives only the space permissions (`doc.*`) of the role, and only in that space. |
+
+Thus a binding for one space never gives `space.manage` or
+`tenant.manage`. For example, the `admin` role for one space gives
+`doc.read`, `doc.create`, `doc.edit` and `doc.delete` in that space,
+and no other permissions.
+
+## Default role of a space
+
+Each space has one of these default role settings:
+
+| Setting            | Effect |
+|--------------------|--------|
+| Same as the tenant | The default role of the tenant applies in the space. This is the initial setting. |
+| None               | No default role applies in the space. Only users with a role binding have access. |
+| A role             | This role applies in the space, in place of the default role of the tenant. |
+
+The default role of a space gives only space permissions.
+
+### Make a private space
+
+1. Open "Administration > Spaces".
+2. Click **Access** in the row of the space.
+3. Set the default role to "None".
+4. Give roles for this space to users or groups.
+
+Users with a role binding for all spaces also have access to a private
+space. For example, a member of the admin group has access to all
+spaces.
+
 ## Effective permissions
 
-The server calculates the permissions of a user at each request. The
-permissions are the union of the permissions of these roles:
+The server calculates the permissions of a user at each request.
 
-1. The default role of the tenant.
-2. The roles with a binding to the user.
-3. The roles with a binding to a group of the user.
+In a space, the permissions are the union of:
 
-Thus a change of a role binding has an effect at the next request. The
-user does not have to sign in again.
+1. The space permissions of the default role of the space. If the space
+   uses the setting "Same as the tenant", this is the default role of
+   the tenant.
+2. All permissions of the roles with a binding for all spaces, to the
+   user or to a group of the user.
+3. The space permissions of the roles with a binding for this space, to
+   the user or to a group of the user.
+4. The permissions `space.manage` and `tenant.manage` from the default
+   role of the tenant.
+
+Outside a space (for example on the administration pages), the
+permissions are the union of the default role of the tenant and the
+bindings for all spaces.
+
+The start page of the tenant and the search in all spaces show only the
+spaces in which the user has `doc.read`.
+
+A change of a role binding has an effect at the next request. The user
+does not have to sign in again.
 
 ## Groups
 
@@ -104,6 +160,8 @@ session has no permissions in a tenant.
 
 ## Limits of the current design
 
-- The roles apply to all spaces of a tenant. The server does not have
-  permissions for one space or one folder.
+- The server does not have permissions for one folder or one document.
+  The smallest unit is a space.
+- A user with `space.manage` can make, change and delete spaces. Only a
+  user with `tenant.manage` can change the access to a space.
 - The server does not delete users. Disable a user to stop access.

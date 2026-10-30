@@ -17,6 +17,17 @@ This document describes the security controls of Skriva.
   own sessions. A system session has no permissions in a tenant. A
   tenant session gives no access to the system administration.
 
+## Space permissions
+
+- In a space, the server calculates the permissions for that space at
+  each request. A handler cannot use the tenant-level permissions by
+  mistake: the request data contains only the space permissions.
+- A role binding for one space gives only `doc.*` permissions. Thus a
+  user who has the `admin` role in one space cannot change the access
+  control of the tenant.
+- The tenant page and the search in all spaces show only the spaces
+  that the user can read.
+
 ## Client secrets
 
 - The server encrypts the OIDC client secret of each tenant with

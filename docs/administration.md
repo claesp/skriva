@@ -64,7 +64,11 @@ Users with the permission `tenant.manage` manage these items:
 - **Groups.** OIDC groups and local groups. See
   [Access control](access-control.md).
 - **Roles.** Custom roles for the tenant.
-- **Role bindings.** Roles for users and groups.
+- **Role bindings.** Roles for users and groups, for all spaces or for
+  one space.
+- **Access to a space.** The default role and the role bindings of one
+  space. Open "Administration > Spaces" and click **Access**. See
+  [Access control](access-control.md).
 
 Users with the permission `space.manage` manage the spaces:
 
