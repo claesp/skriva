@@ -1,9 +1,13 @@
 {{define "content"}}
-<h1>Delete page</h1>
-<p>Do you want to delete the page "{{.Data.Title}}" and all its history? You cannot undo this.</p>
-<form action="/wiki/{{.Data.Slug}}/delete" method="post" class="buttons">
-  {{template "csrf" .CSRF}}
+{{with .Data}}
+<h1>Delete {{.Node.Kind}}</h1>
+<p>Do you want to delete "{{.Node.Title}}" and all its history?
+{{if .Descendants}}This also deletes <strong>{{.Descendants}}</strong> items in it.{{end}}
+You cannot undo this.</p>
+<form action="{{$.SpacePath}}/delete/{{.Node.PublicID}}" method="post" class="buttons">
+  {{template "csrf" $.CSRF}}
   <button type="submit" class="danger">Delete</button>
-  <a href="/wiki/{{.Data.Slug}}">Cancel</a>
+  <a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Cancel</a>
 </form>
+{{end}}
 {{end}}

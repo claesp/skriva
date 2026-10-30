@@ -1,17 +1,19 @@
 {{define "content"}}
-<h1>History of <a href="/wiki/{{.Data.Page.Slug}}">{{.Data.Page.Title}}</a></h1>
+{{with .Data}}
+<h1>History of <a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">{{.Node.Title}}</a></h1>
 <table>
   <thead><tr><th>Version</th><th>Date</th><th>Author</th><th>Comment</th><th></th></tr></thead>
   <tbody>
-  {{range .Data.Revisions}}
+  {{range .Revisions}}
   <tr>
-    <td><a href="/wiki/{{$.Data.Page.Slug}}/history/{{.Version}}">{{.Version}}</a></td>
+    <td><a href="{{$.SpacePath}}/history/{{$.Data.Node.PublicID}}/{{.Version}}">{{.Version}}</a></td>
     <td>{{date .CreatedAt}}</td>
     <td>{{.Author}}</td>
     <td>{{.Comment}}</td>
-    <td>{{if and ($.Can "page.edit") (ne .Version $.Data.Page.Version)}}<a href="/wiki/{{$.Data.Page.Slug}}/edit?from={{.Version}}">Restore</a>{{end}}</td>
+    <td>{{if and ($.Can "doc.edit") (ne .Version $.Data.Node.Version)}}<a href="{{$.SpacePath}}/edit/{{$.Data.Node.PublicID}}?from={{.Version}}">Restore</a>{{end}}</td>
   </tr>
   {{end}}
   </tbody>
 </table>
+{{end}}
 {{end}}

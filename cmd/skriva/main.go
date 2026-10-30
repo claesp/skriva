@@ -15,6 +15,7 @@ import (
 	"github.com/clpe/skriva/internal/auth"
 	"github.com/clpe/skriva/internal/config"
 	"github.com/clpe/skriva/internal/db"
+	"github.com/clpe/skriva/internal/secret"
 	"github.com/clpe/skriva/internal/store"
 	"github.com/clpe/skriva/internal/web"
 )
@@ -45,31 +46,42 @@ func run(log *slog.Logger) error {
 	if err := db.Migrate(ctx, pool); err != nil {
 		return err
 	}
-	st := store.New(pool)
+	box, err := secret.New(cfg.EncryptionKey)
+	if err != nil {
+		return err
+	}
+	st := store.New(pool, box)
 	if err := bootstrap(ctx, st, cfg, log); err != nil {
 		return err
 	}
 
-	oidc := auth.New(auth.Config{
+	systemAuth := auth.New(auth.Config{
 		Issuer:       cfg.OIDCIssuer,
 		ClientID:     cfg.OIDCClientID,
 		ClientSecret: cfg.OIDCClientSecret,
-		RedirectURL:  cfg.BaseURL.String() + "/auth/callback",
+		RedirectURL:  cfg.BaseURL.String() + "/admin/auth/callback",
 		Scopes:       cfg.OIDCScopes,
 		GroupsClaim:  cfg.OIDCGroupsClaim,
 	})
 	// Do the discovery early if the provider is available. If it is not
 	// available, the first login tries again.
-	if err := oidc.Ready(ctx); err != nil {
+	if err := systemAuth.Ready(ctx); err != nil {
 		log.Warn("OIDC discovery failed, will try again at first login", "error", err)
 	}
+	if cfg.SystemAdminGroup == "" {
+		log.Warn("SKRIVA_SYSTEM_ADMIN_GROUP is not set: nobody can sign in to the system administration")
+	}
+	registry := auth.NewRegistry(cfg.BaseURL.String(), st.ClientSecret)
 
-	handler, err := web.New(st, oidc, web.Options{
-		BaseURL:       cfg.BaseURL,
-		SecureCookies: cfg.SecureCookies(),
-		SessionTTL:    cfg.SessionTTL,
-		DefaultRole:   cfg.DefaultRole,
-		MaxPageBytes:  cfg.MaxPageBytes,
+	handler, err := web.New(st, web.Options{
+		BaseURL:          cfg.BaseURL,
+		SecureCookies:    cfg.SecureCookies(),
+		SystemAuth:       systemAuth,
+		SystemAdminGroup: cfg.SystemAdminGroup,
+		SystemSessionTTL: cfg.SessionTTL,
+		TenantAuth: func(ctx context.Context, t *store.Tenant) (web.Authenticator, error) {
+			return registry.ForTenant(ctx, t)
+		},
 	}, log)
 	if err != nil {
 		return err
@@ -111,34 +123,52 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-// bootstrap gives roles to the groups in SKRIVA_ADMIN_GROUP and
-// SKRIVA_GROUP_ROLES. Thus a new installation has an administrator, and an
+// bootstrap prepares the default tenant:
+//   - If the tenant has no identity provider, it gets the settings of the
+//     system identity provider (SKRIVA_OIDC_*).
+//   - If the tenant has no admin group, it gets SKRIVA_ADMIN_GROUP.
+//   - The groups in SKRIVA_GROUP_ROLES get their roles.
+//
+// Then the admin group of each tenant gets the admin role. Thus an
 // administrator can always get access again with a restart.
 func bootstrap(ctx context.Context, st *store.Store, cfg *config.Config, log *slog.Logger) error {
-	if cfg.DefaultRole != "" {
-		ok, err := st.RoleExists(ctx, cfg.DefaultRole)
-		if err != nil {
-			return err
+	t, err := st.DefaultTenant(ctx)
+	if err != nil {
+		return fmt.Errorf("read default tenant: %w", err)
+	}
+	if !t.OIDCConfigured() || (t.AdminGroup == "" && cfg.AdminGroup != "") {
+		ts := t.TenantSettings
+		var newSecret *string
+		if !t.OIDCConfigured() {
+			ts.OIDCIssuer = cfg.OIDCIssuer
+			ts.OIDCClientID = cfg.OIDCClientID
+			ts.OIDCScopes = cfg.OIDCScopes
+			ts.OIDCGroupsClaim = cfg.OIDCGroupsClaim
+			newSecret = &cfg.OIDCClientSecret
+			log.Info("default tenant gets the system identity provider", "tenant", t.Code)
 		}
-		if !ok {
-			return fmt.Errorf("SKRIVA_DEFAULT_ROLE: role %q does not exist", cfg.DefaultRole)
+		if ts.AdminGroup == "" {
+			ts.AdminGroup = cfg.AdminGroup
+		}
+		if t, err = st.UpdateTenant(ctx, t.ID, ts, newSecret); err != nil {
+			return fmt.Errorf("update default tenant: %w", err)
 		}
 	}
 	for _, gr := range cfg.GroupRoles {
-		id, err := st.EnsureOIDCGroup(ctx, gr.Group)
+		id, err := st.EnsureOIDCGroup(ctx, t.ID, gr.Group)
 		if err != nil {
 			return fmt.Errorf("create group %q: %w", gr.Group, err)
 		}
-		err = st.BindRoleToGroup(ctx, gr.Role, id)
+		err = st.BindRoleToGroup(ctx, t.ID, gr.Role, id)
 		if errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("SKRIVA_GROUP_ROLES: role %q does not exist", gr.Role)
 		}
 		if err != nil {
 			return fmt.Errorf("bind role %q to group %q: %w", gr.Role, gr.Group, err)
 		}
-		log.Info("group has role", "group", gr.Group, "role", gr.Role)
+		log.Info("group has role", "tenant", t.Code, "group", gr.Group, "role", gr.Role)
 	}
-	return nil
+	return st.EnsureAdminGroups(ctx)
 }
 
 // cleanup removes expired sessions and login states at intervals.

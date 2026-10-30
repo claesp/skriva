@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1>Administration</h1>
-{{template "adminnav"}}
+{{template "adminnav" .}}
 {{with .Data}}
 <h2>User {{.User.Username}}</h2>
 <dl class="facts">
@@ -12,7 +12,7 @@
   <dt>Status</dt><dd>{{if .User.Disabled}}Disabled{{else}}Active{{end}}</dd>
 </dl>
 {{if not .IsSelf}}
-<form method="post" action="/admin/users/{{.User.ID}}/{{if .User.Disabled}}enable{{else}}disable{{end}}">
+<form method="post" action="{{$.TenantPath}}/admin/users/{{.User.ID}}/{{if .User.Disabled}}enable{{else}}disable{{end}}">
   {{template "csrf" $.CSRF}}
   {{if .User.Disabled}}<button type="submit">Enable user</button>
   {{else}}<button type="submit" class="danger">Disable user</button>{{end}}
@@ -21,7 +21,7 @@
 
 <h3>Groups</h3>
 {{with .Groups}}
-<ul>{{range .}}<li><a href="/admin/groups/{{.ID}}">{{.Name}}</a> <span class="tag">{{.Source}}</span></li>{{end}}</ul>
+<ul>{{range .}}<li><a href="{{$.TenantPath}}/admin/groups/{{.ID}}">{{.Name}}</a> <span class="tag">{{.Source}}</span></li>{{end}}</ul>
 {{else}}<p>The user is not a member of a group.</p>{{end}}
 
 <h3>Direct role bindings</h3>
@@ -30,9 +30,9 @@
   <tbody>
   {{range .}}
   <tr><td>{{.RoleName}}</td><td>
-    <form method="post" action="/admin/bindings/{{.ID}}/delete">
+    <form method="post" action="{{$.TenantPath}}/admin/bindings/{{.ID}}/delete">
       {{template "csrf" $.CSRF}}
-      <input type="hidden" name="return_to" value="/admin/users/{{$.Data.User.ID}}">
+      <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/users/{{$.Data.User.ID}}">
       <button type="submit" class="link">Remove</button>
     </form>
   </td></tr>
@@ -40,16 +40,16 @@
   </tbody>
 </table>
 {{else}}<p>The user has no direct role bindings.</p>{{end}}
-<form method="post" action="/admin/bindings" class="inline">
+<form method="post" action="{{$.TenantPath}}/admin/bindings" class="inline">
   {{template "csrf" $.CSRF}}
   <input type="hidden" name="subject" value="user:{{.User.ID}}">
-  <input type="hidden" name="return_to" value="/admin/users/{{.User.ID}}">
+  <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/users/{{.User.ID}}">
   <label>Role <select name="role">{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
   <button type="submit">Give role</button>
 </form>
 
 <h3>Effective permissions</h3>
-<p>These permissions come from direct role bindings, group role bindings{{with .DefaultRole}} and the default role "{{.}}"{{end}}.</p>
+<p>These permissions come from direct role bindings, group role bindings{{with $.Tenant.DefaultRole}} and the default role "{{.}}"{{end}}.</p>
 {{with .Permissions}}
 <ul>{{range .}}<li><code>{{.}}</code>: {{.Description}}</li>{{end}}</ul>
 {{else}}<p>The user has no permissions.</p>{{end}}

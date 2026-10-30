@@ -1,0 +1,17 @@
+{{define "content"}}
+<h1>Spaces</h1>
+{{with .Data}}
+<ul class="cards">
+  {{range .}}
+  <li>
+    <a href="{{$.TenantPath}}/{{.Slug}}/"><strong>{{.Name}}</strong></a>
+    {{with .Description}}<p>{{.}}</p>{{end}}
+    <small>{{.Nodes}} items · code <code>{{.Slug}}</code></small>
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<p>This tenant has no spaces.</p>
+{{end}}
+{{if .Can "space.manage"}}<p><a class="button" href="{{.TenantPath}}/admin/spaces">Manage spaces</a></p>{{end}}
+{{end}}

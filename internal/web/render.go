@@ -31,10 +31,18 @@ type templates struct {
 	styleVersion string
 }
 
+// treeArgs is the argument of the recursive "tree" template.
+type treeArgs struct {
+	Base  string
+	Nodes []*store.TreeNode
+}
+
 var funcs = template.FuncMap{
-	"date": func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") },
-	"add":  func(a, b int) int { return a + b },
-	"sub":  func(a, b int) int { return a - b },
+	"date":    func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") },
+	"add":     func(a, b int) int { return a + b },
+	"sub":     func(a, b int) int { return a - b },
+	"docpath": docPath,
+	"tree":    func(base string, nodes []*store.TreeNode) treeArgs { return treeArgs{base, nodes} },
 }
 
 func loadTemplates() (*templates, error) {
@@ -74,14 +82,33 @@ func loadTemplates() (*templates, error) {
 // view is the data for all templates.
 type view struct {
 	Title    string
+	Tenant   *store.Tenant
+	Space    *store.Space
 	Session  *store.Session
 	StyleURL string
-	// Query is the text in the search field.
-	Query string
-	Data  any
+	// System is true on the system administration pages.
+	System bool
+	Data   any
 }
 
-// Can reports whether the user has the permission p.
+// TenantPath returns the URL path of the tenant, for example "/dflt".
+func (v *view) TenantPath() string {
+	if v.Tenant == nil {
+		return ""
+	}
+	return tenantPath(v.Tenant)
+}
+
+// SpacePath returns the URL path of the space, for example
+// "/dflt/default0".
+func (v *view) SpacePath() string {
+	if v.Tenant == nil || v.Space == nil {
+		return ""
+	}
+	return spacePath(v.Tenant, v.Space)
+}
+
+// Can reports whether the user has the permission p in the tenant.
 func (v *view) Can(p string) bool {
 	return v.Session != nil && v.Session.Permissions.Has(rbac.Permission(p))
 }
@@ -102,17 +129,19 @@ var bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name, title string, data any) {
 	t, ok := s.tmpl.pages[name]
 	if !ok {
-		s.serverError(w, r, fmt.Errorf("no template %q", name))
+		s.log.Error("no template", "template", name)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+	ri := reqInfoFrom(r.Context())
 	v := &view{
 		Title:    title,
-		Session:  sessionFrom(r.Context()),
+		Tenant:   ri.Tenant,
+		Space:    ri.Space,
+		Session:  ri.Session,
 		StyleURL: "/static/style.css?v=" + s.tmpl.styleVersion,
+		System:   strings.HasPrefix(r.URL.Path, "/admin/"),
 		Data:     data,
-	}
-	if name == "search" {
-		v.Query = r.URL.Query().Get("q")
 	}
 
 	buf := bufPool.Get().(*bytes.Buffer)

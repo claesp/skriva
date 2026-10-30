@@ -1,5 +1,5 @@
 {{define "content"}}
 <h1>{{.Title}}</h1>
 <p>{{.Data.Message}}</p>
-<p><a href="/">Go to the start page</a></p>
+<p><a href="{{if .System}}/admin/{{else if .Tenant}}{{.TenantPath}}/{{else}}/{{end}}">Go to the start page</a></p>
 {{end}}

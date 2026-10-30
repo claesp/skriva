@@ -1,0 +1,20 @@
+{{define "content"}}
+<h1>Administration</h1>
+{{template "adminnav" .}}
+{{with .Data}}
+<h2>Space {{.Name}} <code>{{.Slug}}</code></h2>
+<form method="post" action="{{$.TenantPath}}/admin/spaces/{{.Slug}}" class="stack narrow">
+  {{template "csrf" $.CSRF}}
+  <label>Name <input name="name" value="{{.Name}}" required maxlength="200"></label>
+  <label>Description <input name="description" value="{{.Description}}" maxlength="500"></label>
+  <div class="buttons"><button type="submit">Save</button> <a href="{{$.TenantPath}}/admin/spaces">Cancel</a></div>
+</form>
+<h3>Delete space</h3>
+<p>This deletes all folders and documents in the space. You cannot undo this.</p>
+<form method="post" action="{{$.TenantPath}}/admin/spaces/{{.Slug}}/delete" class="inline">
+  {{template "csrf" $.CSRF}}
+  <label>Type <code>{{.Slug}}</code> to confirm <input name="confirm" required autocomplete="off"></label>
+  <button type="submit" class="danger">Delete space</button>
+</form>
+{{end}}
+{{end}}

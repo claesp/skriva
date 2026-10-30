@@ -2,12 +2,14 @@ package web
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,21 +22,38 @@ import (
 
 func TestSafeReturnTo(t *testing.T) {
 	tests := map[string]string{
-		"":                      "/",
-		"/wiki/home":            "/wiki/home",
-		"/search?q=a+b":         "/search?q=a+b",
-		"//evil.example":        "/",
-		"/\\evil.example":       "/",
-		"https://evil.example/": "/",
-		"javascript:alert(1)":   "/",
-		"/ok\r\nLocation: x":    "/",
-		"wiki/home":             "/",
-		"/a\\b":                 "/",
-		"/%2F%2Fevil.example":   "/%2F%2Fevil.example",
+		"":                      "/dflt/",
+		"/dflt/default0/":       "/dflt/default0/",
+		"/dflt/search?q=a+b":    "/dflt/search?q=a+b",
+		"//evil.example":        "/dflt/",
+		"/\\evil.example":       "/dflt/",
+		"https://evil.example/": "/dflt/",
+		"javascript:alert(1)":   "/dflt/",
+		"/ok\r\nLocation: x":    "/dflt/",
+		"wiki/home":             "/dflt/",
+		"/a\\b":                 "/dflt/",
 	}
 	for in, want := range tests {
-		if got := safeReturnTo(in); got != want {
+		if got := safeReturnTo(in, "/dflt"); got != want {
 			t.Errorf("safeReturnTo(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestValidIssuer(t *testing.T) {
+	for u, want := range map[string]bool{
+		"":                               true,
+		"https://sso.example.com/realm":  true,
+		"http://localhost:8180/realms/x": true,
+		"http://127.0.0.1/x":             true,
+		"http://sso.example.com":         false,
+		"ftp://sso.example.com":          false,
+		"https://user@sso.example.com":   false,
+		"https://sso.example.com/?a=b":   false,
+		"not a url":                      false,
+	} {
+		if got := validIssuer(u); got != want {
+			t.Errorf("validIssuer(%q) = %v", u, got)
 		}
 	}
 }
@@ -52,7 +71,7 @@ func (f *fakeIdP) AuthCodeURL(_ context.Context, state, nonce, verifier string) 
 func (f *fakeIdP) Exchange(_ context.Context, code, verifier, nonce string) (store.Identity, error) {
 	return store.Identity{
 		Issuer: "https://idp.example", Subject: "sub-" + code, Username: code,
-		Groups: f.groups[code],
+		Groups: f.groups[code], IDToken: "token-" + code,
 	}, nil
 }
 
@@ -64,38 +83,62 @@ type env struct {
 	t   *testing.T
 	srv *httptest.Server
 	st  *store.Store
+	dft *store.Tenant
+	sp  *store.Space
 }
+
+var ctx = context.Background()
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	st := store.New(testdb.New(t))
-	ctx := context.Background()
-	for group, role := range map[string]string{"admins": "admin", "editors": "editor", "maintainers": "maintainer"} {
-		id, err := st.EnsureOIDCGroup(ctx, group)
+	st := store.New(testdb.New(t), testdb.Box(t))
+	dft, err := st.DefaultTenant(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := dft.TenantSettings
+	ts.OIDCIssuer, ts.OIDCClientID = "https://idp.example", "skriva"
+	ts.AdminGroup = "admins"
+	if dft, err = st.UpdateTenant(ctx, dft.ID, ts, nil); err != nil {
+		t.Fatal(err)
+	}
+	for group, role := range map[string]string{"editors": "editor", "maintainers": "maintainer"} {
+		id, err := st.EnsureOIDCGroup(ctx, dft.ID, group)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := st.BindRoleToGroup(ctx, role, id); err != nil {
+		if err := st.BindRoleToGroup(ctx, dft.ID, role, id); err != nil {
 			t.Fatal(err)
 		}
+	}
+	sp, err := st.Space(ctx, dft.ID, "default0")
+	if err != nil {
+		t.Fatal(err)
 	}
 	idp := &fakeIdP{groups: map[string][]string{
 		"alice": {"admins"},
 		"bob":   {"editors"},
 		"mary":  {"maintainers"},
+		"root":  {"sysadmins"},
 	}}
 	base, _ := url.Parse("http://example.test")
-	s, err := New(st, idp, Options{
-		BaseURL:     base,
-		SessionTTL:  time.Hour,
-		DefaultRole: "viewer",
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s, err := New(st, Options{
+		BaseURL:          base,
+		SystemAuth:       idp,
+		SystemAdminGroup: "sysadmins",
+		TenantAuth: func(_ context.Context, t *store.Tenant) (Authenticator, error) {
+			if !t.OIDCConfigured() {
+				return nil, errors.New("not configured")
+			}
+			return idp, nil
+		},
+	}, slog.New(slog.NewTextHandler(testLogOutput(), nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(s)
 	t.Cleanup(srv.Close)
-	return &env{t: t, srv: srv, st: st}
+	return &env{t: t, srv: srv, st: st, dft: dft, sp: sp}
 }
 
 // client is a browser with a cookie jar that does not follow redirects.
@@ -115,34 +158,42 @@ func (e *env) anon() *client {
 	}}
 }
 
-// login signs in as user with the fake identity provider.
-func (e *env) login(user string) *client {
+// login signs in as user at base ("/dflt" or "/admin") with the fake
+// identity provider.
+func (e *env) loginAt(base, user string) *client {
 	e.t.Helper()
 	c := e.anon()
-	resp := c.get("/login?return_to=/wiki/")
-	wantStatus(e.t, resp, http.StatusSeeOther)
-	loc, _ := url.Parse(resp.Header.Get("Location"))
-	if loc.Host != "idp.example" {
-		e.t.Fatalf("login redirects to %s", loc)
-	}
-	state := loc.Query().Get("state")
-	resp = c.get("/auth/callback?code=" + user + "&state=" + url.QueryEscape(state))
-	wantStatus(e.t, resp, http.StatusSeeOther)
-	if got := resp.Header.Get("Location"); got != "/wiki/" {
-		e.t.Fatalf("callback redirects to %q", got)
-	}
-	c.csrf = c.csrfToken()
+	c.loginAt(base, user)
 	return c
 }
 
+func (c *client) loginAt(base, user string) {
+	t := c.e.t
+	t.Helper()
+	resp := c.get(base + "/login")
+	wantStatus(t, resp, http.StatusSeeOther)
+	loc, _ := url.Parse(resp.Header.Get("Location"))
+	if loc.Host != "idp.example" {
+		t.Fatalf("login redirects to %s", loc)
+	}
+	resp = c.get(base + "/auth/callback?code=" + user + "&state=" + url.QueryEscape(loc.Query().Get("state")))
+	wantStatus(t, resp, http.StatusSeeOther)
+	if got := resp.Header.Get("Location"); got != base+"/" {
+		t.Fatalf("callback redirects to %q", got)
+	}
+	c.csrf = c.csrfToken(base + "/")
+}
+
+func (e *env) login(user string) *client { return e.loginAt("/dflt", user) }
+
 var csrfRE = regexp.MustCompile(`name="csrf_token" value="([^"]+)"`)
 
-func (c *client) csrfToken() string {
+func (c *client) csrfToken(path string) string {
 	c.e.t.Helper()
-	body := readBody(c.e.t, c.get("/wiki/"))
+	body := readBody(c.e.t, c.get(path))
 	m := csrfRE.FindStringSubmatch(body)
 	if m == nil {
-		c.e.t.Fatalf("no CSRF token in page:\n%s", body)
+		c.e.t.Fatalf("no CSRF token in %s:\n%s", path, body)
 	}
 	return m[1]
 }
@@ -192,27 +243,62 @@ func wantStatus(t *testing.T, resp *http.Response, want int) {
 		t.Fatalf("%s %s: status %d, want %d\n%s", resp.Request.Method, resp.Request.URL.Path,
 			resp.StatusCode, want, body)
 	}
+	if want != http.StatusOK {
+		resp.Body.Close()
+	}
 }
 
-func savePage(c *client, slug, title, body string, version int) *http.Response {
-	return c.post("/wiki/"+slug+"/edit", url.Values{
+const sp = "/dflt/default0"
+
+// create makes a node and returns its public ID.
+func (c *client) create(kind, parent, title, body string) string {
+	c.e.t.Helper()
+	resp := c.post(sp+"/new", url.Values{
+		"kind": {kind}, "parent": {parent}, "title": {title}, "body": {body}, "action": {"save"},
+	})
+	wantStatus(c.e.t, resp, http.StatusSeeOther)
+	loc := resp.Header.Get("Location")
+	m := regexp.MustCompile(`^` + sp + `/d/([0-9A-Za-z]{12})(/|$)`).FindStringSubmatch(loc)
+	if m == nil {
+		c.e.t.Fatalf("create redirects to %q", loc)
+	}
+	return m[1]
+}
+
+func (c *client) save(id, title, body string, version int) *http.Response {
+	return c.post(sp+"/edit/"+id, url.Values{
 		"title": {title}, "body": {body}, "version": {strconv.Itoa(version)}, "action": {"save"},
 	})
+}
+
+func TestRootRedirect(t *testing.T) {
+	e := newEnv(t)
+	resp := e.anon().get("/")
+	wantStatus(t, resp, http.StatusSeeOther)
+	if loc := resp.Header.Get("Location"); loc != "/dflt/" {
+		t.Fatalf("root redirects to %q", loc)
+	}
+	wantStatus(t, e.anon().get("/zzzz/"), http.StatusNotFound)
+	wantStatus(t, e.anon().get("/toolong/"), http.StatusNotFound)
+	wantStatus(t, e.anon().get("/dflt/nospace1/"), http.StatusNotFound)
 }
 
 func TestAnonymousIsRedirected(t *testing.T) {
 	e := newEnv(t)
 	c := e.anon()
-	for _, path := range []string{"/wiki/", "/wiki/home", "/admin/users", "/search?q=x"} {
+	for _, path := range []string{"/dflt/", sp + "/", "/dflt/admin/users", "/dflt/search?q=x"} {
 		resp := c.get(path)
 		wantStatus(t, resp, http.StatusSeeOther)
-		loc := resp.Header.Get("Location")
-		if !strings.HasPrefix(loc, "/login?return_to=") {
+		if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, "/dflt/login?return_to=") {
 			t.Fatalf("GET %s redirects to %q", path, loc)
 		}
 	}
-	resp := c.post("/wiki/home/edit", url.Values{"title": {"x"}, "body": {"x"}, "version": {"0"}})
-	wantStatus(t, resp, http.StatusUnauthorized)
+	resp := c.get("/admin/")
+	wantStatus(t, resp, http.StatusSeeOther)
+	if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, "/admin/login") {
+		t.Fatalf("GET /admin/ redirects to %q", loc)
+	}
+	wantStatus(t, c.post(sp+"/new", url.Values{"title": {"x"}}), http.StatusUnauthorized)
 }
 
 func TestPublicRoutes(t *testing.T) {
@@ -220,7 +306,8 @@ func TestPublicRoutes(t *testing.T) {
 	c := e.anon()
 	wantStatus(t, c.get("/healthz"), http.StatusOK)
 	wantStatus(t, c.get("/readyz"), http.StatusOK)
-	wantStatus(t, c.get("/signed-out"), http.StatusOK)
+	wantStatus(t, c.get("/dflt/signed-out"), http.StatusOK)
+	wantStatus(t, c.get("/admin/signed-out"), http.StatusOK)
 	resp := c.get("/static/style.css")
 	wantStatus(t, resp, http.StatusOK)
 	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/css") {
@@ -245,160 +332,204 @@ func TestSecurityHeaders(t *testing.T) {
 func TestCallbackRejectsBadState(t *testing.T) {
 	e := newEnv(t)
 	c := e.anon()
-	resp := c.get("/login")
+	resp := c.get("/dflt/login")
 	loc, _ := url.Parse(resp.Header.Get("Location"))
 	state := loc.Query().Get("state")
 
-	// A different browser (no state cookie) cannot use the state.
-	wantStatus(t, e.anon().get("/auth/callback?code=alice&state="+url.QueryEscape(state)), http.StatusBadRequest)
-	// A wrong state value fails.
-	wantStatus(t, c.get("/auth/callback?code=alice&state=wrong"), http.StatusBadRequest)
+	wantStatus(t, e.anon().get("/dflt/auth/callback?code=alice&state="+url.QueryEscape(state)), http.StatusBadRequest)
+	wantStatus(t, c.get("/dflt/auth/callback?code=alice&state=wrong"), http.StatusBadRequest)
+	// A state from a tenant login is not valid for the system login.
+	u, _ := url.Parse(e.srv.URL)
+	c.http.Jar.SetCookies(u, []*http.Cookie{{Name: "skriva_login_system", Value: state, Path: "/"}})
+	wantStatus(t, c.get("/admin/auth/callback?code=root&state="+url.QueryEscape(state)), http.StatusBadRequest)
 }
 
 func TestLoginStateIsOneTime(t *testing.T) {
 	e := newEnv(t)
 	c := e.anon()
-	resp := c.get("/login")
+	resp := c.get("/dflt/login")
 	loc, _ := url.Parse(resp.Header.Get("Location"))
 	state := loc.Query().Get("state")
-	cb := "/auth/callback?code=alice&state=" + url.QueryEscape(state)
+	cb := "/dflt/auth/callback?code=alice&state=" + url.QueryEscape(state)
 	wantStatus(t, c.get(cb), http.StatusSeeOther)
-
-	// Put the state cookie back and try the same state again.
 	u, _ := url.Parse(e.srv.URL)
-	c.http.Jar.SetCookies(u, []*http.Cookie{{Name: "skriva_login", Value: state, Path: "/"}})
+	c.http.Jar.SetCookies(u, []*http.Cookie{{Name: "skriva_login_dflt", Value: state, Path: "/"}})
 	wantStatus(t, c.get(cb), http.StatusBadRequest)
-}
-
-func TestLoginRateLimit(t *testing.T) {
-	e := newEnv(t)
-	c := e.anon()
-	limited := false
-	for range 200 {
-		resp := c.get("/login")
-		resp.Body.Close()
-		if resp.StatusCode == http.StatusTooManyRequests {
-			limited = true
-			break
-		}
-	}
-	if !limited {
-		t.Fatal("200 login requests did not reach the rate limit")
-	}
 }
 
 func TestOpenRedirectBlocked(t *testing.T) {
 	e := newEnv(t)
 	c := e.login("carol")
-	resp := c.get("/login?return_to=//evil.example/")
+	resp := c.get("/dflt/login?return_to=//evil.example/")
 	wantStatus(t, resp, http.StatusSeeOther)
-	if loc := resp.Header.Get("Location"); loc != "/" {
+	if loc := resp.Header.Get("Location"); loc != "/dflt/" {
 		t.Fatalf("redirect to %q", loc)
 	}
+}
+
+func TestLoginRateLimit(t *testing.T) {
+	e := newEnv(t)
+	c := e.anon()
+	for range 200 {
+		resp := c.get("/dflt/login")
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return
+		}
+	}
+	t.Fatal("200 login requests did not reach the rate limit")
+}
+
+func TestTenantWithoutIdP(t *testing.T) {
+	e := newEnv(t)
+	if _, err := e.st.CreateTenant(ctx, "noid", store.TenantSettings{
+		Name: "No IdP", DefaultRole: "viewer", SessionTTL: time.Hour, MaxDocBytes: 1 << 20,
+	}, ""); err != nil {
+		t.Fatal(err)
+	}
+	wantStatus(t, e.anon().get("/noid/login"), http.StatusServiceUnavailable)
 }
 
 func TestViewerCannotWrite(t *testing.T) {
 	e := newEnv(t)
 	carol := e.login("carol")
-	wantStatus(t, carol.get("/wiki/home"), http.StatusNotFound)
-	wantStatus(t, carol.get("/wiki/home/edit"), http.StatusForbidden)
-	wantStatus(t, savePage(carol, "home", "Home", "x", 0), http.StatusForbidden)
-	wantStatus(t, carol.get("/new"), http.StatusForbidden)
-	wantStatus(t, carol.get("/admin/users"), http.StatusForbidden)
+	wantStatus(t, carol.get(sp+"/"), http.StatusOK)
+	wantStatus(t, carol.get(sp+"/new"), http.StatusForbidden)
+	wantStatus(t, carol.post(sp+"/new", url.Values{"kind": {"document"}, "title": {"x"}}), http.StatusForbidden)
+	wantStatus(t, carol.get("/dflt/admin/users"), http.StatusForbidden)
+	wantStatus(t, carol.get("/dflt/admin/spaces"), http.StatusForbidden)
 
 	bob := e.login("bob")
-	wantStatus(t, savePage(bob, "home", "Home", "text", 0), http.StatusSeeOther)
-	wantStatus(t, carol.get("/wiki/home"), http.StatusOK)
-	wantStatus(t, savePage(carol, "home", "Home", "changed", 1), http.StatusForbidden)
-	wantStatus(t, carol.post("/wiki/home/delete", nil), http.StatusForbidden)
+	id := bob.create("document", "", "Home", "text")
+	wantStatus(t, carol.get(sp+"/d/"+id+"/home"), http.StatusOK)
+	wantStatus(t, carol.save(id, "Home", "changed", 1), http.StatusForbidden)
+	wantStatus(t, carol.post(sp+"/delete/"+id, nil), http.StatusForbidden)
+	wantStatus(t, carol.post(sp+"/move/"+id, url.Values{"parent": {""}}), http.StatusForbidden)
 }
 
-func TestEditFlow(t *testing.T) {
+func TestTreeAndDocuments(t *testing.T) {
 	e := newEnv(t)
 	bob := e.login("bob")
 
-	wantStatus(t, savePage(bob, "home", "Home", "# Hello\n\nSee [[Other Page]].", 0), http.StatusSeeOther)
-	body := readBody(t, bob.get("/wiki/home"))
-	if !strings.Contains(body, `<h1 id="hello">Hello</h1>`) || !strings.Contains(body, `href="/wiki/other-page"`) {
-		t.Fatalf("page does not show rendered Markdown:\n%s", body)
+	guides := bob.create("folder", "", "Guides", "ignored")
+	setup := bob.create("folder", guides, "Setup", "")
+	install := bob.create("document", setup, "Install", "# Install\n\nSee [[Configure]].")
+	linux := bob.create("document", install, "Install on Linux", "Use **Podman**.")
+
+	// A folder cannot be in a document.
+	wantStatus(t, bob.post(sp+"/new", url.Values{"kind": {"folder"}, "parent": {install}, "title": {"x"}}), http.StatusBadRequest)
+	wantStatus(t, bob.get(sp+"/new?kind=folder&parent="+install), http.StatusBadRequest)
+	wantStatus(t, bob.post(sp+"/new", url.Values{"kind": {"document"}, "parent": {"000000000000"}, "title": {"x"}}), http.StatusBadRequest)
+	wantStatus(t, bob.post(sp+"/new", url.Values{"kind": {"other"}, "title": {"x"}}), http.StatusBadRequest)
+
+	// The short link redirects to the canonical link.
+	resp := bob.get(sp + "/d/" + linux)
+	wantStatus(t, resp, http.StatusFound)
+	if loc := resp.Header.Get("Location"); loc != sp+"/d/"+linux+"/install-on-linux" {
+		t.Fatalf("short link redirects to %q", loc)
+	}
+	body := readBody(t, bob.get(sp+"/d/"+linux+"/install-on-linux"))
+	for _, want := range []string{"<strong>Podman</strong>", ">Guides</a>", ">Setup</a>", ">Install</a>", `aria-current="page"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("document page does not contain %q:\n%s", want, body)
+		}
+	}
+	folder := readBody(t, bob.get(sp+"/d/"+guides+"/guides"))
+	if !strings.Contains(folder, ">Setup</a>") || strings.Contains(folder, "ignored") {
+		t.Fatalf("folder page:\n%s", folder)
 	}
 
-	// A second create of the same page is a conflict.
-	wantStatus(t, savePage(bob, "home", "Home", "again", 0), http.StatusConflict)
+	// Wiki links.
+	page := readBody(t, bob.get(sp+"/d/"+install+"/install"))
+	if !strings.Contains(page, `href="`+sp+`/w/configure"`) {
+		t.Fatalf("wiki link not rendered:\n%s", page)
+	}
+	wantStatus(t, bob.get(sp+"/w/configure"), http.StatusNotFound)
+	cfg := bob.create("document", "", "Configure", "x")
+	resp = bob.get(sp + "/w/configure")
+	wantStatus(t, resp, http.StatusSeeOther)
+	if loc := resp.Header.Get("Location"); !strings.Contains(loc, cfg) {
+		t.Fatalf("wiki link redirects to %q", loc)
+	}
 
-	wantStatus(t, savePage(bob, "home", "Home", "Version 2", 1), http.StatusSeeOther)
-	// An edit that starts from version 1 again is a conflict.
-	wantStatus(t, savePage(bob, "home", "Home", "Lost", 1), http.StatusConflict)
+	// Rename changes the slug. The old link redirects.
+	wantStatus(t, bob.save(cfg, "Configuration", "x", 1), http.StatusSeeOther)
+	resp = bob.get(sp + "/d/" + cfg + "/configure")
+	wantStatus(t, resp, http.StatusFound)
+	if loc := resp.Header.Get("Location"); loc != sp+"/d/"+cfg+"/configuration" {
+		t.Fatalf("old slug redirects to %q", loc)
+	}
 
-	// Preview does not save.
-	resp := bob.post("/wiki/home/edit", url.Values{
-		"title": {"Home"}, "body": {"**preview**"}, "version": {"2"}, "action": {"preview"},
-	})
+	// Conflict, preview, history and restore.
+	wantStatus(t, bob.save(cfg, "Configuration", "lost", 1), http.StatusConflict)
+	resp = bob.post(sp+"/edit/"+cfg, url.Values{"title": {"C"}, "body": {"**p**"}, "version": {"2"}, "action": {"preview"}})
 	wantStatus(t, resp, http.StatusOK)
-	if b := readBody(t, resp); !strings.Contains(b, "<strong>preview</strong>") {
-		t.Fatalf("preview not shown:\n%s", b)
+	if b := readBody(t, resp); !strings.Contains(b, "<strong>p</strong>") {
+		t.Fatalf("no preview:\n%s", b)
 	}
-	raw := readBody(t, bob.get("/wiki/home/raw"))
-	if raw != "Version 2" {
+	if b := readBody(t, bob.get(sp+"/history/"+cfg)); !strings.Contains(b, "/history/"+cfg+"/1") {
+		t.Fatalf("history:\n%s", b)
+	}
+	wantStatus(t, bob.get(sp+"/history/"+cfg+"/1"), http.StatusOK)
+	wantStatus(t, bob.get(sp+"/history/"+cfg+"/9"), http.StatusNotFound)
+	if b := readBody(t, bob.get(sp+"/edit/"+cfg+"?from=1")); !strings.Contains(b, `value="Configure"`) {
+		t.Fatalf("restore form:\n%s", b)
+	}
+	if raw := readBody(t, bob.get(sp+"/raw/"+linux)); raw != "Use **Podman**." {
 		t.Fatalf("raw = %q", raw)
 	}
 
-	hist := readBody(t, bob.get("/wiki/home/history"))
-	if !strings.Contains(hist, "/wiki/home/history/1") || !strings.Contains(hist, "/wiki/home/history/2") {
-		t.Fatalf("history does not list the versions:\n%s", hist)
+	// Move.
+	wantStatus(t, bob.post(sp+"/move/"+guides, url.Values{"parent": {setup}}), http.StatusBadRequest)
+	wantStatus(t, bob.post(sp+"/move/"+setup, url.Values{"parent": {install}}), http.StatusBadRequest)
+	form := readBody(t, bob.get(sp+"/move/"+install))
+	if strings.Contains(form, linux) || !strings.Contains(form, "Guides / Setup") {
+		t.Fatalf("move form targets:\n%s", form)
 	}
-	wantStatus(t, bob.get("/wiki/home/history/1"), http.StatusOK)
-	wantStatus(t, bob.get("/wiki/home/history/9"), http.StatusNotFound)
+	wantStatus(t, bob.post(sp+"/move/"+linux, url.Values{"parent": {""}}), http.StatusSeeOther)
 
-	edit := readBody(t, bob.get("/wiki/home/edit?from=1"))
-	if !strings.Contains(edit, "See [[Other Page]].") {
-		t.Fatalf("restore form does not contain old text:\n%s", edit)
+	// Search in the space and in the tenant.
+	if b := readBody(t, bob.get(sp+"/search?q=podman")); !strings.Contains(b, linux) || !strings.Contains(b, "<mark>") {
+		t.Fatalf("space search:\n%s", b)
+	}
+	if b := readBody(t, bob.get("/dflt/search?q=podman")); !strings.Contains(b, linux) {
+		t.Fatalf("tenant search:\n%s", b)
 	}
 
-	search := readBody(t, bob.get("/search?q=version"))
-	if !strings.Contains(search, `href="/wiki/home"`) || !strings.Contains(search, "<mark>") {
-		t.Fatalf("search does not find the page:\n%s", search)
-	}
-
-	// Editors cannot delete.
-	wantStatus(t, bob.post("/wiki/home/delete", nil), http.StatusForbidden)
+	// Delete the folder with its subtree. Editors cannot delete.
+	wantStatus(t, bob.post(sp+"/delete/"+guides, nil), http.StatusForbidden)
 	mary := e.login("mary")
-	wantStatus(t, mary.get("/wiki/home/delete"), http.StatusOK)
-	wantStatus(t, mary.post("/wiki/home/delete", nil), http.StatusSeeOther)
-	wantStatus(t, mary.get("/wiki/home"), http.StatusNotFound)
-}
-
-func TestNewPageForm(t *testing.T) {
-	e := newEnv(t)
-	bob := e.login("bob")
-	resp := bob.post("/new", url.Values{"title": {"Översikt 2026"}})
-	wantStatus(t, resp, http.StatusSeeOther)
-	if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, "/wiki/oversikt-2026/edit?title=") {
-		t.Fatalf("redirect to %q", loc)
+	if b := readBody(t, mary.get(sp+"/delete/"+guides)); !strings.Contains(b, "<strong>2</strong>") {
+		t.Fatalf("delete form does not show the count:\n%s", b)
 	}
-	wantStatus(t, bob.post("/new", url.Values{"title": {"!!!"}}), http.StatusUnprocessableEntity)
+	wantStatus(t, mary.post(sp+"/delete/"+guides, nil), http.StatusSeeOther)
+	wantStatus(t, mary.get(sp+"/d/"+install), http.StatusNotFound)
+	wantStatus(t, mary.get(sp+"/d/"+linux+"/install-on-linux"), http.StatusOK)
+
+	wantStatus(t, bob.get(sp+"/recent"), http.StatusOK)
 }
 
 func TestValidation(t *testing.T) {
 	e := newEnv(t)
 	bob := e.login("bob")
-	wantStatus(t, savePage(bob, "home", "", "body", 0), http.StatusUnprocessableEntity)
-	wantStatus(t, savePage(bob, "home", strings.Repeat("x", 201), "body", 0), http.StatusUnprocessableEntity)
-	wantStatus(t, savePage(bob, "Bad_Slug", "x", "body", 0), http.StatusNotFound)
-	wantStatus(t, bob.post("/wiki/home/edit", url.Values{"title": {"x"}, "version": {"abc"}}), http.StatusBadRequest)
-	// A body larger than the request limit fails.
-	wantStatus(t, savePage(bob, "home", "Home", strings.Repeat("x", 3<<20), 0), http.StatusRequestEntityTooLarge)
-	// A body larger than the page limit, but smaller than the request
-	// limit, fails with a message in the form.
-	wantStatus(t, savePage(bob, "home", "Home", strings.Repeat("x", 1<<20+1), 0), http.StatusUnprocessableEntity)
+	id := bob.create("document", "", "Home", "x")
+	wantStatus(t, bob.save(id, "", "x", 1), http.StatusUnprocessableEntity)
+	wantStatus(t, bob.save(id, strings.Repeat("x", 201), "x", 1), http.StatusUnprocessableEntity)
+	wantStatus(t, bob.save(id, "Home", strings.Repeat("x", 3<<20), 1), http.StatusRequestEntityTooLarge)
+	wantStatus(t, bob.save(id, "Home", strings.Repeat("x", 1<<20+1), 1), http.StatusUnprocessableEntity)
+	wantStatus(t, bob.post(sp+"/edit/"+id, url.Values{"title": {"x"}, "version": {"abc"}}), http.StatusBadRequest)
+	wantStatus(t, bob.post(sp+"/edit/"+id, url.Values{"title": {"x"}, "version": {"99999999999"}}), http.StatusBadRequest)
+	wantStatus(t, bob.get(sp+"/history/"+id+"/99999999999"), http.StatusNotFound)
+	wantStatus(t, bob.get(sp+"/edit/"+id+"?from=99999999999"), http.StatusOK)
+	wantStatus(t, bob.get(sp+"/d/short"), http.StatusNotFound)
+	wantStatus(t, bob.get(sp+"/d/000000000000"), http.StatusNotFound)
 }
 
 func TestXSSIsEscaped(t *testing.T) {
 	e := newEnv(t)
 	bob := e.login("bob")
-	wantStatus(t, savePage(bob, "xss", `<script>alert("t")</script>`,
-		"<script>alert(1)</script>\n\n[x](javascript:alert(2))", 0), http.StatusSeeOther)
-	body := readBody(t, bob.get("/wiki/xss"))
+	id := bob.create("document", "", `<script>alert("t")</script>`, "<script>alert(1)</script>\n\n[x](javascript:alert(2))")
+	body := readBody(t, bob.get(sp+"/d/"+id+"/script-alert-t-script"))
 	if strings.Contains(body, "<script") || strings.Contains(body, "javascript:") {
 		t.Fatalf("page contains script:\n%s", body)
 	}
@@ -407,15 +538,13 @@ func TestXSSIsEscaped(t *testing.T) {
 func TestCSRF(t *testing.T) {
 	e := newEnv(t)
 	bob := e.login("bob")
-	form := url.Values{"title": {"Home"}, "body": {"x"}, "version": {"0"}, "csrf_token": {"wrong"}}
-	wantStatus(t, bob.post("/wiki/home/edit", form), http.StatusForbidden)
-	form.Del("csrf_token")
+	form := url.Values{"kind": {"document"}, "title": {"Home"}, "csrf_token": {"wrong"}}
+	wantStatus(t, bob.post(sp+"/new", form), http.StatusForbidden)
 	form.Set("csrf_token", "")
-	wantStatus(t, bob.post("/wiki/home/edit", form), http.StatusForbidden)
+	wantStatus(t, bob.post(sp+"/new", form), http.StatusForbidden)
 
-	// A cross-site request fails also with a correct token.
 	form.Set("csrf_token", bob.csrf)
-	req, _ := http.NewRequest(http.MethodPost, e.srv.URL+"/wiki/home/edit", strings.NewReader(form.Encode()))
+	req, _ := http.NewRequest(http.MethodPost, e.srv.URL+sp+"/new", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	resp, err := bob.http.Do(req)
@@ -428,28 +557,24 @@ func TestCSRF(t *testing.T) {
 func TestLogout(t *testing.T) {
 	e := newEnv(t)
 	bob := e.login("bob")
-	resp := bob.post("/logout", nil)
+	resp := bob.post("/dflt/logout", nil)
 	wantStatus(t, resp, http.StatusSeeOther)
-	if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, "https://idp.example/logout") {
+	if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, "https://idp.example/logout") ||
+		!strings.Contains(loc, url.QueryEscape("http://example.test/dflt/signed-out")) {
 		t.Fatalf("logout redirects to %q", loc)
 	}
-	wantStatus(t, bob.get("/wiki/"), http.StatusSeeOther)
+	wantStatus(t, bob.get("/dflt/"), http.StatusSeeOther)
 }
 
-func TestAdmin(t *testing.T) {
+func TestTenantAdmin(t *testing.T) {
 	e := newEnv(t)
 	alice := e.login("alice")
 	carol := e.login("carol")
-	ctx := context.Background()
 
-	for _, p := range []string{"/admin/users", "/admin/groups", "/admin/roles", "/admin/bindings"} {
+	for _, p := range []string{"/dflt/admin/users", "/dflt/admin/groups", "/dflt/admin/roles", "/dflt/admin/bindings", "/dflt/admin/spaces"} {
 		wantStatus(t, alice.get(p), http.StatusOK)
 	}
-
-	users, err := e.st.Users(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	users, _ := e.st.Users(ctx, e.dft.ID)
 	var carolID, aliceID int64
 	for _, u := range users {
 		switch u.Username {
@@ -459,50 +584,152 @@ func TestAdmin(t *testing.T) {
 			aliceID = u.ID
 		}
 	}
-	carolPath := "/admin/users/" + fmtID(carolID)
+	carolPath := "/dflt/admin/users/" + strconv.FormatInt(carolID, 10)
 	wantStatus(t, alice.get(carolPath), http.StatusOK)
 
-	// Give carol the editor role. Then carol can create pages.
-	wantStatus(t, alice.post("/admin/bindings", url.Values{
-		"role": {"editor"}, "subject": {"user:" + fmtID(carolID)}, "return_to": {carolPath},
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"editor"}, "subject": {"user:" + strconv.FormatInt(carolID, 10)}, "return_to": {carolPath},
 	}), http.StatusSeeOther)
-	wantStatus(t, savePage(carol, "carol", "Carol", "x", 0), http.StatusSeeOther)
+	carol.create("document", "", "Carol", "x")
 
-	// A custom role with an unknown permission fails.
-	wantStatus(t, alice.post("/admin/roles", url.Values{
-		"name": {"bad"}, "permission": {"page.everything"},
-	}), http.StatusBadRequest)
-	wantStatus(t, alice.post("/admin/roles", url.Values{
-		"name": {"deleter"}, "permission": {"page.read", "page.delete"},
-	}), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/roles", url.Values{"name": {"bad"}, "permission": {"doc.everything"}}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/roles", url.Values{"name": {"deleter"}, "permission": {"doc.read", "doc.delete"}}), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/roles", url.Values{"name": {"viewer"}}), http.StatusConflict)
 
-	// A local group with carol as member.
-	resp := alice.post("/admin/groups", url.Values{"name": {"Team"}})
+	resp := alice.post("/dflt/admin/groups", url.Values{"name": {"Team"}})
 	wantStatus(t, resp, http.StatusSeeOther)
 	groupPath := resp.Header.Get("Location")
-	wantStatus(t, alice.post(groupPath+"/members", url.Values{"user_id": {fmtID(carolID)}}), http.StatusSeeOther)
+	wantStatus(t, alice.post(groupPath+"/members", url.Values{"user_id": {strconv.FormatInt(carolID, 10)}}), http.StatusSeeOther)
 	if b := readBody(t, alice.get(groupPath)); !strings.Contains(b, "carol") {
 		t.Fatalf("group page does not show member:\n%s", b)
 	}
 
-	// Admins cannot disable themselves.
-	wantStatus(t, alice.post("/admin/users/"+fmtID(aliceID)+"/disable", nil), http.StatusBadRequest)
+	// Spaces.
+	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Team"}, "slug": {"short"}}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Team"}, "slug": {"teamspce"}}), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Again"}, "slug": {"teamspce"}}), http.StatusConflict)
+	wantStatus(t, alice.get("/dflt/teamspce/"), http.StatusOK)
+	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce", url.Values{"name": {"Team space"}}), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce/delete", url.Values{"confirm": {"wrong"}}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce/delete", url.Values{"confirm": {"teamspce"}}), http.StatusSeeOther)
+	wantStatus(t, alice.get("/dflt/teamspce/"), http.StatusNotFound)
 
-	// Disabling carol ends the session of carol at once.
+	wantStatus(t, alice.post("/dflt/admin/users/"+strconv.FormatInt(aliceID, 10)+"/disable", nil), http.StatusBadRequest)
 	wantStatus(t, alice.post(carolPath+"/disable", nil), http.StatusSeeOther)
-	wantStatus(t, carol.get("/wiki/"), http.StatusSeeOther)
+	wantStatus(t, carol.get("/dflt/"), http.StatusSeeOther)
 }
 
-func fmtID(id int64) string { return strconv.FormatInt(id, 10) }
-
-func TestLargeNumbersInInput(t *testing.T) {
+func TestSystemAdmin(t *testing.T) {
 	e := newEnv(t)
-	bob := e.login("bob")
-	wantStatus(t, savePage(bob, "home", "Home", "x", 0), http.StatusSeeOther)
-	wantStatus(t, bob.get("/wiki/?page=99999999999999999"), http.StatusOK)
-	wantStatus(t, bob.get("/wiki/home/history/99999999999"), http.StatusNotFound)
-	wantStatus(t, bob.get("/wiki/home/edit?from=99999999999"), http.StatusOK)
-	wantStatus(t, bob.post("/wiki/home/edit", url.Values{
-		"title": {"Home"}, "body": {"x"}, "version": {"99999999999"}, "action": {"save"},
-	}), http.StatusBadRequest)
+
+	// A user without the system admin group cannot sign in.
+	c := e.anon()
+	resp := c.get("/admin/login")
+	loc, _ := url.Parse(resp.Header.Get("Location"))
+	resp.Body.Close()
+	wantStatus(t, c.get("/admin/auth/callback?code=alice&state="+url.QueryEscape(loc.Query().Get("state"))), http.StatusForbidden)
+
+	// A tenant session does not give access to the system administration.
+	alice := e.login("alice")
+	wantStatus(t, alice.get("/admin/"), http.StatusSeeOther)
+
+	root := e.loginAt("/admin", "root")
+	// A system session does not give access to a tenant.
+	wantStatus(t, root.get("/dflt/"), http.StatusSeeOther)
+
+	tenantForm := url.Values{
+		"code": {"acme"}, "name": {"Acme"}, "oidc_issuer": {"https://idp.example"},
+		"oidc_client_id": {"acme"}, "oidc_client_secret": {"s3cret"}, "oidc_scopes": {"openid profile"},
+		"oidc_groups_claim": {"groups"}, "admin_group": {"acme-admins"}, "default_role": {"viewer"},
+		"session_ttl": {"8h"}, "max_doc_kib": {"512"},
+	}
+	bad := url.Values{}
+	for k, v := range tenantForm {
+		bad[k] = v
+	}
+	bad.Set("code", "ACME")
+	wantStatus(t, root.post("/admin/tenants", bad), http.StatusUnprocessableEntity)
+	bad.Set("code", "acm2")
+	bad.Set("oidc_issuer", "http://idp.example")
+	wantStatus(t, root.post("/admin/tenants", bad), http.StatusUnprocessableEntity)
+	bad.Set("oidc_issuer", "https://idp.example")
+	bad.Set("default_role", "nothere")
+	wantStatus(t, root.post("/admin/tenants", bad), http.StatusUnprocessableEntity)
+
+	wantStatus(t, root.post("/admin/tenants", tenantForm), http.StatusSeeOther)
+	wantStatus(t, root.post("/admin/tenants", tenantForm), http.StatusUnprocessableEntity)
+	acme, err := e.st.TenantByCode(ctx, "acme")
+	if err != nil || acme.MaxDocBytes != 512*1024 || acme.SessionTTL != 8*time.Hour {
+		t.Fatalf("tenant = %+v, %v", acme, err)
+	}
+	if s, _ := e.st.ClientSecret(ctx, acme); s != "s3cret" {
+		t.Fatalf("secret = %q", s)
+	}
+	page := readBody(t, root.get("/admin/tenants/acme"))
+	if strings.Contains(page, "s3cret") {
+		t.Fatal("the tenant page shows the client secret")
+	}
+	if !strings.Contains(page, "http://example.test/acme/auth/callback") {
+		t.Fatalf("tenant page does not show the redirect URI:\n%s", page)
+	}
+
+	// An update with an empty secret keeps the secret.
+	tenantForm.Set("name", "Acme Inc")
+	tenantForm.Set("oidc_client_secret", "")
+	wantStatus(t, root.post("/admin/tenants/acme", tenantForm), http.StatusSeeOther)
+	acme, _ = e.st.TenantByCode(ctx, "acme")
+	if s, _ := e.st.ClientSecret(ctx, acme); acme.Name != "Acme Inc" || s != "s3cret" {
+		t.Fatalf("after update: %q, %q", acme.Name, s)
+	}
+
+	// A space for the new tenant.
+	wantStatus(t, root.post("/admin/tenants/acme/spaces", url.Values{"name": {"Docs"}, "slug": {"acmedocs"}}), http.StatusSeeOther)
+
+	// Users of the new tenant. The admin group of the tenant has the
+	// admin role.
+	idp := e.anon()
+	idp.loginAt("/acme", "alice")
+	wantStatus(t, idp.get("/acme/acmedocs/"), http.StatusOK)
+	wantStatus(t, idp.get("/acme/admin/users"), http.StatusForbidden)
+
+	// The session of one tenant is not valid in a different tenant.
+	u, _ := url.Parse(e.srv.URL)
+	var acmeToken string
+	for _, ck := range idp.http.Jar.Cookies(u) {
+		if ck.Name == "skriva_acme" {
+			acmeToken = ck.Value
+		}
+	}
+	if acmeToken == "" {
+		t.Fatal("no session cookie for tenant acme")
+	}
+	other := e.anon()
+	other.http.Jar.SetCookies(u, []*http.Cookie{{Name: "skriva_dflt", Value: acmeToken, Path: "/"}})
+	wantStatus(t, other.get("/dflt/"), http.StatusSeeOther)
+	// The default tenant cannot see the space of tenant acme.
+	wantStatus(t, alice.get("/dflt/acmedocs/"), http.StatusNotFound)
+
+	// Disable the tenant.
+	tenantForm.Set("disabled", "on")
+	wantStatus(t, root.post("/admin/tenants/acme", tenantForm), http.StatusSeeOther)
+	wantStatus(t, idp.get("/acme/acmedocs/"), http.StatusForbidden)
+
+	// Delete.
+	wantStatus(t, root.post("/admin/tenants/acme/delete", url.Values{"confirm": {"nope"}}), http.StatusBadRequest)
+	wantStatus(t, root.post("/admin/tenants/acme/delete", url.Values{"confirm": {"acme"}}), http.StatusSeeOther)
+	wantStatus(t, root.get("/admin/tenants/acme"), http.StatusNotFound)
+	wantStatus(t, root.post("/admin/tenants/dflt/delete", url.Values{"confirm": {"dflt"}}), http.StatusBadRequest)
+
+	resp = root.post("/admin/logout", nil)
+	wantStatus(t, resp, http.StatusSeeOther)
+	if loc := resp.Header.Get("Location"); !strings.Contains(loc, url.QueryEscape("http://example.test/admin/signed-out")) {
+		t.Fatalf("system logout redirects to %q", loc)
+	}
+}
+
+func testLogOutput() io.Writer {
+	if testing.Verbose() {
+		return os.Stderr
+	}
+	return io.Discard
 }

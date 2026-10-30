@@ -1,15 +1,45 @@
 {{define "content"}}
-{{with .Data.Page}}
+{{with .Data}}
+<div class="with-sidebar">
+<aside class="sidebar" aria-label="Contents">
+  {{template "tree" (tree $.SpacePath .Tree)}}
+</aside>
+<div class="main">
+<nav class="breadcrumbs" aria-label="Path">
+  <a href="{{$.SpacePath}}/">{{$.Space.Name}}</a>
+  {{range .Ancestors}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{end}}
+</nav>
 <div class="pagehead">
-  <h1>{{.Title}}</h1>
-  <nav class="actions" aria-label="Page">
-    {{if $.Can "page.edit"}}<a href="/wiki/{{.Slug}}/edit">Edit</a>{{end}}
-    <a href="/wiki/{{.Slug}}/history">History</a>
-    <a href="/wiki/{{.Slug}}/raw">Source</a>
-    {{if $.Can "page.delete"}}<a href="/wiki/{{.Slug}}/delete">Delete</a>{{end}}
+  <h1>{{if .Node.IsFolder}}<span class="icon" aria-hidden="true">▸</span> {{end}}{{.Node.Title}}</h1>
+  <nav class="actions" aria-label="Item">
+    {{if $.Can "doc.edit"}}<a href="{{$.SpacePath}}/edit/{{.Node.PublicID}}">{{if .Node.IsFolder}}Rename{{else}}Edit{{end}}</a>{{end}}
+    {{if $.Can "doc.create"}}
+      <a href="{{$.SpacePath}}/new?kind=document&amp;parent={{.Node.PublicID}}">New document</a>
+      {{if .Node.IsFolder}}<a href="{{$.SpacePath}}/new?kind=folder&amp;parent={{.Node.PublicID}}">New folder</a>{{end}}
+    {{end}}
+    {{if $.Can "doc.edit"}}<a href="{{$.SpacePath}}/move/{{.Node.PublicID}}">Move</a>{{end}}
+    {{if not .Node.IsFolder}}
+      <a href="{{$.SpacePath}}/history/{{.Node.PublicID}}">History</a>
+      <a href="{{$.SpacePath}}/raw/{{.Node.PublicID}}">Source</a>
+    {{end}}
+    {{if $.Can "doc.delete"}}<a href="{{$.SpacePath}}/delete/{{.Node.PublicID}}">Delete</a>{{end}}
   </nav>
 </div>
-<article class="markdown">{{$.Data.HTML}}</article>
-<footer class="meta">Version {{.Version}}. Changed {{date .UpdatedAt}}{{with .UpdatedBy}} by {{.}}{{end}}.</footer>
+{{if not .Node.IsFolder}}<article class="markdown">{{.HTML}}</article>{{end}}
+{{with .Children}}
+<section class="children" aria-label="Contents">
+  {{if not $.Data.Node.IsFolder}}<h2>Sub-documents</h2>{{end}}
+  <ul class="pages">
+    {{range .}}<li class="{{.Kind}}"><a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a> <small>{{date .UpdatedAt}}</small></li>{{end}}
+  </ul>
+</section>
+{{else}}{{if .Node.IsFolder}}<p>This folder is empty.</p>{{end}}
+{{end}}
+<footer class="meta">
+  Version {{.Node.Version}}. Changed {{date .Node.UpdatedAt}}{{with .Node.UpdatedBy}} by {{.}}{{end}}.
+  Short link: <a href="{{$.SpacePath}}/d/{{.Node.PublicID}}"><code>{{$.SpacePath}}/d/{{.Node.PublicID}}</code></a>
+</footer>
+</div>
+</div>
 {{end}}
 {{end}}

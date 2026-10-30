@@ -1,0 +1,17 @@
+{{define "content"}}
+<div class="pagehead">
+  <h1>{{.Space.Name}}</h1>
+  {{if .Can "doc.create"}}
+  <nav class="actions" aria-label="Space">
+    <a href="{{.SpacePath}}/new?kind=document">New document</a>
+    <a href="{{.SpacePath}}/new?kind=folder">New folder</a>
+  </nav>
+  {{end}}
+</div>
+{{with .Space.Description}}<p>{{.}}</p>{{end}}
+{{with .Data}}
+<nav class="tree-root" aria-label="Contents">{{template "tree" (tree $.SpacePath .)}}</nav>
+{{else}}
+<p>This space is empty.{{if .Can "doc.create"}} <a href="{{.SpacePath}}/new?kind=document&amp;title=Home">Make the first document</a>.{{end}}</p>
+{{end}}
+{{end}}

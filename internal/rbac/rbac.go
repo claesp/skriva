@@ -1,5 +1,5 @@
 // Package rbac defines the permissions of the application and the
-// permission set of one user.
+// permission set of one user in one tenant.
 //
 // A user gets roles through role bindings. A binding connects a role to a
 // user or to a group. A role is a named set of permissions. The effective
@@ -12,24 +12,27 @@ import "sort"
 // Permission is the name of one action that the application controls.
 type Permission string
 
-// Permissions that the application knows.
+// Permissions that the application knows. All permissions apply to one
+// tenant.
 const (
-	PageRead    Permission = "page.read"
-	PageCreate  Permission = "page.create"
-	PageEdit    Permission = "page.edit"
-	PageDelete  Permission = "page.delete"
-	AdminManage Permission = "admin.manage"
+	DocRead      Permission = "doc.read"
+	DocCreate    Permission = "doc.create"
+	DocEdit      Permission = "doc.edit"
+	DocDelete    Permission = "doc.delete"
+	SpaceManage  Permission = "space.manage"
+	TenantManage Permission = "tenant.manage"
 )
 
 // All is the list of all permissions, in display order.
-var All = []Permission{PageRead, PageCreate, PageEdit, PageDelete, AdminManage}
+var All = []Permission{DocRead, DocCreate, DocEdit, DocDelete, SpaceManage, TenantManage}
 
 var descriptions = map[Permission]string{
-	PageRead:    "Read pages, history and search results",
-	PageCreate:  "Create new pages",
-	PageEdit:    "Edit pages",
-	PageDelete:  "Delete pages",
-	AdminManage: "Manage users, groups, roles and role bindings",
+	DocRead:      "Read folders, documents, history and search results",
+	DocCreate:    "Create folders and documents",
+	DocEdit:      "Edit and move folders and documents",
+	DocDelete:    "Delete folders and documents",
+	SpaceManage:  "Create, change and delete spaces",
+	TenantManage: "Manage users, groups, roles and role bindings of the tenant",
 }
 
 // Description returns a short text that tells what the permission allows.

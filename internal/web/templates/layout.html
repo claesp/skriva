@@ -3,42 +3,75 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} · Skriva</title>
+<title>{{.Title}} · {{if .Tenant}}{{.Tenant.Name}}{{else}}Skriva{{end}}</title>
 <link rel="stylesheet" href="{{.StyleURL}}">
 </head>
 <body>
 <header class="site">
-  <a class="brand" href="/">Skriva</a>
+{{if .System}}
+  <a class="brand" href="/admin/">Skriva system administration</a>
+  {{if and .Session .Session.System}}
+  <nav aria-label="Main"><a href="/admin/">Tenants</a></nav>
+  <form class="user" action="/admin/logout" method="post">
+    {{template "csrf" .CSRF}}
+    <span>{{.Session.User.Name}}</span>
+    <button type="submit" class="link">Sign out</button>
+  </form>
+  {{end}}
+{{else if .Tenant}}
+  <a class="brand" href="{{.TenantPath}}/">{{.Tenant.Name}}</a>
+  {{if .Space}}<span class="crumb">›</span> <a class="brand space" href="{{.SpacePath}}/">{{.Space.Name}}</a>{{end}}
   {{if .Session}}
   <nav aria-label="Main">
-    <a href="/wiki/">All pages</a>
-    <a href="/recent">Recent changes</a>
-    {{if .Can "page.create"}}<a href="/new">New page</a>{{end}}
-    {{if .Can "admin.manage"}}<a href="/admin/">Administration</a>{{end}}
+    <a href="{{.TenantPath}}/">Spaces</a>
+    {{if .Space}}<a href="{{.SpacePath}}/recent">Recent changes</a>{{end}}
+    {{if or (.Can "tenant.manage") (.Can "space.manage")}}<a href="{{.TenantPath}}/admin/{{if not (.Can "tenant.manage")}}spaces{{end}}">Administration</a>{{end}}
   </nav>
-  <form class="search" action="/search" method="get" role="search">
-    <input type="search" name="q" value="{{.Query}}" placeholder="Search" aria-label="Search" maxlength="200">
+  <form class="search" action="{{if .Space}}{{.SpacePath}}{{else}}{{.TenantPath}}{{end}}/search" method="get" role="search">
+    <input type="search" name="q" placeholder="Search{{if .Space}} in {{.Space.Name}}{{end}}" aria-label="Search" maxlength="200">
   </form>
-  <form class="user" action="/logout" method="post">
-    <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+  <form class="user" action="{{.TenantPath}}/logout" method="post">
+    {{template "csrf" .CSRF}}
     <span>{{.Session.User.Name}}</span>
     <button type="submit" class="link">Sign out</button>
   </form>
   {{else}}
-  <nav><a href="/login">Sign in</a></nav>
+  <nav><a href="{{.TenantPath}}/login">Sign in</a></nav>
   {{end}}
+{{else}}
+  <a class="brand" href="/">Skriva</a>
+{{end}}
 </header>
 <main>
 {{block "content" .}}{{end}}
 </main>
 </body>
 </html>
+{{define "csrf"}}<input type="hidden" name="csrf_token" value="{{.}}">{{end}}
 {{define "adminnav"}}
 <nav class="tabs" aria-label="Administration">
-  <a href="/admin/users">Users</a>
-  <a href="/admin/groups">Groups</a>
-  <a href="/admin/roles">Roles</a>
-  <a href="/admin/bindings">Role bindings</a>
+  {{if .Can "tenant.manage"}}
+  <a href="{{.TenantPath}}/admin/users">Users</a>
+  <a href="{{.TenantPath}}/admin/groups">Groups</a>
+  <a href="{{.TenantPath}}/admin/roles">Roles</a>
+  <a href="{{.TenantPath}}/admin/bindings">Role bindings</a>
+  {{end}}
+  {{if .Can "space.manage"}}<a href="{{.TenantPath}}/admin/spaces">Spaces</a>{{end}}
 </nav>
 {{end}}
-{{define "csrf"}}<input type="hidden" name="csrf_token" value="{{.}}">{{end}}
+{{define "tree"}}
+<ul class="tree">
+  {{range .Nodes}}
+  <li class="{{.Kind}}{{if .Current}} current{{end}}">
+    {{if .Children}}
+    <details{{if .Open}} open{{end}}>
+      <summary><a href="{{docpath $.Base .PublicID .Slug}}"{{if .Current}} aria-current="page"{{end}}>{{.Title}}</a></summary>
+      {{template "tree" (tree $.Base .Children)}}
+    </details>
+    {{else}}
+    <a href="{{docpath $.Base .PublicID .Slug}}"{{if .Current}} aria-current="page"{{end}}>{{.Title}}</a>
+    {{end}}
+  </li>
+  {{end}}
+</ul>
+{{end}}

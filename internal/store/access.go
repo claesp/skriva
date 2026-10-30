@@ -2,15 +2,20 @@ package store
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/clpe/skriva/internal/db"
 	"github.com/clpe/skriva/internal/rbac"
 )
+
+// querier is the part of pgxpool.Pool and pgx.Tx that the helpers use.
+type querier interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 // Group sources.
 const (
@@ -18,7 +23,7 @@ const (
 	GroupLocal = "local"
 )
 
-// Group is a set of users.
+// Group is a set of users in a tenant.
 type Group struct {
 	ID          int64
 	Name        string
@@ -27,7 +32,8 @@ type Group struct {
 	Members     int
 }
 
-// Role is a named set of permissions.
+// Role is a named set of permissions. Built-in roles apply to all
+// tenants. A custom role belongs to one tenant.
 type Role struct {
 	ID          int64
 	Name        string
@@ -48,12 +54,13 @@ type Binding struct {
 	GroupSource string
 }
 
-// Groups returns all groups, sorted by source and name.
-func (s *Store) Groups(ctx context.Context) ([]Group, error) {
+// Groups returns the groups of a tenant, sorted by source and name.
+func (s *Store) Groups(ctx context.Context, tenantID int64) ([]Group, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT g.id, g.name, g.source, g.description,
 		       (SELECT count(*) FROM group_members gm WHERE gm.group_id = g.id)
-		FROM groups g ORDER BY g.source, lower(g.name)`)
+		FROM groups g WHERE g.tenant_id = $1
+		ORDER BY g.source, lower(g.name)`, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -69,13 +76,13 @@ func (s *Store) Groups(ctx context.Context) ([]Group, error) {
 	return out, rows.Err()
 }
 
-// Group returns the group with the given ID.
-func (s *Store) Group(ctx context.Context, id int64) (*Group, error) {
+// Group returns a group of a tenant.
+func (s *Store) Group(ctx context.Context, tenantID, id int64) (*Group, error) {
 	var g Group
 	err := s.pool.QueryRow(ctx, `
 		SELECT g.id, g.name, g.source, g.description,
 		       (SELECT count(*) FROM group_members gm WHERE gm.group_id = g.id)
-		FROM groups g WHERE g.id = $1`, id,
+		FROM groups g WHERE g.tenant_id = $1 AND g.id = $2`, tenantID, id,
 	).Scan(&g.ID, &g.Name, &g.Source, &g.Description, &g.Members)
 	if err != nil {
 		return nil, notFound(err)
@@ -83,36 +90,42 @@ func (s *Store) Group(ctx context.Context, id int64) (*Group, error) {
 	return &g, nil
 }
 
-// CreateLocalGroup makes a local group.
-func (s *Store) CreateLocalGroup(ctx context.Context, name, description string) (int64, error) {
+// CreateLocalGroup makes a local group in a tenant.
+func (s *Store) CreateLocalGroup(ctx context.Context, tenantID int64, name, description string) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO groups (name, source, description) VALUES ($1, 'local', $2)
-		RETURNING id`, name, description).Scan(&id)
-	if db.IsUniqueViolation(err) {
+		INSERT INTO groups (tenant_id, name, source, description) VALUES ($1, $2, 'local', $3)
+		RETURNING id`, tenantID, name, description).Scan(&id)
+	if sqlState(err) == codeUniqueViolation {
 		return 0, ErrConflict
 	}
 	return id, err
 }
 
-// EnsureOIDCGroup makes the OIDC group name if it does not exist.
-func (s *Store) EnsureOIDCGroup(ctx context.Context, name string) (int64, error) {
+// EnsureOIDCGroup makes the OIDC group name in a tenant if it does not
+// exist. It returns the ID of the group.
+func (s *Store) EnsureOIDCGroup(ctx context.Context, tenantID int64, name string) (int64, error) {
+	return ensureOIDCGroup(ctx, s.pool, tenantID, name)
+}
+
+func ensureOIDCGroup(ctx context.Context, q querier, tenantID int64, name string) (int64, error) {
 	var id int64
-	err := s.pool.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		WITH ins AS (
-			INSERT INTO groups (name, source) VALUES ($1, 'oidc')
-			ON CONFLICT (source, name) DO NOTHING RETURNING id)
+			INSERT INTO groups (tenant_id, name, source) VALUES ($1, $2, 'oidc')
+			ON CONFLICT (tenant_id, source, name) DO NOTHING RETURNING id)
 		SELECT id FROM ins
 		UNION ALL
-		SELECT id FROM groups WHERE source = 'oidc' AND name = $1
-		LIMIT 1`, name).Scan(&id)
+		SELECT id FROM groups WHERE tenant_id = $1 AND source = 'oidc' AND name = $2
+		LIMIT 1`, tenantID, name).Scan(&id)
 	return id, err
 }
 
 // DeleteGroup removes a local group. OIDC groups come from the identity
 // provider, thus the function does not remove them.
-func (s *Store) DeleteGroup(ctx context.Context, id int64) error {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM groups WHERE id = $1 AND source = 'local'", id)
+func (s *Store) DeleteGroup(ctx context.Context, tenantID, id int64) error {
+	tag, err := s.pool.Exec(ctx,
+		"DELETE FROM groups WHERE tenant_id = $1 AND id = $2 AND source = 'local'", tenantID, id)
 	if err != nil {
 		return err
 	}
@@ -123,11 +136,11 @@ func (s *Store) DeleteGroup(ctx context.Context, id int64) error {
 }
 
 // GroupMembers returns the members of a group.
-func (s *Store) GroupMembers(ctx context.Context, groupID int64) ([]*User, error) {
+func (s *Store) GroupMembers(ctx context.Context, tenantID, groupID int64) ([]*User, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+prefixed("u.", userColumns)+`
 		FROM users u JOIN group_members gm ON gm.user_id = u.id
-		WHERE gm.group_id = $1 ORDER BY u.username`, groupID)
+		WHERE gm.tenant_id = $1 AND gm.group_id = $2 ORDER BY u.username`, tenantID, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -144,11 +157,12 @@ func (s *Store) GroupMembers(ctx context.Context, groupID int64) ([]*User, error
 }
 
 // UserGroups returns the groups of a user.
-func (s *Store) UserGroups(ctx context.Context, userID int64) ([]Group, error) {
+func (s *Store) UserGroups(ctx context.Context, tenantID, userID int64) ([]Group, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT g.id, g.name, g.source, g.description
 		FROM groups g JOIN group_members gm ON gm.group_id = g.id
-		WHERE gm.user_id = $1 ORDER BY g.source, lower(g.name)`, userID)
+		WHERE gm.tenant_id = $1 AND gm.user_id = $2
+		ORDER BY g.source, lower(g.name)`, tenantID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -164,38 +178,37 @@ func (s *Store) UserGroups(ctx context.Context, userID int64) ([]Group, error) {
 	return out, rows.Err()
 }
 
-// AddLocalGroupMember adds a user to a local group.
-func (s *Store) AddLocalGroupMember(ctx context.Context, groupID, userID int64) error {
-	tag, err := s.pool.Exec(ctx, `
-		INSERT INTO group_members (group_id, user_id)
-		SELECT g.id, u.id FROM groups g, users u
-		WHERE g.id = $1 AND g.source = 'local' AND u.id = $2
-		ON CONFLICT DO NOTHING`, groupID, userID)
+// AddLocalGroupMember adds a user to a local group. The group and the user
+// must be in the tenant.
+func (s *Store) AddLocalGroupMember(ctx context.Context, tenantID, groupID, userID int64) error {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		WITH ins AS (
+			INSERT INTO group_members (tenant_id, group_id, user_id)
+			SELECT $1, g.id, u.id FROM groups g, users u
+			WHERE g.tenant_id = $1 AND g.id = $2 AND g.source = 'local'
+			  AND u.tenant_id = $1 AND u.id = $3
+			ON CONFLICT DO NOTHING RETURNING 1)
+		SELECT EXISTS (SELECT 1 FROM ins)
+		    OR EXISTS (SELECT 1 FROM group_members gm JOIN groups g ON g.id = gm.group_id
+		               WHERE gm.tenant_id = $1 AND gm.group_id = $2 AND gm.user_id = $3
+		                 AND g.source = 'local')`,
+		tenantID, groupID, userID).Scan(&exists)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
-		// Either the user is a member already, or the group or the user
-		// does not exist.
-		var ok bool
-		err := s.pool.QueryRow(ctx, `SELECT EXISTS (
-			SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2)`, groupID, userID).Scan(&ok)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return ErrNotFound
-		}
+	if !exists {
+		return ErrNotFound
 	}
 	return nil
 }
 
 // RemoveLocalGroupMember removes a user from a local group.
-func (s *Store) RemoveLocalGroupMember(ctx context.Context, groupID, userID int64) error {
+func (s *Store) RemoveLocalGroupMember(ctx context.Context, tenantID, groupID, userID int64) error {
 	tag, err := s.pool.Exec(ctx, `
 		DELETE FROM group_members gm USING groups g
 		WHERE gm.group_id = g.id AND g.source = 'local'
-		  AND gm.group_id = $1 AND gm.user_id = $2`, groupID, userID)
+		  AND gm.tenant_id = $1 AND gm.group_id = $2 AND gm.user_id = $3`, tenantID, groupID, userID)
 	if err != nil {
 		return err
 	}
@@ -205,12 +218,13 @@ func (s *Store) RemoveLocalGroupMember(ctx context.Context, groupID, userID int6
 	return nil
 }
 
-// Roles returns all roles with their permissions.
-func (s *Store) Roles(ctx context.Context) ([]Role, error) {
+// Roles returns the built-in roles and the custom roles of a tenant.
+func (s *Store) Roles(ctx context.Context, tenantID int64) ([]Role, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT r.id, r.name, r.description, r.builtin,
 		       ARRAY(SELECT permission FROM role_permissions rp WHERE rp.role_id = r.id ORDER BY permission)
-		FROM roles r ORDER BY r.builtin DESC, r.id`)
+		FROM roles r WHERE r.tenant_id IS NULL OR r.tenant_id = $1
+		ORDER BY r.builtin DESC, r.id`, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -230,46 +244,56 @@ func (s *Store) Roles(ctx context.Context) ([]Role, error) {
 	return out, rows.Err()
 }
 
-// RoleExists reports whether a role with the given name exists.
-func (s *Store) RoleExists(ctx context.Context, name string) (bool, error) {
-	var ok bool
-	err := s.pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM roles WHERE name = $1)", name).Scan(&ok)
-	return ok, err
+// RoleExists reports whether the tenant can use a role with the given name.
+func (s *Store) RoleExists(ctx context.Context, tenantID int64, name string) (bool, error) {
+	err := checkRole(ctx, s.pool, tenantID, name)
+	if err == ErrInvalid {
+		return false, nil
+	}
+	return err == nil, err
 }
 
-// CreateRole makes a custom role.
-func (s *Store) CreateRole(ctx context.Context, name, description string, perms []rbac.Permission) error {
-	for _, p := range perms {
+// CreateRole makes a custom role in a tenant. It returns ErrConflict if
+// the tenant or a built-in role has the name already.
+func (s *Store) CreateRole(ctx context.Context, tenantID int64, name, description string, perms []rbac.Permission) error {
+	names := make([]string, len(perms))
+	for i, p := range perms {
 		if !p.Valid() {
 			return fmt.Errorf("unknown permission %q", p)
 		}
+		names[i] = string(p)
 	}
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		var id int64
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO roles (name, description) VALUES ($1, $2) RETURNING id`,
-			name, description).Scan(&id); err != nil {
+		var builtin bool
+		if err := tx.QueryRow(ctx,
+			"SELECT EXISTS (SELECT 1 FROM roles WHERE builtin AND name = $1)", name).Scan(&builtin); err != nil {
 			return err
 		}
-		names := make([]string, len(perms))
-		for i, p := range perms {
-			names[i] = string(p)
+		if builtin {
+			return ErrConflict
+		}
+		var id int64
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO roles (tenant_id, name, description) VALUES ($1, $2, $3) RETURNING id`,
+			tenantID, name, description).Scan(&id); err != nil {
+			return err
 		}
 		_, err := tx.Exec(ctx, `
 			INSERT INTO role_permissions (role_id, permission)
 			SELECT DISTINCT $1::bigint, unnest($2::text[])`, id, names)
 		return err
 	})
-	if db.IsUniqueViolation(err) {
+	if sqlState(err) == codeUniqueViolation {
 		return ErrConflict
 	}
 	return err
 }
 
-// DeleteRole removes a custom role and its bindings. Built-in roles are
-// permanent.
-func (s *Store) DeleteRole(ctx context.Context, id int64) error {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM roles WHERE id = $1 AND NOT builtin", id)
+// DeleteRole removes a custom role of a tenant and its bindings. Built-in
+// roles are permanent.
+func (s *Store) DeleteRole(ctx context.Context, tenantID, id int64) error {
+	tag, err := s.pool.Exec(ctx,
+		"DELETE FROM roles WHERE tenant_id = $1 AND id = $2 AND NOT builtin", tenantID, id)
 	if err != nil {
 		return err
 	}
@@ -279,8 +303,8 @@ func (s *Store) DeleteRole(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Bindings returns all role bindings.
-func (s *Store) Bindings(ctx context.Context) ([]Binding, error) {
+// Bindings returns the role bindings of a tenant.
+func (s *Store) Bindings(ctx context.Context, tenantID int64) ([]Binding, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT b.id, r.name,
 		       COALESCE(u.id, 0), COALESCE(u.username, ''),
@@ -289,7 +313,8 @@ func (s *Store) Bindings(ctx context.Context) ([]Binding, error) {
 		JOIN roles r ON r.id = b.role_id
 		LEFT JOIN users u ON u.id = b.user_id
 		LEFT JOIN groups g ON g.id = b.group_id
-		ORDER BY r.name, g.name NULLS LAST, u.username`)
+		WHERE b.tenant_id = $1
+		ORDER BY r.name, g.name NULLS LAST, u.username`, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -306,44 +331,41 @@ func (s *Store) Bindings(ctx context.Context) ([]Binding, error) {
 	return out, rows.Err()
 }
 
-// BindRoleToUser gives a role to a user.
-func (s *Store) BindRoleToUser(ctx context.Context, roleName string, userID int64) error {
-	return s.bind(ctx, roleName, &userID, nil)
+// BindRoleToUser gives a role to a user of the tenant.
+func (s *Store) BindRoleToUser(ctx context.Context, tenantID int64, roleName string, userID int64) error {
+	return bind(ctx, s.pool, tenantID, roleName, &userID, nil)
 }
 
-// BindRoleToGroup gives a role to a group.
-func (s *Store) BindRoleToGroup(ctx context.Context, roleName string, groupID int64) error {
-	return s.bind(ctx, roleName, nil, &groupID)
+// BindRoleToGroup gives a role to a group of the tenant.
+func (s *Store) BindRoleToGroup(ctx context.Context, tenantID int64, roleName string, groupID int64) error {
+	return bind(ctx, s.pool, tenantID, roleName, nil, &groupID)
 }
 
-func (s *Store) bind(ctx context.Context, roleName string, userID, groupID *int64) error {
-	tag, err := s.pool.Exec(ctx, `
-		INSERT INTO role_bindings (role_id, user_id, group_id)
-		SELECT id, $2, $3 FROM roles WHERE name = $1
-		ON CONFLICT DO NOTHING`, roleName, userID, groupID)
-	var pgErr interface{ SQLState() string }
-	if errors.As(err, &pgErr) && pgErr.SQLState() == "23503" {
-		// The user or the group does not exist.
-		return ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		exists, err := s.RoleExists(ctx, roleName)
-		if err != nil {
-			return err
-		}
-		if !exists {
+// bind makes a role binding. The role must be a built-in role or a custom
+// role of the tenant. The foreign keys make sure that the user or the
+// group is in the tenant.
+func bind(ctx context.Context, q querier, tenantID int64, roleName string, userID, groupID *int64) error {
+	if err := checkRole(ctx, q, tenantID, roleName); err != nil {
+		if err == ErrInvalid {
 			return ErrNotFound
 		}
+		return err
 	}
-	return nil
+	_, err := q.Exec(ctx, `
+		INSERT INTO role_bindings (tenant_id, role_id, user_id, group_id)
+		SELECT $1, id, $3, $4 FROM roles
+		WHERE name = $2 AND (tenant_id IS NULL OR tenant_id = $1)
+		ON CONFLICT DO NOTHING`, tenantID, roleName, userID, groupID)
+	if sqlState(err) == codeForeignKeyViolation {
+		// The user or the group does not exist in the tenant.
+		return ErrNotFound
+	}
+	return err
 }
 
-// DeleteBinding removes a role binding.
-func (s *Store) DeleteBinding(ctx context.Context, id int64) error {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM role_bindings WHERE id = $1", id)
+// DeleteBinding removes a role binding of a tenant.
+func (s *Store) DeleteBinding(ctx context.Context, tenantID, id int64) error {
+	tag, err := s.pool.Exec(ctx, "DELETE FROM role_bindings WHERE tenant_id = $1 AND id = $2", tenantID, id)
 	if err != nil {
 		return err
 	}
@@ -353,12 +375,12 @@ func (s *Store) DeleteBinding(ctx context.Context, id int64) error {
 	return nil
 }
 
-// UserPermissions returns the effective permissions of a user.
-func (s *Store) UserPermissions(ctx context.Context, userID int64, defaultRole string) (rbac.Set, error) {
+// UserPermissions returns the effective permissions of a user of a tenant.
+func (s *Store) UserPermissions(ctx context.Context, tenantID, userID int64) (rbac.Set, error) {
 	var perms []string
 	err := s.pool.QueryRow(ctx,
-		`SELECT ARRAY(`+permissionsQuery("$2")+`) FROM users u WHERE u.id = $1`,
-		userID, defaultRole).Scan(&perms)
+		`SELECT ARRAY(`+permissionsQuery+`) FROM users u WHERE u.tenant_id = $1 AND u.id = $2`,
+		tenantID, userID).Scan(&perms)
 	if err != nil {
 		return nil, notFound(err)
 	}

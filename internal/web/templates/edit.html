@@ -1,33 +1,42 @@
 {{define "content"}}
 {{with .Data}}
-<h1>{{if .IsNew}}New page{{else}}Edit page{{end}}</h1>
+<h1>{{if .IsNew}}New {{.Kind}}{{else if .IsFolder}}Rename folder{{else}}Edit document{{end}}</h1>
+{{with .ParentTitle}}<p>In: <strong>{{.}}</strong></p>{{end}}
 {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
-<form action="/wiki/{{.Slug}}/edit" method="post" class="stack">
+<form action="{{.Action}}" method="post" class="stack">
   {{template "csrf" $.CSRF}}
   <input type="hidden" name="version" value="{{.Version}}">
-  <label>Title <input name="title" value="{{.Title}}" required maxlength="200"></label>
+  {{if .IsNew}}
+  <input type="hidden" name="kind" value="{{.Kind}}">
+  <input type="hidden" name="parent" value="{{.ParentID}}">
+  {{end}}
+  <label>Title <input name="title" value="{{.Title}}" required maxlength="200" autofocus></label>
+  {{if not .IsFolder}}
   <label>Text (Markdown)
     <textarea name="body" rows="24" spellcheck="true">{{.Body}}</textarea>
   </label>
+  {{end}}
   <label>Comment about the change <input name="comment" value="{{.Comment}}" maxlength="500"></label>
   <div class="buttons">
     <button type="submit" name="action" value="save">Save</button>
-    <button type="submit" name="action" value="preview" class="secondary">Preview</button>
-    <a href="/wiki/{{if .IsNew}}{{else}}{{.Slug}}{{end}}">Cancel</a>
+    {{if not .IsFolder}}<button type="submit" name="action" value="preview" class="secondary">Preview</button>{{end}}
+    <a href="{{$.SpacePath}}/">Cancel</a>
   </div>
 </form>
+{{if not .IsFolder}}
 <details class="help">
   <summary>Markdown help</summary>
   <pre># Heading
 **bold**, *italic*, `code`, ~~strike~~
 [link](https://example.com)
-[[Other page]] or [[Other page#Section]]
+[[Other document]] or [[Other document#Section]]
 - list item
 - [ ] task
 | column | column |
 |--------|--------|
 | cell   | cell   |</pre>
 </details>
+{{end}}
 {{with .Preview}}
 <section class="preview" aria-label="Preview">
   <h2>Preview</h2>

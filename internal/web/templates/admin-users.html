@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1>Administration</h1>
-{{template "adminnav"}}
+{{template "adminnav" .}}
 <h2>Users</h2>
 <p>Users appear here after their first sign-in.</p>
 <table>
@@ -8,7 +8,7 @@
   <tbody>
   {{range .Data}}
   <tr>
-    <td><a href="/admin/users/{{.ID}}">{{.Username}}</a></td>
+    <td><a href="{{$.TenantPath}}/admin/users/{{.ID}}">{{.Username}}</a></td>
     <td>{{.DisplayName}}</td>
     <td>{{.Email}}</td>
     <td>{{with .LastLoginAt}}{{date .}}{{end}}</td>

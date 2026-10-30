@@ -8,9 +8,12 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// User is a person who signed in at least one time.
+// User is a person who signed in at least one time. A user belongs to one
+// tenant. A user with no tenant (TenantID == nil) is a system
+// administrator.
 type User struct {
 	ID          int64
+	TenantID    *int64
 	Issuer      string
 	Subject     string
 	Username    string
@@ -29,11 +32,11 @@ func (u *User) Name() string {
 	return u.Username
 }
 
-const userColumns = "id, issuer, subject, username, email, display_name, disabled, created_at, last_login_at"
+const userColumns = "id, tenant_id, issuer, subject, username, email, display_name, disabled, created_at, last_login_at"
 
 func scanUser(row pgx.Row) (*User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Issuer, &u.Subject, &u.Username, &u.Email,
+	err := row.Scan(&u.ID, &u.TenantID, &u.Issuer, &u.Subject, &u.Username, &u.Email,
 		&u.DisplayName, &u.Disabled, &u.CreatedAt, &u.LastLoginAt)
 	if err != nil {
 		return nil, notFound(err)
@@ -54,25 +57,29 @@ type Identity struct {
 	IDToken string
 }
 
-// SyncLogin records a login. It makes or updates the user and replaces
-// the OIDC group memberships of the user with id.Groups. Memberships in
-// local groups do not change.
-func (s *Store) SyncLogin(ctx context.Context, id Identity) (*User, error) {
+// SyncLogin records a login to a tenant, or a login of a system
+// administrator if tenantID is nil. It makes or updates the user. For a
+// tenant, it also replaces the OIDC group memberships of the user with
+// id.Groups. Memberships in local groups do not change.
+func (s *Store) SyncLogin(ctx context.Context, tenantID *int64, id Identity) (*User, error) {
 	var u *User
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var err error
 		u, err = scanUser(tx.QueryRow(ctx, `
-			INSERT INTO users (issuer, subject, username, email, display_name, last_login_at)
-			VALUES ($1, $2, $3, $4, $5, $6)
-			ON CONFLICT (issuer, subject) DO UPDATE
+			INSERT INTO users (tenant_id, issuer, subject, username, email, display_name, last_login_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			ON CONFLICT ON CONSTRAINT users_identity_key DO UPDATE
 			SET username = EXCLUDED.username,
 			    email = EXCLUDED.email,
 			    display_name = EXCLUDED.display_name,
 			    last_login_at = EXCLUDED.last_login_at
 			RETURNING `+userColumns,
-			id.Issuer, id.Subject, id.Username, id.Email, id.DisplayName, s.now()))
+			tenantID, id.Issuer, id.Subject, id.Username, id.Email, id.DisplayName, s.now()))
 		if err != nil {
 			return fmt.Errorf("upsert user: %w", err)
+		}
+		if tenantID == nil {
+			return nil
 		}
 
 		groups := id.Groups
@@ -80,22 +87,23 @@ func (s *Store) SyncLogin(ctx context.Context, id Identity) (*User, error) {
 			groups = []string{}
 		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO groups (name, source)
-			SELECT DISTINCT unnest($1::text[]), 'oidc'
-			ON CONFLICT (source, name) DO NOTHING`, groups); err != nil {
+			INSERT INTO groups (tenant_id, name, source)
+			SELECT DISTINCT $1::bigint, unnest($2::text[]), 'oidc'
+			ON CONFLICT (tenant_id, source, name) DO NOTHING`, *tenantID, groups); err != nil {
 			return fmt.Errorf("insert groups: %w", err)
 		}
 		if _, err := tx.Exec(ctx, `
 			DELETE FROM group_members gm
 			USING groups g
-			WHERE gm.group_id = g.id AND gm.user_id = $1
-			  AND g.source = 'oidc' AND NOT (g.name = ANY($2::text[]))`, u.ID, groups); err != nil {
+			WHERE gm.group_id = g.id AND gm.tenant_id = $1 AND gm.user_id = $2
+			  AND g.source = 'oidc' AND NOT (g.name = ANY($3::text[]))`, *tenantID, u.ID, groups); err != nil {
 			return fmt.Errorf("remove old memberships: %w", err)
 		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO group_members (group_id, user_id)
-			SELECT id, $1 FROM groups WHERE source = 'oidc' AND name = ANY($2::text[])
-			ON CONFLICT DO NOTHING`, u.ID, groups); err != nil {
+			INSERT INTO group_members (tenant_id, group_id, user_id)
+			SELECT $1, id, $2 FROM groups
+			WHERE tenant_id = $1 AND source = 'oidc' AND name = ANY($3::text[])
+			ON CONFLICT DO NOTHING`, *tenantID, u.ID, groups); err != nil {
 			return fmt.Errorf("add memberships: %w", err)
 		}
 		return nil
@@ -103,14 +111,16 @@ func (s *Store) SyncLogin(ctx context.Context, id Identity) (*User, error) {
 	return u, err
 }
 
-// User returns the user with the given ID.
-func (s *Store) User(ctx context.Context, id int64) (*User, error) {
-	return scanUser(s.pool.QueryRow(ctx, "SELECT "+userColumns+" FROM users WHERE id = $1", id))
+// User returns a user of a tenant.
+func (s *Store) User(ctx context.Context, tenantID, id int64) (*User, error) {
+	return scanUser(s.pool.QueryRow(ctx,
+		"SELECT "+userColumns+" FROM users WHERE tenant_id = $1 AND id = $2", tenantID, id))
 }
 
-// Users returns all users, sorted by user name.
-func (s *Store) Users(ctx context.Context) ([]*User, error) {
-	rows, err := s.pool.Query(ctx, "SELECT "+userColumns+" FROM users ORDER BY username, id")
+// Users returns the users of a tenant, sorted by user name.
+func (s *Store) Users(ctx context.Context, tenantID int64) ([]*User, error) {
+	rows, err := s.pool.Query(ctx,
+		"SELECT "+userColumns+" FROM users WHERE tenant_id = $1 ORDER BY username, id", tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -126,11 +136,12 @@ func (s *Store) Users(ctx context.Context) ([]*User, error) {
 	return out, rows.Err()
 }
 
-// SetUserDisabled enables or disables a user. When the function disables
-// a user, it also removes all sessions of that user.
-func (s *Store) SetUserDisabled(ctx context.Context, id int64, disabled bool) error {
+// SetUserDisabled enables or disables a user of a tenant. When the
+// function disables a user, it also removes all sessions of that user.
+func (s *Store) SetUserDisabled(ctx context.Context, tenantID, id int64, disabled bool) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, "UPDATE users SET disabled = $2 WHERE id = $1", id, disabled)
+		tag, err := tx.Exec(ctx, "UPDATE users SET disabled = $3 WHERE tenant_id = $1 AND id = $2",
+			tenantID, id, disabled)
 		if err != nil {
 			return err
 		}

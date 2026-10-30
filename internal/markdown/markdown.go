@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"regexp"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/microcosm-cc/bluemonday"
@@ -18,39 +19,47 @@ import (
 
 // Renderer converts Markdown to HTML. It is safe for concurrent use.
 type Renderer struct {
-	md     goldmark.Markdown
 	policy *bluemonday.Policy
+	// engines contains one goldmark instance for each wiki link prefix.
+	engines sync.Map
 }
 
-// New makes a Renderer. Wiki links ([[Page title]]) point to
-// pathPrefix + Slugify(title).
-func New(pathPrefix string) *Renderer {
-	md := goldmark.New(
-		goldmark.WithExtensions(
-			extension.GFM,
-			extension.Footnote,
-			&wikilink.Extender{Resolver: resolver{prefix: pathPrefix}},
-		),
-		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
-		// The renderer does not have html.WithUnsafe. Thus goldmark
-		// removes raw HTML and dangerous link destinations.
-	)
-
-	// The sanitizer is a second layer of protection.
+// New makes a Renderer.
+func New() *Renderer {
+	// The sanitizer is a second layer of protection after goldmark.
 	p := bluemonday.UGCPolicy()
-	p.AllowAttrs("id").Matching(regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)).OnElements("h1", "h2", "h3", "h4", "h5", "h6", "li")
+	p.AllowAttrs("id").Matching(regexp.MustCompile(`^[a-zA-Z0-9_:-]+$`)).OnElements("h1", "h2", "h3", "h4", "h5", "h6", "li")
 	p.AllowAttrs("class").Matching(regexp.MustCompile(`^language-[a-zA-Z0-9+#_-]+$`)).OnElements("code")
 	p.AllowAttrs("type").Matching(regexp.MustCompile(`^checkbox$`)).OnElements("input")
 	p.AllowAttrs("checked", "disabled").OnElements("input")
 	p.AllowURLSchemes("http", "https", "mailto")
 	p.RequireNoReferrerOnLinks(true)
-	return &Renderer{md: md, policy: p}
+	return &Renderer{policy: p}
 }
 
-// Render converts src to sanitized HTML.
-func (r *Renderer) Render(src string) (template.HTML, error) {
+func (r *Renderer) engine(wikiPrefix string) goldmark.Markdown {
+	if md, ok := r.engines.Load(wikiPrefix); ok {
+		return md.(goldmark.Markdown)
+	}
+	md := goldmark.New(
+		goldmark.WithExtensions(
+			extension.GFM,
+			extension.Footnote,
+			&wikilink.Extender{Resolver: resolver{prefix: wikiPrefix}},
+		),
+		goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+		// The renderer does not have html.WithUnsafe. Thus goldmark
+		// removes raw HTML and dangerous link destinations.
+	)
+	actual, _ := r.engines.LoadOrStore(wikiPrefix, md)
+	return actual.(goldmark.Markdown)
+}
+
+// Render converts src to sanitized HTML. Wiki links ([[Title]]) point to
+// wikiPrefix + Slugify(title).
+func (r *Renderer) Render(src, wikiPrefix string) (template.HTML, error) {
 	var buf bytes.Buffer
-	if err := r.md.Convert([]byte(src), &buf); err != nil {
+	if err := r.engine(wikiPrefix).Convert([]byte(src), &buf); err != nil {
 		return "", err
 	}
 	// The policy removes all unsafe content. Thus the conversion to

@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/clpe/skriva/internal/db"
+	"github.com/clpe/skriva/internal/secret"
 )
 
 // New makes a new, migrated database and returns a pool for it. The test
@@ -66,4 +67,16 @@ func New(t testing.TB) *pgxpool.Pool {
 		t.Fatalf("migrate: %v", err)
 	}
 	return pool
+}
+
+// Box returns a secret.Box with a random key for tests.
+func Box(t testing.TB) *secret.Box {
+	t.Helper()
+	key := make([]byte, secret.KeySize)
+	_, _ = rand.Read(key)
+	b, err := secret.New(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

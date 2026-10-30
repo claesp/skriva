@@ -1,0 +1,19 @@
+{{define "content"}}
+{{with .Data}}
+<h1>Move "{{.Node.Title}}"</h1>
+<form action="{{$.SpacePath}}/move/{{.Node.PublicID}}" method="post" class="stack narrow">
+  {{template "csrf" $.CSRF}}
+  <label>New place
+    <select name="parent">
+      <option value=""{{if .AtRoot}} selected{{end}}>(Top of the space)</option>
+      {{range .Targets}}<option value="{{.PublicID}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+  </label>
+  {{if .Node.IsFolder}}<p><small>A folder can be only in a folder.</small></p>{{end}}
+  <div class="buttons">
+    <button type="submit">Move</button>
+    <a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Cancel</a>
+  </div>
+</form>
+{{end}}
+{{end}}

@@ -42,8 +42,8 @@ func TestValidSlug(t *testing.T) {
 }
 
 func TestRenderBasic(t *testing.T) {
-	r := New("/wiki/")
-	out, err := r.Render("# Title\n\nSome *text* and [[Other Page]] and [[Page#Part Two]].\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n")
+	r := New()
+	out, err := r.Render("# Title\n\nSome *text* and [[Other Page]] and [[Page#Part Two]].\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n", "/wiki/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestRenderBasic(t *testing.T) {
 }
 
 func TestRenderRemovesUnsafeContent(t *testing.T) {
-	r := New("/wiki/")
+	r := New()
 	inputs := []string{
 		"<script>alert(1)</script>",
 		"<img src=x onerror=alert(1)>",
@@ -76,7 +76,7 @@ func TestRenderRemovesUnsafeContent(t *testing.T) {
 		"[[\"><script>alert(1)</script>]]",
 	}
 	for _, in := range inputs {
-		out, err := r.Render(in)
+		out, err := r.Render(in, "/wiki/")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -90,7 +90,7 @@ func TestRenderRemovesUnsafeContent(t *testing.T) {
 }
 
 func TestRenderLinksHaveNoReferrer(t *testing.T) {
-	out, err := New("/wiki/").Render("[x](https://example.com)")
+	out, err := New().Render("[x](https://example.com)", "/wiki/")
 	if err != nil {
 		t.Fatal(err)
 	}

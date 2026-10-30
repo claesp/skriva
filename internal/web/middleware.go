@@ -13,25 +13,28 @@ import (
 	"github.com/clpe/skriva/internal/store"
 )
 
-// Short names for the permissions in the route table.
-const (
-	permRead   = rbac.PageRead
-	permCreate = rbac.PageCreate
-	permDelete = rbac.PageDelete
-	permAdmin  = rbac.AdminManage
-)
-
 // maxFormBytes is the largest permitted request body.
 const maxFormBytes = 2 << 20
 
+// reqInfo contains the tenant, the space and the session of a request.
+// The middleware fills it in order. A handler reads it.
+type reqInfo struct {
+	Tenant  *store.Tenant
+	Space   *store.Space
+	Session *store.Session
+}
+
 type ctxKey int
 
-const sessionKey ctxKey = 0
+const reqInfoKey ctxKey = 0
 
-// sessionFrom returns the session of the request, or nil.
-func sessionFrom(ctx context.Context) *store.Session {
-	s, _ := ctx.Value(sessionKey).(*store.Session)
-	return s
+// reqInfoFrom returns the request data. It is never nil inside the
+// handler chain.
+func reqInfoFrom(ctx context.Context) *reqInfo {
+	if ri, ok := ctx.Value(reqInfoKey).(*reqInfo); ok {
+		return ri
+	}
+	return &reqInfo{}
 }
 
 // statusWriter records the status code for the access log.
@@ -59,9 +62,13 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
+// withLogging writes one log line for each request. It also puts the
+// empty request data in the context.
 func (s *Server) withLogging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		ri := &reqInfo{}
+		r = r.WithContext(context.WithValue(r.Context(), reqInfoKey, ri))
 		sw := &statusWriter{ResponseWriter: w}
 		next.ServeHTTP(sw, r)
 		attrs := []any{
@@ -70,8 +77,11 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 			"status", sw.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 		}
-		if sess := sessionFrom(r.Context()); sess != nil {
-			attrs = append(attrs, "user_id", sess.User.ID)
+		if ri.Tenant != nil {
+			attrs = append(attrs, "tenant", ri.Tenant.Code)
+		}
+		if ri.Session != nil {
+			attrs = append(attrs, "user_id", ri.Session.User.ID)
 		}
 		s.log.Info("request", attrs...)
 	})
@@ -126,67 +136,116 @@ func (s *Server) withLimits(next http.Handler) http.Handler {
 	})
 }
 
-// withSession adds the session to the request context if the request has
-// a valid session cookie.
-func (s *Server) withSession(next http.Handler) http.Handler {
+// withSystemSession adds the system administrator session to the request
+// data if the request has a valid system session cookie.
+func (s *Server) withSystemSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, err := r.Cookie(s.sessionCookie)
-		if err != nil || c.Value == "" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		sess, err := s.store.Session(r.Context(), c.Value, s.opts.DefaultRole)
-		switch {
-		case errors.Is(err, store.ErrNotFound):
-			s.clearCookie(w, s.sessionCookie)
-		case err != nil:
-			s.serverError(w, r, err)
-			return
-		default:
-			r = r.WithContext(context.WithValue(r.Context(), sessionKey, sess))
+		c, err := r.Cookie(s.systemCookie())
+		if err == nil && c.Value != "" {
+			sess, err := s.store.Session(r.Context(), c.Value, nil)
+			switch {
+			case errors.Is(err, store.ErrNotFound):
+				s.clearCookie(w, s.systemCookie())
+			case err != nil:
+				s.serverError(w, r, err)
+				return
+			default:
+				reqInfoFrom(r.Context()).Session = sess
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// require makes sure that the request has a session with permission perm.
-// An empty perm only requires a session. For requests that change data,
-// it also checks the CSRF token.
+// require makes sure that the request has a tenant session with
+// permission perm. An empty perm only requires a session. For requests
+// that change data, it also checks the CSRF token.
 func (s *Server) require(perm rbac.Permission, h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sess := sessionFrom(r.Context())
-		if sess == nil {
-			if r.Method == http.MethodGet || r.Method == http.MethodHead {
-				http.Redirect(w, r, "/login?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
-				return
-			}
-			s.renderError(w, r, http.StatusUnauthorized, "You must sign in.")
+		ri := reqInfoFrom(r.Context())
+		if ri.Tenant == nil {
+			s.notFound(w, r)
 			return
 		}
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			if err := r.ParseForm(); err != nil {
-				var tooLarge *http.MaxBytesError
-				if errors.As(err, &tooLarge) {
-					s.renderError(w, r, http.StatusRequestEntityTooLarge, "The form is too large.")
-					return
-				}
-				s.badRequest(w, r, "The form is not valid.")
-				return
-			}
-			token := r.PostFormValue("csrf_token")
-			if subtle.ConstantTimeCompare([]byte(token), []byte(sess.CSRFToken)) != 1 {
-				s.log.Warn("bad CSRF token", "user_id", sess.User.ID, "path", r.URL.Path)
-				s.renderError(w, r, http.StatusForbidden, "The form is not valid. Go back, reload the page and try again.")
-				return
-			}
+		if ri.Session == nil || ri.Session.System() {
+			s.needLogin(w, r, tenantPath(ri.Tenant))
+			return
 		}
-		if perm != "" && !sess.Permissions.Has(perm) {
+		if !s.checkCSRF(w, r, ri.Session) {
+			return
+		}
+		if perm != "" && !ri.Session.Permissions.Has(perm) {
 			s.forbidden(w, r)
 			return
 		}
 		h(w, r)
 	})
 }
+
+// requireSystem makes sure that the request has a system administrator
+// session. For requests that change data, it also checks the CSRF token.
+func (s *Server) requireSystem(h http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sess := reqInfoFrom(r.Context()).Session
+		if sess == nil || !sess.System() {
+			s.needLogin(w, r, "/admin")
+			return
+		}
+		if !s.checkCSRF(w, r, sess) {
+			return
+		}
+		h(w, r)
+	})
+}
+
+func (s *Server) needLogin(w http.ResponseWriter, r *http.Request, base string) {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		http.Redirect(w, r, base+"/login?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
+		return
+	}
+	s.renderError(w, r, http.StatusUnauthorized, "You must sign in.")
+}
+
+// checkCSRF checks the CSRF token of requests that change data. It writes
+// an error and returns false if the token is not correct.
+func (s *Server) checkCSRF(w http.ResponseWriter, r *http.Request, sess *store.Session) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return true
+	}
+	if err := r.ParseForm(); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			s.renderError(w, r, http.StatusRequestEntityTooLarge, "The form is too large.")
+			return false
+		}
+		s.badRequest(w, r, "The form is not valid.")
+		return false
+	}
+	token := r.PostFormValue("csrf_token")
+	if subtle.ConstantTimeCompare([]byte(token), []byte(sess.CSRFToken)) != 1 {
+		s.log.Warn("bad CSRF token", "user_id", sess.User.ID, "path", r.URL.Path)
+		s.renderError(w, r, http.StatusForbidden, "The form is not valid. Go back, reload the page and try again.")
+		return false
+	}
+	return true
+}
+
+// cookieName adds the __Host- prefix when the cookies are secure. The
+// prefix makes the browser refuse the cookie if it does not have Secure
+// and Path=/, or if it has a Domain.
+func (s *Server) cookieName(name string) string {
+	if s.opts.SecureCookies {
+		return "__Host-" + name
+	}
+	return name
+}
+
+// tenantCookie is the name of the session cookie for a tenant. Each
+// tenant has its own cookie. Thus a browser can have sessions in more
+// than one tenant.
+func (s *Server) tenantCookie(t *store.Tenant) string { return s.cookieName("skriva_" + t.Code) }
+
+func (s *Server) systemCookie() string { return s.cookieName("skriva_system") }
 
 // setCookie sets a session cookie. Secure is false only if the base URL
 // uses http, for example in local development.
@@ -233,4 +292,22 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) badRequest(w http.ResponseWriter, r *http.Request, msg string) {
 	s.renderError(w, r, http.StatusBadRequest, msg)
+}
+
+// storeResult handles the error from a store call that changes data. It
+// returns true if the handler can continue.
+func (s *Server) storeResult(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, store.ErrNotFound):
+		s.notFound(w, r)
+	case errors.Is(err, store.ErrConflict):
+		s.renderError(w, r, http.StatusConflict, "The name is in use already.")
+	case errors.Is(err, store.ErrInvalid):
+		s.badRequest(w, r, "The request is not permitted for this item.")
+	default:
+		s.serverError(w, r, err)
+	}
+	return false
 }

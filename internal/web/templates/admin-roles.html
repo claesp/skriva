@@ -1,8 +1,8 @@
 {{define "content"}}
 <h1>Administration</h1>
-{{template "adminnav"}}
+{{template "adminnav" .}}
 <h2>Roles</h2>
-{{with .Data.DefaultRole}}<p>All signed-in users have the role "{{.}}".</p>{{end}}
+{{with .Tenant.DefaultRole}}<p>All signed-in users have the role "{{.}}".</p>{{end}}
 <table>
   <thead><tr><th>Name</th><th>Description</th><th>Permissions</th><th></th></tr></thead>
   <tbody>
@@ -12,7 +12,7 @@
     <td>{{.Description}}</td>
     <td>{{range .Permissions}}<code>{{.}}</code> {{end}}</td>
     <td>{{if not .Builtin}}
-      <form method="post" action="/admin/roles/{{.ID}}/delete">
+      <form method="post" action="{{$.TenantPath}}/admin/roles/{{.ID}}/delete">
         {{template "csrf" $.CSRF}}<button type="submit" class="link">Delete</button>
       </form>{{end}}</td>
   </tr>
@@ -20,7 +20,7 @@
   </tbody>
 </table>
 <h3>New role</h3>
-<form method="post" action="/admin/roles" class="stack narrow">
+<form method="post" action="{{$.TenantPath}}/admin/roles" class="stack narrow">
   {{template "csrf" .CSRF}}
   <label>Name (a-z, 0-9, "-") <input name="name" required maxlength="63" pattern="[a-z][a-z0-9\-]{0,62}"></label>
   <label>Description <input name="description" maxlength="500"></label>

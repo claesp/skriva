@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1>Administration</h1>
-{{template "adminnav"}}
+{{template "adminnav" .}}
 <h2>Role bindings</h2>
 <table>
   <thead><tr><th>Role</th><th>Given to</th><th></th></tr></thead>
@@ -8,11 +8,11 @@
   {{range .Data.Bindings}}
   <tr>
     <td>{{.RoleName}}</td>
-    <td>{{if .GroupID}}Group <a href="/admin/groups/{{.GroupID}}">{{.GroupName}}</a> <span class="tag">{{.GroupSource}}</span>
-        {{else}}User <a href="/admin/users/{{.UserID}}">{{.UserName}}</a>{{end}}</td>
-    <td><form method="post" action="/admin/bindings/{{.ID}}/delete">
+    <td>{{if .GroupID}}Group <a href="{{$.TenantPath}}/admin/groups/{{.GroupID}}">{{.GroupName}}</a> <span class="tag">{{.GroupSource}}</span>
+        {{else}}User <a href="{{$.TenantPath}}/admin/users/{{.UserID}}">{{.UserName}}</a>{{end}}</td>
+    <td><form method="post" action="{{$.TenantPath}}/admin/bindings/{{.ID}}/delete">
       {{template "csrf" $.CSRF}}
-      <input type="hidden" name="return_to" value="/admin/bindings">
+      <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/bindings">
       <button type="submit" class="link">Remove</button>
     </form></td>
   </tr>
@@ -22,9 +22,9 @@
   </tbody>
 </table>
 <h3>New role binding</h3>
-<form method="post" action="/admin/bindings" class="stack narrow">
+<form method="post" action="{{$.TenantPath}}/admin/bindings" class="stack narrow">
   {{template "csrf" .CSRF}}
-  <input type="hidden" name="return_to" value="/admin/bindings">
+  <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/bindings">
   <label>Role <select name="role">{{range .Data.Roles}}<option>{{.Name}}</option>{{end}}</select></label>
   <label>Give to
     <select name="subject">

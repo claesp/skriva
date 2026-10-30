@@ -17,6 +17,7 @@ func validEnv() map[string]string {
 		"SKRIVA_OIDC_ISSUER":        "http://localhost:8180/realms/skriva",
 		"SKRIVA_OIDC_CLIENT_ID":     "skriva",
 		"SKRIVA_OIDC_CLIENT_SECRET": "secret",
+		"SKRIVA_ENCRYPTION_KEY":     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
 	}
 }
 
@@ -25,7 +26,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ListenAddr != ":8080" || c.DefaultRole != "viewer" || c.OIDCGroupsClaim != "groups" {
+	if c.ListenAddr != ":8080" || c.OIDCGroupsClaim != "groups" || len(c.EncryptionKey) != 32 {
 		t.Fatalf("unexpected defaults: %+v", c)
 	}
 	if c.SecureCookies() {
@@ -38,7 +39,7 @@ func TestLoadMissingValues(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	for _, key := range []string{"SKRIVA_DATABASE_URL", "SKRIVA_OIDC_ISSUER", "SKRIVA_OIDC_CLIENT_SECRET"} {
+	for _, key := range []string{"SKRIVA_DATABASE_URL", "SKRIVA_OIDC_ISSUER", "SKRIVA_OIDC_CLIENT_SECRET", "SKRIVA_ENCRYPTION_KEY"} {
 		if !strings.Contains(err.Error(), key) {
 			t.Errorf("error does not name %s: %v", key, err)
 		}
@@ -70,27 +71,30 @@ func TestLoadBadBaseURL(t *testing.T) {
 	}
 }
 
-func TestDefaultRoleNone(t *testing.T) {
+func TestBadEncryptionKey(t *testing.T) {
 	m := validEnv()
-	m["SKRIVA_DEFAULT_ROLE"] = "none"
-	c, err := load(env(m))
-	if err != nil {
-		t.Fatal(err)
+	m["SKRIVA_ENCRYPTION_KEY"] = "c2hvcnQ="
+	if _, err := load(env(m)); err == nil {
+		t.Fatal("expected an error for a short key")
 	}
-	if c.DefaultRole != "" {
-		t.Fatalf("got default role %q", c.DefaultRole)
+}
+
+func TestBaseURLWithPath(t *testing.T) {
+	m := validEnv()
+	m["SKRIVA_BASE_URL"] = "https://example.com/wiki"
+	if _, err := load(env(m)); err == nil {
+		t.Fatal("expected an error for a base URL with a path")
 	}
 }
 
 func TestGroupRoles(t *testing.T) {
 	m := validEnv()
-	m["SKRIVA_ADMIN_GROUP"] = "admins"
 	m["SKRIVA_GROUP_ROLES"] = "editors=editor, readers = viewer"
 	c, err := load(env(m))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []GroupRole{{"admins", "admin"}, {"editors", "editor"}, {"readers", "viewer"}}
+	want := []GroupRole{{"editors", "editor"}, {"readers", "viewer"}}
 	if len(c.GroupRoles) != len(want) {
 		t.Fatalf("got %v", c.GroupRoles)
 	}

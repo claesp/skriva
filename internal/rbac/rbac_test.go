@@ -3,8 +3,8 @@ package rbac
 import "testing"
 
 func TestNewSetIgnoresUnknown(t *testing.T) {
-	s := NewSet("page.read", "page.unknown", "admin.manage")
-	if !s.Has(PageRead) || !s.Has(AdminManage) {
+	s := NewSet("doc.read", "doc.unknown", "tenant.manage")
+	if !s.Has(DocRead) || !s.Has(TenantManage) {
 		t.Fatalf("set does not contain known permissions: %v", s.List())
 	}
 	if len(s) != 2 {

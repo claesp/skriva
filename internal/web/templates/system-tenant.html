@@ -1,0 +1,81 @@
+{{define "content"}}
+{{with .Data}}
+<h1>{{if .IsNew}}New tenant{{else}}Tenant <code>{{.Code}}</code>{{if .IsDefault}} <span class="tag">default</span>{{end}}{{end}}</h1>
+{{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+<form method="post" action="/admin/tenants{{if not .IsNew}}/{{.Code}}{{end}}" class="stack narrow">
+  {{template "csrf" $.CSRF}}
+  {{if .IsNew}}
+  <label>Code (exactly 4 characters: a-z, 0-9). The code is part of the URLs. You cannot change it later.
+    <input name="code" value="{{.Code}}" required minlength="4" maxlength="4" pattern="[a-z0-9]{4}" autofocus></label>
+  {{end}}
+  <label>Name <input name="name" value="{{.Name}}" required maxlength="200"></label>
+  <label class="check"><input type="checkbox" name="disabled"{{if .Disabled}} checked{{end}}> Disabled. Nobody can use a disabled tenant.</label>
+
+  <fieldset>
+    <legend>Identity provider (OpenID Connect)</legend>
+    {{with .RedirectURI}}
+    <p><small>Redirect URI: <code>{{.}}</code><br>Post-logout redirect URI: <code>{{$.Data.LogoutURI}}</code></small></p>
+    {{else}}
+    <p><small>The redirect URI is <code>&lt;base URL&gt;/&lt;code&gt;/auth/callback</code>.</small></p>
+    {{end}}
+    <label>Issuer URL <input name="oidc_issuer" value="{{.OIDCIssuer}}" type="url" maxlength="500" placeholder="https://sso.example.com/realms/example"></label>
+    <label>Client ID <input name="oidc_client_id" value="{{.OIDCClientID}}" maxlength="200"></label>
+    <label>Client secret{{if .HasSecret}} (a secret is set; leave empty to keep it){{end}}
+      <input name="oidc_client_secret" type="password" autocomplete="new-password" maxlength="500"></label>
+    {{if .HasSecret}}<label class="check"><input type="checkbox" name="remove_secret"> Remove the client secret</label>{{end}}
+    <label>Scopes <input name="oidc_scopes" value="{{.Scopes}}" maxlength="500"></label>
+    <label>Groups claim <input name="oidc_groups_claim" value="{{.OIDCGroupsClaim}}" maxlength="100"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Access</legend>
+    <label>Admin group. Members of this OIDC group always have the admin role.
+      <input name="admin_group" value="{{.AdminGroup}}" maxlength="200"></label>
+    <label>Default role of all signed-in users
+      <select name="default_role">
+        <option value=""{{if not .DefaultRole}} selected{{end}}>(None)</option>
+        {{range .Roles}}<option{{if eq .Name $.Data.DefaultRole}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Limits</legend>
+    <label>Session life (for example 12h) <input name="session_ttl" value="{{.SessionTTL}}" required maxlength="20"></label>
+    <label>Maximum document size in KiB (1 to 1024) <input name="max_doc_kib" value="{{.MaxDocKiB}}" type="number" min="1" max="1024" required></label>
+  </fieldset>
+
+  <div class="buttons">
+    <button type="submit">{{if .IsNew}}Create tenant{{else}}Save{{end}}</button>
+    <a href="/admin/">Cancel</a>
+  </div>
+</form>
+
+{{if not .IsNew}}
+<h2>Spaces</h2>
+<table>
+  <thead><tr><th>Name</th><th>Code</th><th>Items</th></tr></thead>
+  <tbody>
+  {{range .Spaces}}<tr><td><a href="/{{$.Data.Code}}/{{.Slug}}/">{{.Name}}</a></td><td><code>{{.Slug}}</code></td><td>{{.Nodes}}</td></tr>
+  {{else}}<tr><td colspan="3">There are no spaces.</td></tr>{{end}}
+  </tbody>
+</table>
+<form method="post" action="/admin/tenants/{{.Code}}/spaces" class="inline">
+  {{template "csrf" $.CSRF}}
+  <label>Name <input name="name" required maxlength="200"></label>
+  <label>Code (8 characters) <input name="slug" required minlength="8" maxlength="8" pattern="[a-z0-9]{8}"></label>
+  <button type="submit">Create space</button>
+</form>
+
+{{if not .IsDefault}}
+<h2>Delete tenant</h2>
+<p>This deletes all users, groups, roles, spaces and documents of the tenant. You cannot undo this.</p>
+<form method="post" action="/admin/tenants/{{.Code}}/delete" class="inline">
+  {{template "csrf" $.CSRF}}
+  <label>Type <code>{{.Code}}</code> to confirm <input name="confirm" required autocomplete="off"></label>
+  <button type="submit" class="danger">Delete tenant</button>
+</form>
+{{end}}
+{{end}}
+{{end}}
+{{end}}

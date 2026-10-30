@@ -1,18 +1,21 @@
 {{define "content"}}
-<h1>Search</h1>
-<form action="/search" method="get" class="stack">
+<h1>Search{{if .Space}} in {{.Space.Name}}{{end}}</h1>
+<form action="" method="get" class="inline">
   <label>Text <input type="search" name="q" value="{{.Data.Query}}" maxlength="200" autofocus></label>
   <button type="submit">Search</button>
+  {{if and .Space .Data.Query}}<a href="{{.TenantPath}}/search?q={{.Data.Query}}">Search in all spaces</a>{{end}}
 </form>
 {{if .Data.Query}}
   {{with .Data.Results}}
   <ol class="results">
     {{range .}}
-    <li><a href="/wiki/{{.Slug}}">{{.Title}}</a><p>{{.SnippetHTML}}</p></li>
+    <li><a href="{{docpath (printf "%s/%s" $.TenantPath .SpaceSlug) .PublicID .Slug}}">{{.Title}}</a>
+      {{if not $.Space}}<small>in {{.SpaceName}}</small>{{end}}
+      <p>{{.SnippetHTML}}</p></li>
     {{end}}
   </ol>
   {{else}}
-  <p>No pages match "{{$.Data.Query}}".</p>
+  <p>No documents match "{{$.Data.Query}}".</p>
   {{end}}
 {{end}}
 {{end}}

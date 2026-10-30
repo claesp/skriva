@@ -1,0 +1,577 @@
+package web
+
+import (
+	"errors"
+	"html/template"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/clpe/skriva/internal/markdown"
+	"github.com/clpe/skriva/internal/rbac"
+	"github.com/clpe/skriva/internal/store"
+)
+
+const (
+	maxTitleLen   = 200
+	maxCommentLen = 500
+)
+
+func (s *Server) spaceRoutes(mux *http.ServeMux) {
+	p := "/{tenant}/{space}"
+	mux.Handle("GET "+p+"/{$}", s.require(rbac.DocRead, s.handleSpaceHome))
+	mux.Handle("GET "+p+"/d/{id}", s.require(rbac.DocRead, s.handleView))
+	mux.Handle("GET "+p+"/d/{id}/{slug}", s.require(rbac.DocRead, s.handleView))
+	mux.Handle("GET "+p+"/new", s.require(rbac.DocCreate, s.handleNewForm))
+	mux.Handle("POST "+p+"/new", s.require(rbac.DocCreate, s.handleNew))
+	mux.Handle("GET "+p+"/edit/{id}", s.require(rbac.DocEdit, s.handleEditForm))
+	mux.Handle("POST "+p+"/edit/{id}", s.require(rbac.DocEdit, s.handleEdit))
+	mux.Handle("GET "+p+"/move/{id}", s.require(rbac.DocEdit, s.handleMoveForm))
+	mux.Handle("POST "+p+"/move/{id}", s.require(rbac.DocEdit, s.handleMove))
+	mux.Handle("GET "+p+"/delete/{id}", s.require(rbac.DocDelete, s.handleDeleteForm))
+	mux.Handle("POST "+p+"/delete/{id}", s.require(rbac.DocDelete, s.handleDelete))
+	mux.Handle("GET "+p+"/history/{id}", s.require(rbac.DocRead, s.handleHistory))
+	mux.Handle("GET "+p+"/history/{id}/{version}", s.require(rbac.DocRead, s.handleRevision))
+	mux.Handle("GET "+p+"/raw/{id}", s.require(rbac.DocRead, s.handleRaw))
+	mux.Handle("GET "+p+"/w/{slug}", s.require(rbac.DocRead, s.handleWikiLink))
+	mux.Handle("GET "+p+"/recent", s.require(rbac.DocRead, s.handleRecent))
+	mux.Handle("GET "+p+"/search", s.require(rbac.DocRead, s.handleSearch))
+}
+
+// parseVersion parses a node version. Versions are PostgreSQL integer
+// values, thus the function accepts only values that fit in 32 bits.
+func parseVersion(s string) (int, bool) {
+	v, err := strconv.ParseInt(s, 10, 32)
+	return int(v), err == nil && v >= 0
+}
+
+// base returns the URL path of the space of the request.
+func base(r *http.Request) string {
+	ri := reqInfoFrom(r.Context())
+	return spacePath(ri.Tenant, ri.Space)
+}
+
+// loadNode loads the node from the {id} path value. It writes an error and
+// returns false if the node does not exist in the space.
+func (s *Server) loadNode(w http.ResponseWriter, r *http.Request) (*store.Node, bool) {
+	id := r.PathValue("id")
+	if !store.ValidPublicID(id) {
+		s.notFound(w, r)
+		return nil, false
+	}
+	n, err := s.store.Node(r.Context(), reqInfoFrom(r.Context()).Space.ID, id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return nil, false
+	}
+	if err != nil {
+		s.serverError(w, r, err)
+		return nil, false
+	}
+	return n, true
+}
+
+// tree returns the tree of the space. The current node and its ancestors
+// are open.
+func (s *Server) tree(r *http.Request, current int64) ([]*store.TreeNode, error) {
+	nodes, err := s.store.SpaceNodes(r.Context(), reqInfoFrom(r.Context()).Space.ID)
+	if err != nil {
+		return nil, err
+	}
+	return store.BuildTree(nodes, current), nil
+}
+
+func (s *Server) handleSpaceHome(w http.ResponseWriter, r *http.Request) {
+	tree, err := s.tree(r, 0)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	sp := reqInfoFrom(r.Context()).Space
+	s.render(w, r, http.StatusOK, "space", sp.Name, tree)
+}
+
+func (s *Server) handleView(w http.ResponseWriter, r *http.Request) {
+	n, ok := s.loadNode(w, r)
+	if !ok {
+		return
+	}
+	// Send the browser to the canonical URL if the slug is missing or
+	// old. The slug changes when the title changes.
+	if r.PathValue("slug") != n.Slug && n.Slug != "" {
+		http.Redirect(w, r, docPath(base(r), n.PublicID, n.Slug), http.StatusFound)
+		return
+	}
+	ancestors, err := s.store.Ancestors(r.Context(), n.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	children, err := s.store.Children(r.Context(), n.SpaceID, &n.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	tree, err := s.tree(r, n.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	var html template.HTML
+	if !n.IsFolder() {
+		if html, err = s.md.Render(n.Body, base(r)+"/w/"); err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+	}
+	s.render(w, r, http.StatusOK, "view", n.Title, struct {
+		Node      *store.Node
+		HTML      template.HTML
+		Ancestors []store.NodeSummary
+		Children  []store.NodeSummary
+		Tree      []*store.TreeNode
+	}{n, html, ancestors, children, tree})
+}
+
+func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
+	n, ok := s.loadNode(w, r)
+	if !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(n.Body))
+}
+
+// nodeForm is the data for the form that makes or edits a node.
+type nodeForm struct {
+	// Action is the URL of the form.
+	Action      string
+	IsNew       bool
+	Kind        string
+	ParentID    string
+	ParentTitle string
+	Title       string
+	Body        string
+	Comment     string
+	Version     int
+	Preview     template.HTML
+	Error       string
+}
+
+// IsFolder reports whether the form is for a folder.
+func (f nodeForm) IsFolder() bool { return f.Kind == store.KindFolder }
+
+func (s *Server) handleNewForm(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := nodeForm{
+		Action:   base(r) + "/new",
+		IsNew:    true,
+		Kind:     q.Get("kind"),
+		ParentID: q.Get("parent"),
+		Title:    strings.TrimSpace(q.Get("title")),
+	}
+	if f.Kind != store.KindFolder {
+		f.Kind = store.KindDocument
+	}
+	if utf8.RuneCountInString(f.Title) > maxTitleLen {
+		f.Title = ""
+	}
+	if !s.checkParent(w, r, &f) {
+		return
+	}
+	s.render(w, r, http.StatusOK, "edit", "New "+f.Kind, f)
+}
+
+// checkParent makes sure that the parent in the form exists and can
+// contain a node of the kind in the form. It sets ParentTitle.
+func (s *Server) checkParent(w http.ResponseWriter, r *http.Request, f *nodeForm) bool {
+	if f.ParentID == "" {
+		return true
+	}
+	if !store.ValidPublicID(f.ParentID) {
+		s.badRequest(w, r, "The parent is not valid.")
+		return false
+	}
+	p, err := s.store.Node(r.Context(), reqInfoFrom(r.Context()).Space.ID, f.ParentID)
+	if errors.Is(err, store.ErrNotFound) {
+		s.badRequest(w, r, "The parent does not exist.")
+		return false
+	}
+	if err != nil {
+		s.serverError(w, r, err)
+		return false
+	}
+	if f.Kind == store.KindFolder && !p.IsFolder() {
+		s.badRequest(w, r, "A folder can be only in a folder or at the top of the space.")
+		return false
+	}
+	f.ParentTitle = p.Title
+	return true
+}
+
+// readNodeForm reads the fields of the node form from the request.
+func readNodeForm(r *http.Request, f *nodeForm) {
+	f.Title = strings.TrimSpace(r.PostFormValue("title"))
+	f.Body = strings.ReplaceAll(r.PostFormValue("body"), "\r\n", "\n")
+	f.Comment = strings.TrimSpace(r.PostFormValue("comment"))
+	if f.IsFolder() {
+		f.Body = ""
+	}
+}
+
+// validateForm checks the form. It returns an error text, or "". For the
+// preview action, it also renders the preview.
+func (s *Server) validateForm(r *http.Request, f *nodeForm) (string, error) {
+	t := reqInfoFrom(r.Context()).Tenant
+	switch {
+	case f.Title == "":
+		return "The title is necessary.", nil
+	case utf8.RuneCountInString(f.Title) > maxTitleLen:
+		return "The title is too long.", nil
+	case !utf8.ValidString(f.Title) || !utf8.ValidString(f.Body) || !utf8.ValidString(f.Comment):
+		return "The text contains characters that are not valid.", nil
+	case len(f.Body) > t.MaxDocBytes:
+		return "The text is too long. The maximum is " + strconv.Itoa(t.MaxDocBytes/1024) + " KiB.", nil
+	case utf8.RuneCountInString(f.Comment) > maxCommentLen:
+		return "The comment is too long.", nil
+	}
+	if r.PostFormValue("action") == "preview" && !f.IsFolder() {
+		var err error
+		f.Preview, err = s.md.Render(f.Body, base(r)+"/w/")
+		return "", err
+	}
+	return "", nil
+}
+
+func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
+	f := nodeForm{
+		Action:   base(r) + "/new",
+		IsNew:    true,
+		Kind:     r.PostFormValue("kind"),
+		ParentID: r.PostFormValue("parent"),
+	}
+	if f.Kind != store.KindFolder && f.Kind != store.KindDocument {
+		s.badRequest(w, r, "The form is not valid.")
+		return
+	}
+	readNodeForm(r, &f)
+	if !s.checkParent(w, r, &f) {
+		return
+	}
+	msg, err := s.validateForm(r, &f)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	if msg != "" || f.Preview != "" {
+		f.Error = msg
+		s.render(w, r, formStatus(msg), "edit", "New "+f.Kind, f)
+		return
+	}
+	ri := reqInfoFrom(r.Context())
+	slug := markdown.Slugify(f.Title)
+	id, err := s.store.CreateNode(r.Context(), ri.Space.ID, store.NewNode{
+		ParentPublicID: f.ParentID, Kind: f.Kind, Title: f.Title, Slug: slug,
+		Body: f.Body, Comment: f.Comment, AuthorID: ri.Session.User.ID,
+	})
+	if !s.storeResult(w, r, err) {
+		return
+	}
+	http.Redirect(w, r, docPath(base(r), id, slug), http.StatusSeeOther)
+}
+
+func formStatus(msg string) int {
+	if msg != "" {
+		return http.StatusUnprocessableEntity
+	}
+	return http.StatusOK
+}
+
+func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request) {
+	n, ok := s.loadNode(w, r)
+	if !ok {
+		return
+	}
+	f := nodeForm{
+		Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind,
+		Title: n.Title, Body: n.Body, Version: n.Version,
+	}
+	// "from" loads the text of an old revision. The user can then save
+	// it as a new version to restore the node.
+	if from, ok := parseVersion(r.URL.Query().Get("from")); ok && from > 0 && from != n.Version {
+		rev, err := s.store.Revision(r.Context(), n.ID, from)
+		if errors.Is(err, store.ErrNotFound) {
+			s.notFound(w, r)
+			return
+		}
+		if err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		f.Title, f.Body = rev.Title, rev.Body
+		f.Comment = "Restore version " + strconv.Itoa(from)
+	}
+	s.render(w, r, http.StatusOK, "edit", "Edit "+n.Title, f)
+}
+
+func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
+	n, ok := s.loadNode(w, r)
+	if !ok {
+		return
+	}
+	version, ok := parseVersion(r.PostFormValue("version"))
+	if !ok || version < 1 {
+		s.badRequest(w, r, "The form is not valid.")
+		return
+	}
+	f := nodeForm{Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind, Version: version}
+	readNodeForm(r, &f)
+	msg, err := s.validateForm(r, &f)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	if msg != "" || f.Preview != "" {
+		f.Error = msg
+		s.render(w, r, formStatus(msg), "edit", "Edit "+f.Title, f)
+		return
+	}
+	ri := reqInfoFrom(r.Context())
+	slug := markdown.Slugify(f.Title)
+	err = s.store.UpdateNode(r.Context(), ri.Space.ID, n.PublicID, version, f.Title, slug, f.Body, f.Comment, ri.Session.User.ID)
+	if errors.Is(err, store.ErrConflict) {
+		f.Error = "A different user changed this item after you started to edit it. " +
+			"Copy your text, reload the page and add your changes again."
+		s.render(w, r, http.StatusConflict, "edit", "Edit "+f.Title, f)
+		return
+	}
+	if !s.storeResult(w, r, err) {
+		return
+	}
+	http.Redirect(w, r, docPath(base(r), n.PublicID, slug), http.StatusSeeOther)
+}
+
+// moveTarget is one possible new parent in the move form.
+type moveTarget struct {
+	PublicID string
+	Label    string
+	Selected bool
+}
+
+func (s *Server) handleMoveForm(w http.ResponseWriter, r *http.Request) {
+	n, ok := s.loadNode(w, r)
+	if !ok {
+		return
+	}
+	nodes, err := s.store.SpaceNodes(r.Context(), n.SpaceID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, "move", "Move "+n.Title, struct {
+		Node    *store.Node
+		Targets []moveTarget
+		AtRoot  bool
+	}{n, moveTargets(nodes, n), n.ParentID == nil})
+}
+
+// moveTargets returns the nodes that can be the new parent of n. The
+// result does not include n and the subtree of n. For a folder, the
+// result includes only folders. Each label is the path from the root.
+func moveTargets(nodes []store.NodeSummary, n *store.Node) []moveTarget {
+	byID := make(map[int64]*store.NodeSummary, len(nodes))
+	for i := range nodes {
+		byID[nodes[i].ID] = &nodes[i]
+	}
+	// inSubtree reports whether id is n or a descendant of n. The depth
+	// limit stops the loop if the data contains a cycle.
+	inSubtree := func(id int64) bool {
+		for i := 0; i <= len(nodes); i++ {
+			if id == n.ID {
+				return true
+			}
+			p := byID[id]
+			if p == nil || p.ParentID == nil {
+				return false
+			}
+			id = *p.ParentID
+		}
+		return true
+	}
+	label := func(x *store.NodeSummary) string {
+		parts := []string{x.Title}
+		for i := 0; x.ParentID != nil && i < len(nodes); i++ {
+			if x = byID[*x.ParentID]; x == nil {
+				break
+			}
+			parts = append(parts, x.Title)
+		}
+		for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
+			parts[i], parts[j] = parts[j], parts[i]
+		}
+		return strings.Join(parts, " / ")
+	}
+	var out []moveTarget
+	for i := range nodes {
+		x := &nodes[i]
+		if (n.IsFolder() && !x.IsFolder()) || inSubtree(x.ID) {
+			continue
+		}
+		out = append(out, moveTarget{
+			PublicID: x.PublicID,
+			Label:    label(x),
+			Selected: n.ParentID != nil && *n.ParentID == x.ID,
+		})
+	}
+	return out
+}
+
+func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
+	n, ok := s.loadNode(w, r)
+	if !ok {
+		return
+	}
+	parent := r.PostFormValue("parent")
+	if parent != "" && !store.ValidPublicID(parent) {
+		s.badRequest(w, r, "The new place is not valid.")
+		return
+	}
+	err := s.store.MoveNode(r.Context(), n.SpaceID, n.PublicID, parent)
+	if errors.Is(err, store.ErrInvalid) {
+		s.badRequest(w, r, "You cannot move the item to that place. "+
+			"A folder can be only in a folder, and no item can be in its own subtree.")
+		return
+	}
+	if !s.storeResult(w, r, err) {
+		return
+	}
+	http.Redirect(w, r, docPath(base(r), n.PublicID, n.Slug), http.StatusSeeOther)
+}
+
+func (s *Server) handleDeleteForm(w http.ResponseWriter, r *http.Request) {
+	n, ok := s.loadNode(w, r)
+	if !ok {
+		return
+	}
+	count, err := s.store.CountDescendants(r.Context(), n.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, "delete", "Delete "+n.Title, struct {
+		Node        *store.Node
+		Descendants int
+	}{n, count})
+}
+
+func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	n, ok := s.loadNode(w, r)
+	if !ok {
+		return
+	}
+	ancestors, err := s.store.Ancestors(r.Context(), n.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	if !s.storeResult(w, r, s.store.DeleteNode(r.Context(), n.SpaceID, n.PublicID)) {
+		return
+	}
+	ri := reqInfoFrom(r.Context())
+	s.log.Info("node deleted", "tenant", ri.Tenant.Code, "space", ri.Space.Slug,
+		"node", n.PublicID, "user_id", ri.Session.User.ID)
+	target := base(r) + "/"
+	if len(ancestors) > 0 {
+		p := ancestors[len(ancestors)-1]
+		target = docPath(base(r), p.PublicID, p.Slug)
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	n, ok := s.loadNode(w, r)
+	if !ok {
+		return
+	}
+	revs, err := s.store.Revisions(r.Context(), n.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, "history", "History of "+n.Title, struct {
+		Node      *store.Node
+		Revisions []store.Revision
+	}{n, revs})
+}
+
+func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request) {
+	n, ok := s.loadNode(w, r)
+	if !ok {
+		return
+	}
+	version, ok := parseVersion(r.PathValue("version"))
+	if !ok || version < 1 {
+		s.notFound(w, r)
+		return
+	}
+	rev, err := s.store.Revision(r.Context(), n.ID, version)
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return
+	}
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	html, err := s.md.Render(rev.Body, base(r)+"/w/")
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, "revision", rev.Title+" (version "+strconv.Itoa(version)+")", struct {
+		Node     *store.Node
+		Revision *store.Revision
+		HTML     template.HTML
+	}{n, rev, html})
+}
+
+// handleWikiLink finds the target of a wiki link [[Title]]. One match
+// sends the browser to the node. More matches show a list. No match shows
+// a page with a link to make the document.
+func (s *Server) handleWikiLink(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	if !markdown.ValidSlug(slug) {
+		s.notFound(w, r)
+		return
+	}
+	nodes, err := s.store.NodesBySlug(r.Context(), reqInfoFrom(r.Context()).Space.ID, slug)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	if len(nodes) == 1 {
+		http.Redirect(w, r, docPath(base(r), nodes[0].PublicID, nodes[0].Slug), http.StatusSeeOther)
+		return
+	}
+	status := http.StatusOK
+	if len(nodes) == 0 {
+		status = http.StatusNotFound
+	}
+	title := strings.ReplaceAll(slug, "-", " ")
+	s.render(w, r, status, "wikilink", "Link: "+title, struct {
+		Title     string
+		CreateURL string
+		Nodes     []store.NodeSummary
+	}{title, base(r) + "/new?title=" + url.QueryEscape(title), nodes})
+}
+
+func (s *Server) handleRecent(w http.ResponseWriter, r *http.Request) {
+	list, err := s.store.RecentNodes(r.Context(), reqInfoFrom(r.Context()).Space.ID, 50)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, "recent", "Recent changes", list)
+}
