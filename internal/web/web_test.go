@@ -370,10 +370,10 @@ func TestValidation(t *testing.T) {
 	wantStatus(t, savePage(bob, "Bad_Slug", "x", "body", 0), http.StatusNotFound)
 	wantStatus(t, bob.post("/wiki/home/edit", url.Values{"title": {"x"}, "version": {"abc"}}), http.StatusBadRequest)
 	// A body larger than the request limit fails.
-	resp := savePage(bob, "home", "Home", strings.Repeat("x", 3<<20), 0)
-	if resp.StatusCode < 400 {
-		t.Fatalf("large body accepted: %d", resp.StatusCode)
-	}
+	wantStatus(t, savePage(bob, "home", "Home", strings.Repeat("x", 3<<20), 0), http.StatusRequestEntityTooLarge)
+	// A body larger than the page limit, but smaller than the request
+	// limit, fails with a message in the form.
+	wantStatus(t, savePage(bob, "home", "Home", strings.Repeat("x", 1<<20+1), 0), http.StatusUnprocessableEntity)
 }
 
 func TestXSSIsEscaped(t *testing.T) {

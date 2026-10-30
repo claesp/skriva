@@ -164,6 +164,15 @@ func (s *Server) require(perm rbac.Permission, h http.HandlerFunc) http.Handler 
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			if err := r.ParseForm(); err != nil {
+				var tooLarge *http.MaxBytesError
+				if errors.As(err, &tooLarge) {
+					s.renderError(w, r, http.StatusRequestEntityTooLarge, "The form is too large.")
+					return
+				}
+				s.badRequest(w, r, "The form is not valid.")
+				return
+			}
 			token := r.PostFormValue("csrf_token")
 			if subtle.ConstantTimeCompare([]byte(token), []byte(sess.CSRFToken)) != 1 {
 				s.log.Warn("bad CSRF token", "user_id", sess.User.ID, "path", r.URL.Path)
