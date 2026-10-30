@@ -23,6 +23,7 @@
       <a href="{{$.SpacePath}}/raw/{{.Node.PublicID}}">Source</a>
     {{end}}
     {{if $.Can "doc.delete"}}<a href="{{$.SpacePath}}/delete/{{.Node.PublicID}}">Delete</a>{{end}}
+    {{if and .Node.IsFolder ($.Can "tenant.manage")}}<a href="{{$.SpacePath}}/access/{{.Node.PublicID}}">Access</a>{{end}}
   </nav>
 </div>
 {{if not .Node.IsFolder}}<article class="markdown">{{.HTML}}</article>{{end}}

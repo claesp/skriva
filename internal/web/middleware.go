@@ -22,6 +22,18 @@ type reqInfo struct {
 	Tenant  *store.Tenant
 	Space   *store.Space
 	Session *store.Session
+	// Access contains the permissions for the nodes of the space. It is
+	// nil outside a space and for anonymous requests.
+	Access *store.Access
+}
+
+// setPermissions sets the permissions of the request. It uses a copy of
+// the session, because the session can be in use by a different part of
+// the code.
+func (ri *reqInfo) setPermissions(p rbac.Set) {
+	sess := *ri.Session
+	sess.Permissions = p
+	ri.Session = &sess
 }
 
 type ctxKey int

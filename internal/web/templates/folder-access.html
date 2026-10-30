@@ -1,0 +1,66 @@
+{{define "content"}}
+{{with .Data}}
+<h1>Access to folder "{{.Node.Title}}"</h1>
+<p><a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Go to the folder</a></p>
+<p>A user has these permissions in the folder and in all items in it:</p>
+<ul>
+  <li>The document permissions of the default role of the folder.</li>
+  <li>The permissions of the role bindings for all spaces, for this space and for the parent folders.</li>
+  <li>The document permissions of the role bindings for this folder.</li>
+</ul>
+
+<h2>Default role</h2>
+<form method="post" action="{{$.SpacePath}}/access/{{.Node.PublicID}}" class="inline">
+  {{template "csrf" $.CSRF}}
+  <label>Default role of all signed-in users in this folder
+    <select name="default_role">
+      <option value="-"{{if eq .DefaultRole "-"}} selected{{end}}>Same as the parent folder or the space</option>
+      <option value=""{{if eq .DefaultRole ""}} selected{{end}}>None. Only users with a role binding have access.</option>
+      {{range .Roles}}<option value="{{.Name}}"{{if eq .Name $.Data.DefaultRole}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
+  </label>
+  <button type="submit">Save</button>
+</form>
+
+<h2>Role bindings for this folder</h2>
+{{with .Bindings}}
+<table>
+  <thead><tr><th>Role</th><th>Given to</th><th></th></tr></thead>
+  <tbody>
+  {{range .}}
+  <tr>
+    <td>{{.RoleName}}</td>
+    <td>{{if .GroupID}}Group <a href="{{$.TenantPath}}/admin/groups/{{.GroupID}}">{{.GroupName}}</a> <span class="tag">{{.GroupSource}}</span>
+        {{else}}User <a href="{{$.TenantPath}}/admin/users/{{.UserID}}">{{.UserName}}</a>{{end}}</td>
+    <td><form method="post" action="{{$.TenantPath}}/admin/bindings/{{.ID}}/delete">
+      {{template "csrf" $.CSRF}}
+      <input type="hidden" name="return_to" value="{{$.SpacePath}}/access/{{$.Data.Node.PublicID}}">
+      <button type="submit" class="link">Remove</button>
+    </form></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p>The folder has no role bindings of its own.</p>{{end}}
+<form method="post" action="{{$.TenantPath}}/admin/bindings" class="inline">
+  {{template "csrf" $.CSRF}}
+  <input type="hidden" name="space" value="{{$.Space.Slug}}">
+  <input type="hidden" name="node" value="{{.Node.PublicID}}">
+  <input type="hidden" name="return_to" value="{{$.SpacePath}}/access/{{.Node.PublicID}}">
+  <label>Role <select name="role">{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
+  <label>Give to
+    <select name="subject">
+      <optgroup label="Groups">
+        {{range .Groups}}<option value="group:{{.ID}}">{{.Name}} ({{.Source}})</option>{{end}}
+      </optgroup>
+      <optgroup label="Users">
+        {{range .Users}}<option value="user:{{.ID}}">{{.Username}}</option>{{end}}
+      </optgroup>
+    </select>
+  </label>
+  <button type="submit">Give role</button>
+</form>
+<p><small>Bindings for this folder give only document permissions (<code>doc.*</code>). The access to the space is on the page
+  <a href="{{$.TenantPath}}/admin/spaces/{{$.Space.Slug}}/access">Administration › Spaces › Access</a>.</small></p>
+{{end}}
+{{end}}

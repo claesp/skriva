@@ -4,10 +4,15 @@
 <p>Do you want to delete "{{.Node.Title}}" and all its history?
 {{if .Descendants}}This also deletes <strong>{{.Descendants}}</strong> items in it.{{end}}
 You cannot undo this.</p>
+{{if .Permitted}}
 <form action="{{$.SpacePath}}/delete/{{.Node.PublicID}}" method="post" class="buttons">
   {{template "csrf" $.CSRF}}
   <button type="submit" class="danger">Delete</button>
   <a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Cancel</a>
 </form>
+{{else}}
+<p class="error" role="alert">You cannot delete this item. It contains items that you do not have permission to delete.</p>
+<p><a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Go back</a></p>
+{{end}}
 {{end}}
 {{end}}

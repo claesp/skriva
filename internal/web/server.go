@@ -204,16 +204,15 @@ func (s *Server) dispatchTenant(w http.ResponseWriter, r *http.Request) {
 		}
 		ri.Space = sp
 		if ri.Session != nil {
-			// In a space, the permissions of the space apply. Use a copy:
-			// the session can be in use by a different part of the code.
-			perms, err := s.store.SpacePermissions(r.Context(), t.ID, sp.ID, ri.Session.User.ID)
+			// In a space, the permissions of the space apply. The node
+			// handlers change them to the permissions of the node.
+			acc, err := s.store.Access(r.Context(), t.ID, sp.ID, ri.Session.User.ID)
 			if err != nil {
 				s.serverError(w, r, err)
 				return
 			}
-			sess := *ri.Session
-			sess.Permissions = perms
-			ri.Session = &sess
+			ri.Access = acc
+			ri.setPermissions(acc.Root())
 		}
 		s.spaceMux.ServeHTTP(w, r)
 		return

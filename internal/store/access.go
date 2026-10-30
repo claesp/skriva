@@ -51,6 +51,10 @@ type Binding struct {
 	SpaceID   int64
 	SpaceSlug string
 	SpaceName string
+	// NodeID is not zero for a binding that applies to one folder.
+	NodeID       int64
+	NodePublicID string
+	NodeTitle    string
 	// Exactly one of UserID and GroupID is not zero.
 	UserID      int64
 	UserName    string
@@ -313,15 +317,17 @@ func (s *Store) Bindings(ctx context.Context, tenantID int64) ([]Binding, error)
 	rows, err := s.pool.Query(ctx, `
 		SELECT b.id, r.name,
 		       COALESCE(sp.id, 0), COALESCE(sp.slug, ''), COALESCE(sp.name, ''),
+		       COALESCE(n.id, 0), COALESCE(n.public_id, ''), COALESCE(n.title, ''),
 		       COALESCE(u.id, 0), COALESCE(u.username, ''),
 		       COALESCE(g.id, 0), COALESCE(g.name, ''), COALESCE(g.source, '')
 		FROM role_bindings b
 		JOIN roles r ON r.id = b.role_id
 		LEFT JOIN spaces sp ON sp.id = b.space_id
+		LEFT JOIN nodes n ON n.id = b.node_id
 		LEFT JOIN users u ON u.id = b.user_id
 		LEFT JOIN groups g ON g.id = b.group_id
 		WHERE b.tenant_id = $1
-		ORDER BY sp.name NULLS FIRST, r.name, g.name NULLS LAST, u.username`, tenantID)
+		ORDER BY sp.name NULLS FIRST, n.title NULLS FIRST, r.name, g.name NULLS LAST, u.username`, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +335,8 @@ func (s *Store) Bindings(ctx context.Context, tenantID int64) ([]Binding, error)
 	var out []Binding
 	for rows.Next() {
 		var b Binding
-		if err := rows.Scan(&b.ID, &b.RoleName, &b.SpaceID, &b.SpaceSlug, &b.SpaceName, &b.UserID, &b.UserName,
+		if err := rows.Scan(&b.ID, &b.RoleName, &b.SpaceID, &b.SpaceSlug, &b.SpaceName,
+			&b.NodeID, &b.NodePublicID, &b.NodeTitle, &b.UserID, &b.UserName,
 			&b.GroupID, &b.GroupName, &b.GroupSource); err != nil {
 			return nil, err
 		}
@@ -338,33 +345,62 @@ func (s *Store) Bindings(ctx context.Context, tenantID int64) ([]Binding, error)
 	return out, rows.Err()
 }
 
-// BindRoleToUser gives a role to a user of the tenant. If spaceID is not
-// nil, the binding applies only in that space.
-func (s *Store) BindRoleToUser(ctx context.Context, tenantID int64, roleName string, userID int64, spaceID *int64) error {
-	return bind(ctx, s.pool, tenantID, roleName, &userID, nil, spaceID)
+// Scope is the scope of a role binding. The zero value is the full
+// tenant. With SpaceID, the binding applies in one space. With SpaceID and
+// NodeID, the binding applies to one folder and its subtree.
+type Scope struct {
+	SpaceID int64
+	NodeID  int64
 }
 
-// BindRoleToGroup gives a role to a group of the tenant. If spaceID is not
-// nil, the binding applies only in that space.
-func (s *Store) BindRoleToGroup(ctx context.Context, tenantID int64, roleName string, groupID int64, spaceID *int64) error {
-	return bind(ctx, s.pool, tenantID, roleName, nil, &groupID, spaceID)
+func (sc Scope) ids() (spaceID, nodeID *int64) {
+	if sc.SpaceID != 0 {
+		spaceID = &sc.SpaceID
+	}
+	if sc.NodeID != 0 {
+		nodeID = &sc.NodeID
+	}
+	return spaceID, nodeID
+}
+
+// BindRoleToUser gives a role to a user of the tenant, in the given scope.
+func (s *Store) BindRoleToUser(ctx context.Context, tenantID int64, roleName string, userID int64, sc Scope) error {
+	return bind(ctx, s.pool, tenantID, roleName, &userID, nil, sc)
+}
+
+// BindRoleToGroup gives a role to a group of the tenant, in the given
+// scope.
+func (s *Store) BindRoleToGroup(ctx context.Context, tenantID int64, roleName string, groupID int64, sc Scope) error {
+	return bind(ctx, s.pool, tenantID, roleName, nil, &groupID, sc)
 }
 
 // bind makes a role binding. The role must be a built-in role or a custom
-// role of the tenant. The foreign keys make sure that the user, the group
-// and the space are in the tenant.
-func bind(ctx context.Context, q querier, tenantID int64, roleName string, userID, groupID, spaceID *int64) error {
+// role of the tenant. The foreign keys make sure that the user, the group,
+// the space and the node are in the tenant. The node must be a folder: it
+// returns ErrInvalid for a document.
+func bind(ctx context.Context, q querier, tenantID int64, roleName string, userID, groupID *int64, sc Scope) error {
 	if err := checkRole(ctx, q, tenantID, roleName); err != nil {
 		if err == ErrInvalid {
 			return ErrNotFound
 		}
 		return err
 	}
+	if sc.NodeID != 0 {
+		var kind string
+		err := q.QueryRow(ctx, "SELECT kind FROM nodes WHERE id = $1 AND space_id = $2", sc.NodeID, sc.SpaceID).Scan(&kind)
+		if err != nil {
+			return notFound(err)
+		}
+		if kind != KindFolder {
+			return ErrInvalid
+		}
+	}
+	spaceID, nodeID := sc.ids()
 	_, err := q.Exec(ctx, `
-		INSERT INTO role_bindings (tenant_id, role_id, user_id, group_id, space_id)
-		SELECT $1, id, $3, $4, $5 FROM roles
+		INSERT INTO role_bindings (tenant_id, role_id, user_id, group_id, space_id, node_id)
+		SELECT $1, id, $3, $4, $5, $6 FROM roles
 		WHERE name = $2 AND (tenant_id IS NULL OR tenant_id = $1)
-		ON CONFLICT DO NOTHING`, tenantID, roleName, userID, groupID, spaceID)
+		ON CONFLICT DO NOTHING`, tenantID, roleName, userID, groupID, spaceID, nodeID)
 	if sqlState(err) == codeForeignKeyViolation {
 		// The user, the group or the space does not exist in the tenant.
 		return ErrNotFound

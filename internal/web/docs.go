@@ -19,25 +19,34 @@ const (
 	maxCommentLen = 500
 )
 
+// nodeHandler is a handler for one node. The node wrapper loads the node
+// and checks the permission first.
+type nodeHandler func(w http.ResponseWriter, r *http.Request, n *store.Node)
+
+// The permissions in a space can be different for each folder. Thus the
+// routes require only a session. The handlers check the permission for
+// the node, or for the parent of a new node.
 func (s *Server) spaceRoutes(mux *http.ServeMux) {
 	p := "/{tenant}/{space}"
-	mux.Handle("GET "+p+"/{$}", s.require(rbac.DocRead, s.handleSpaceHome))
-	mux.Handle("GET "+p+"/d/{id}", s.require(rbac.DocRead, s.handleView))
-	mux.Handle("GET "+p+"/d/{id}/{slug}", s.require(rbac.DocRead, s.handleView))
-	mux.Handle("GET "+p+"/new", s.require(rbac.DocCreate, s.handleNewForm))
-	mux.Handle("POST "+p+"/new", s.require(rbac.DocCreate, s.handleNew))
-	mux.Handle("GET "+p+"/edit/{id}", s.require(rbac.DocEdit, s.handleEditForm))
-	mux.Handle("POST "+p+"/edit/{id}", s.require(rbac.DocEdit, s.handleEdit))
-	mux.Handle("GET "+p+"/move/{id}", s.require(rbac.DocEdit, s.handleMoveForm))
-	mux.Handle("POST "+p+"/move/{id}", s.require(rbac.DocEdit, s.handleMove))
-	mux.Handle("GET "+p+"/delete/{id}", s.require(rbac.DocDelete, s.handleDeleteForm))
-	mux.Handle("POST "+p+"/delete/{id}", s.require(rbac.DocDelete, s.handleDelete))
-	mux.Handle("GET "+p+"/history/{id}", s.require(rbac.DocRead, s.handleHistory))
-	mux.Handle("GET "+p+"/history/{id}/{version}", s.require(rbac.DocRead, s.handleRevision))
-	mux.Handle("GET "+p+"/raw/{id}", s.require(rbac.DocRead, s.handleRaw))
-	mux.Handle("GET "+p+"/w/{slug}", s.require(rbac.DocRead, s.handleWikiLink))
-	mux.Handle("GET "+p+"/recent", s.require(rbac.DocRead, s.handleRecent))
-	mux.Handle("GET "+p+"/search", s.require(rbac.DocRead, s.handleSearch))
+	mux.Handle("GET "+p+"/{$}", s.require("", s.handleSpaceHome))
+	mux.Handle("GET "+p+"/d/{id}", s.node(rbac.DocRead, s.handleView))
+	mux.Handle("GET "+p+"/d/{id}/{slug}", s.node(rbac.DocRead, s.handleView))
+	mux.Handle("GET "+p+"/new", s.require("", s.handleNewForm))
+	mux.Handle("POST "+p+"/new", s.require("", s.handleNew))
+	mux.Handle("GET "+p+"/edit/{id}", s.node(rbac.DocEdit, s.handleEditForm))
+	mux.Handle("POST "+p+"/edit/{id}", s.node(rbac.DocEdit, s.handleEdit))
+	mux.Handle("GET "+p+"/move/{id}", s.node(rbac.DocEdit, s.handleMoveForm))
+	mux.Handle("POST "+p+"/move/{id}", s.node(rbac.DocEdit, s.handleMove))
+	mux.Handle("GET "+p+"/delete/{id}", s.node(rbac.DocDelete, s.handleDeleteForm))
+	mux.Handle("POST "+p+"/delete/{id}", s.node(rbac.DocDelete, s.handleDelete))
+	mux.Handle("GET "+p+"/history/{id}", s.node(rbac.DocRead, s.handleHistory))
+	mux.Handle("GET "+p+"/history/{id}/{version}", s.node(rbac.DocRead, s.handleRevision))
+	mux.Handle("GET "+p+"/raw/{id}", s.node(rbac.DocRead, s.handleRaw))
+	mux.Handle("GET "+p+"/access/{id}", s.node(rbac.TenantManage, s.handleFolderAccess))
+	mux.Handle("POST "+p+"/access/{id}", s.node(rbac.TenantManage, s.handleFolderDefaultRole))
+	mux.Handle("GET "+p+"/w/{slug}", s.require("", s.handleWikiLink))
+	mux.Handle("GET "+p+"/recent", s.require("", s.handleRecent))
+	mux.Handle("GET "+p+"/search", s.require("", s.handleSearch))
 }
 
 // parseVersion parses a node version. Versions are PostgreSQL integer
@@ -53,51 +62,82 @@ func base(r *http.Request) string {
 	return spacePath(ri.Tenant, ri.Space)
 }
 
-// loadNode loads the node from the {id} path value. It writes an error and
-// returns false if the node does not exist in the space.
-func (s *Server) loadNode(w http.ResponseWriter, r *http.Request) (*store.Node, bool) {
-	id := r.PathValue("id")
-	if !store.ValidPublicID(id) {
-		s.notFound(w, r)
-		return nil, false
-	}
-	n, err := s.store.Node(r.Context(), reqInfoFrom(r.Context()).Space.ID, id)
-	if errors.Is(err, store.ErrNotFound) {
-		s.notFound(w, r)
-		return nil, false
-	}
-	if err != nil {
-		s.serverError(w, r, err)
-		return nil, false
-	}
-	return n, true
+// node loads the node from the {id} path value and checks perm for that
+// node. A node that the user cannot read is "not found". Thus the server
+// does not tell that the node exists. The handler and the templates then
+// see the permissions of the node.
+func (s *Server) node(perm rbac.Permission, h nodeHandler) http.Handler {
+	return s.require("", func(w http.ResponseWriter, r *http.Request) {
+		ri := reqInfoFrom(r.Context())
+		id := r.PathValue("id")
+		if !store.ValidPublicID(id) {
+			s.notFound(w, r)
+			return
+		}
+		n, err := s.store.Node(r.Context(), ri.Space.ID, id)
+		if errors.Is(err, store.ErrNotFound) {
+			s.notFound(w, r)
+			return
+		}
+		if err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		perms := ri.Access.For(n.ID)
+		if !perms.Has(rbac.DocRead) {
+			s.notFound(w, r)
+			return
+		}
+		if !perms.Has(perm) {
+			s.forbidden(w, r)
+			return
+		}
+		ri.setPermissions(perms)
+		h(w, r, n)
+	})
 }
 
-// tree returns the tree of the space. The current node and its ancestors
-// are open.
+// canRead reports whether the user can read the node.
+func canRead(r *http.Request, id int64) bool {
+	return reqInfoFrom(r.Context()).Access.Can(id, rbac.DocRead)
+}
+
+// readableOnly returns the nodes that the user can read.
+func readableOnly(r *http.Request, nodes []store.NodeSummary) []store.NodeSummary {
+	out := nodes[:0:0]
+	for _, n := range nodes {
+		if canRead(r, n.ID) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// tree returns the tree of the space with the nodes that the user can
+// read. The current node and its ancestors are open.
 func (s *Server) tree(r *http.Request, current int64) ([]*store.TreeNode, error) {
 	nodes, err := s.store.SpaceNodes(r.Context(), reqInfoFrom(r.Context()).Space.ID)
 	if err != nil {
 		return nil, err
 	}
-	return store.BuildTree(nodes, current), nil
+	return store.BuildVisibleTree(nodes, current, func(id int64) bool { return canRead(r, id) }), nil
 }
 
 func (s *Server) handleSpaceHome(w http.ResponseWriter, r *http.Request) {
+	ri := reqInfoFrom(r.Context())
 	tree, err := s.tree(r, 0)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	sp := reqInfoFrom(r.Context()).Space
-	s.render(w, r, http.StatusOK, "space", sp.Name, tree)
-}
-
-func (s *Server) handleView(w http.ResponseWriter, r *http.Request) {
-	n, ok := s.loadNode(w, r)
-	if !ok {
+	if len(tree) == 0 && !ri.Access.Root().Has(rbac.DocRead) {
+		s.forbidden(w, r)
 		return
 	}
+	s.render(w, r, http.StatusOK, "space", ri.Space.Name, tree)
+}
+
+func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	// Send the browser to the canonical URL if the slug is missing or
 	// old. The slug changes when the title changes.
 	if r.PathValue("slug") != n.Slug && n.Slug != "" {
@@ -132,14 +172,10 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request) {
 		Ancestors []store.NodeSummary
 		Children  []store.NodeSummary
 		Tree      []*store.TreeNode
-	}{n, html, ancestors, children, tree})
+	}{n, html, readableOnly(r, ancestors), readableOnly(r, children), tree})
 }
 
-func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
-	n, ok := s.loadNode(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(n.Body))
 }
@@ -184,30 +220,38 @@ func (s *Server) handleNewForm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "edit", "New "+f.Kind, f)
 }
 
-// checkParent makes sure that the parent in the form exists and can
-// contain a node of the kind in the form. It sets ParentTitle.
+// checkParent makes sure that the parent in the form exists, that the user
+// can create nodes in it, and that it can contain a node of the kind in
+// the form. It sets ParentTitle and the permissions of the request.
 func (s *Server) checkParent(w http.ResponseWriter, r *http.Request, f *nodeForm) bool {
-	if f.ParentID == "" {
-		return true
+	ri := reqInfoFrom(r.Context())
+	perms := ri.Access.Root()
+	if f.ParentID != "" {
+		if !store.ValidPublicID(f.ParentID) {
+			s.badRequest(w, r, "The parent is not valid.")
+			return false
+		}
+		p, err := s.store.Node(r.Context(), ri.Space.ID, f.ParentID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			s.serverError(w, r, err)
+			return false
+		}
+		if err != nil || !canRead(r, p.ID) {
+			s.badRequest(w, r, "The parent does not exist.")
+			return false
+		}
+		if f.Kind == store.KindFolder && !p.IsFolder() {
+			s.badRequest(w, r, "A folder can be only in a folder or at the top of the space.")
+			return false
+		}
+		f.ParentTitle = p.Title
+		perms = ri.Access.For(p.ID)
 	}
-	if !store.ValidPublicID(f.ParentID) {
-		s.badRequest(w, r, "The parent is not valid.")
+	if !perms.Has(rbac.DocCreate) {
+		s.forbidden(w, r)
 		return false
 	}
-	p, err := s.store.Node(r.Context(), reqInfoFrom(r.Context()).Space.ID, f.ParentID)
-	if errors.Is(err, store.ErrNotFound) {
-		s.badRequest(w, r, "The parent does not exist.")
-		return false
-	}
-	if err != nil {
-		s.serverError(w, r, err)
-		return false
-	}
-	if f.Kind == store.KindFolder && !p.IsFolder() {
-		s.badRequest(w, r, "A folder can be only in a folder or at the top of the space.")
-		return false
-	}
-	f.ParentTitle = p.Title
+	ri.setPermissions(perms)
 	return true
 }
 
@@ -289,11 +333,7 @@ func formStatus(msg string) int {
 	return http.StatusOK
 }
 
-func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request) {
-	n, ok := s.loadNode(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	f := nodeForm{
 		Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind,
 		Title: n.Title, Body: n.Body, Version: n.Version,
@@ -316,11 +356,7 @@ func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "edit", "Edit "+n.Title, f)
 }
 
-func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
-	n, ok := s.loadNode(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	version, ok := parseVersion(r.PostFormValue("version"))
 	if !ok || version < 1 {
 		s.badRequest(w, r, "The form is not valid.")
@@ -360,27 +396,27 @@ type moveTarget struct {
 	Selected bool
 }
 
-func (s *Server) handleMoveForm(w http.ResponseWriter, r *http.Request) {
-	n, ok := s.loadNode(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleMoveForm(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	nodes, err := s.store.SpaceNodes(r.Context(), n.SpaceID)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
+	acc := reqInfoFrom(r.Context()).Access
 	s.render(w, r, http.StatusOK, "move", "Move "+n.Title, struct {
-		Node    *store.Node
-		Targets []moveTarget
-		AtRoot  bool
-	}{n, moveTargets(nodes, n), n.ParentID == nil})
+		Node     *store.Node
+		Targets  []moveTarget
+		AtRoot   bool
+		RootOpen bool
+	}{n, moveTargets(nodes, n, acc), n.ParentID == nil, acc.Root().Has(rbac.DocCreate)})
 }
 
 // moveTargets returns the nodes that can be the new parent of n. The
 // result does not include n and the subtree of n. For a folder, the
-// result includes only folders. Each label is the path from the root.
-func moveTargets(nodes []store.NodeSummary, n *store.Node) []moveTarget {
+// result includes only folders. The result includes only nodes in which
+// the user can create nodes. Each label is the path from the root, with
+// only the titles that the user can read.
+func moveTargets(nodes []store.NodeSummary, n *store.Node, acc *store.Access) []moveTarget {
 	byID := make(map[int64]*store.NodeSummary, len(nodes))
 	for i := range nodes {
 		byID[nodes[i].ID] = &nodes[i]
@@ -406,7 +442,11 @@ func moveTargets(nodes []store.NodeSummary, n *store.Node) []moveTarget {
 			if x = byID[*x.ParentID]; x == nil {
 				break
 			}
-			parts = append(parts, x.Title)
+			if acc.Can(x.ID, rbac.DocRead) {
+				parts = append(parts, x.Title)
+			} else {
+				parts = append(parts, "…")
+			}
 		}
 		for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
 			parts[i], parts[j] = parts[j], parts[i]
@@ -416,7 +456,8 @@ func moveTargets(nodes []store.NodeSummary, n *store.Node) []moveTarget {
 	var out []moveTarget
 	for i := range nodes {
 		x := &nodes[i]
-		if (n.IsFolder() && !x.IsFolder()) || inSubtree(x.ID) {
+		if (n.IsFolder() && !x.IsFolder()) || inSubtree(x.ID) ||
+			!acc.Can(x.ID, rbac.DocRead) || !acc.Can(x.ID, rbac.DocCreate) {
 			continue
 		}
 		out = append(out, moveTarget{
@@ -428,14 +469,29 @@ func moveTargets(nodes []store.NodeSummary, n *store.Node) []moveTarget {
 	return out
 }
 
-func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
-	n, ok := s.loadNode(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleMove(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	ri := reqInfoFrom(r.Context())
 	parent := r.PostFormValue("parent")
-	if parent != "" && !store.ValidPublicID(parent) {
-		s.badRequest(w, r, "The new place is not valid.")
+	// The user must be able to create nodes at the new place.
+	target := ri.Access.Root()
+	if parent != "" {
+		if !store.ValidPublicID(parent) {
+			s.badRequest(w, r, "The new place is not valid.")
+			return
+		}
+		p, err := s.store.Node(r.Context(), n.SpaceID, parent)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			s.serverError(w, r, err)
+			return
+		}
+		if err != nil || !canRead(r, p.ID) {
+			s.badRequest(w, r, "The new place does not exist.")
+			return
+		}
+		target = ri.Access.For(p.ID)
+	}
+	if !target.Has(rbac.DocCreate) {
+		s.forbidden(w, r)
 		return
 	}
 	err := s.store.MoveNode(r.Context(), n.SpaceID, n.PublicID, parent)
@@ -450,11 +506,20 @@ func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, docPath(base(r), n.PublicID, n.Slug), http.StatusSeeOther)
 }
 
-func (s *Server) handleDeleteForm(w http.ResponseWriter, r *http.Request) {
-	n, ok := s.loadNode(w, r)
-	if !ok {
-		return
+// canDeleteSubtree reports whether the user can delete each node in the
+// subtree of n. A deletion also removes the subtree. Thus a user cannot
+// delete items that the user cannot delete one by one.
+func canDeleteSubtree(r *http.Request, n *store.Node) bool {
+	acc := reqInfoFrom(r.Context()).Access
+	for _, id := range acc.Subtree(n.ID) {
+		if !acc.Can(id, rbac.DocDelete) {
+			return false
+		}
 	}
+	return true
+}
+
+func (s *Server) handleDeleteForm(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	count, err := s.store.CountDescendants(r.Context(), n.ID)
 	if err != nil {
 		s.serverError(w, r, err)
@@ -463,12 +528,14 @@ func (s *Server) handleDeleteForm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "delete", "Delete "+n.Title, struct {
 		Node        *store.Node
 		Descendants int
-	}{n, count})
+		Permitted   bool
+	}{n, count, canDeleteSubtree(r, n)})
 }
 
-func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
-	n, ok := s.loadNode(w, r)
-	if !ok {
+func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	if !canDeleteSubtree(r, n) {
+		s.renderError(w, r, http.StatusForbidden,
+			"You cannot delete this item. It contains items that you do not have permission to delete.")
 		return
 	}
 	ancestors, err := s.store.Ancestors(r.Context(), n.ID)
@@ -483,18 +550,14 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("node deleted", "tenant", ri.Tenant.Code, "space", ri.Space.Slug,
 		"node", n.PublicID, "user_id", ri.Session.User.ID)
 	target := base(r) + "/"
-	if len(ancestors) > 0 {
-		p := ancestors[len(ancestors)-1]
+	if a := readableOnly(r, ancestors); len(a) > 0 {
+		p := a[len(a)-1]
 		target = docPath(base(r), p.PublicID, p.Slug)
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
-func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
-	n, ok := s.loadNode(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	revs, err := s.store.Revisions(r.Context(), n.ID)
 	if err != nil {
 		s.serverError(w, r, err)
@@ -506,11 +569,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	}{n, revs})
 }
 
-func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request) {
-	n, ok := s.loadNode(w, r)
-	if !ok {
-		return
-	}
+func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	version, ok := parseVersion(r.PathValue("version"))
 	if !ok || version < 1 {
 		s.notFound(w, r)
@@ -537,9 +596,9 @@ func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request) {
 	}{n, rev, html})
 }
 
-// handleWikiLink finds the target of a wiki link [[Title]]. One match
-// sends the browser to the node. More matches show a list. No match shows
-// a page with a link to make the document.
+// handleWikiLink finds the target of a wiki link [[Title]]. One readable
+// match sends the browser to the node. More matches show a list. No match
+// shows a page with a link to make the document.
 func (s *Server) handleWikiLink(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if !markdown.ValidSlug(slug) {
@@ -551,6 +610,7 @@ func (s *Server) handleWikiLink(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	nodes = readableOnly(r, nodes)
 	if len(nodes) == 1 {
 		http.Redirect(w, r, docPath(base(r), nodes[0].PublicID, nodes[0].Slug), http.StatusSeeOther)
 		return
@@ -568,10 +628,85 @@ func (s *Server) handleWikiLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRecent(w http.ResponseWriter, r *http.Request) {
-	list, err := s.store.RecentNodes(r.Context(), reqInfoFrom(r.Context()).Space.ID, 50)
+	list, err := s.store.RecentNodes(r.Context(), reqInfoFrom(r.Context()).Space.ID, 200)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
+	list = readableOnly(r, list)
+	if len(list) > 50 {
+		list = list[:50]
+	}
 	s.render(w, r, http.StatusOK, "recent", "Recent changes", list)
+}
+
+// handleFolderAccess shows the default role and the role bindings of a
+// folder.
+func (s *Server) handleFolderAccess(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	if !n.IsFolder() {
+		s.notFound(w, r)
+		return
+	}
+	ctx := r.Context()
+	t := tenantOf(r)
+	bindings, err := s.store.Bindings(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	var own []store.Binding
+	for _, b := range bindings {
+		if b.NodeID == n.ID {
+			own = append(own, b)
+		}
+	}
+	roles, err := s.store.Roles(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	groups, err := s.store.Groups(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	users, err := s.store.Users(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	// The default role select uses "-" for "same as the parent".
+	defaultRole := "-"
+	if n.DefaultRole != nil {
+		defaultRole = *n.DefaultRole
+	}
+	s.render(w, r, http.StatusOK, "folder-access", "Access to "+n.Title, struct {
+		Node        *store.Node
+		DefaultRole string
+		Bindings    []store.Binding
+		Roles       []store.Role
+		Groups      []store.Group
+		Users       []*store.User
+	}{n, defaultRole, own, roles, groups, users})
+}
+
+// handleFolderDefaultRole sets the default role of a folder. The value
+// "-" means "same as the parent", and "" means no default role.
+func (s *Server) handleFolderDefaultRole(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	ri := reqInfoFrom(r.Context())
+	var role *string
+	switch v := r.PostFormValue("default_role"); {
+	case v == "-":
+	case v == "" || roleNameRE.MatchString(v):
+		role = &v
+	default:
+		s.badRequest(w, r, "The role is not valid.")
+		return
+	}
+	if !s.storeResult(w, r, s.store.SetFolderDefaultRole(r.Context(), ri.Tenant.ID, ri.Space.ID, n.PublicID, role)) {
+		return
+	}
+	s.log.Info("folder default role changed", "tenant", ri.Tenant.Code, "space", ri.Space.Slug,
+		"node", n.PublicID, "user_id", ri.Session.User.ID)
+	http.Redirect(w, r, base(r)+"/access/"+n.PublicID, http.StatusSeeOther)
 }

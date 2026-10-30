@@ -107,7 +107,7 @@ func newEnv(t *testing.T) *env {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := st.BindRoleToGroup(ctx, dft.ID, role, id, nil); err != nil {
+		if err := st.BindRoleToGroup(ctx, dft.ID, role, id, store.Scope{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -754,7 +754,7 @@ func TestSpacePermissions(t *testing.T) {
 	// editor through a group binding for all spaces. That binding applies
 	// also in the private space.
 	wantStatus(t, carol.get("/dflt/secret00/"), http.StatusForbidden)
-	wantStatus(t, carol.get(doc), http.StatusForbidden)
+	wantStatus(t, carol.get(doc), http.StatusNotFound)
 	wantStatus(t, bob.get(doc), http.StatusOK)
 
 	// Carol does not see the space on the tenant page or in the search.
@@ -821,4 +821,118 @@ func TestSpacePermissions(t *testing.T) {
 	if sp2.DefaultRole != nil {
 		t.Fatalf("default role = %q", *sp2.DefaultRole)
 	}
+}
+
+func TestFolderPermissions(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	bob := e.login("bob")
+	carol := e.login("carol")
+	users, _ := e.st.Users(ctx, e.dft.ID)
+	ids := map[string]string{}
+	for _, u := range users {
+		ids[u.Username] = "user:" + strconv.FormatInt(u.ID, 10)
+	}
+
+	hr := alice.create("folder", "", "HR", "")
+	salaries := alice.create("document", hr, "Salaries", "the payroll text")
+	public := alice.create("document", "", "Public", "x")
+	bobFolder := bob.create("folder", "", "Bob folder", "")
+
+	// Only users with tenant.manage can open the access page of a folder.
+	// Then make HR private. Bob is an editor for all spaces: he still has
+	// access. Carol (default role viewer) has no access.
+	wantStatus(t, carol.get(sp+"/access/"+hr), http.StatusForbidden)
+	wantStatus(t, bob.get(sp+"/access/"+hr), http.StatusForbidden)
+	wantStatus(t, alice.get(sp+"/access/"+salaries), http.StatusNotFound)
+	wantStatus(t, alice.post(sp+"/access/"+hr, url.Values{"default_role": {""}}), http.StatusSeeOther)
+	wantStatus(t, alice.get(sp+"/access/"+hr), http.StatusOK)
+
+	for _, p := range []string{"/d/" + hr, "/d/" + salaries, "/history/" + salaries, "/raw/" + salaries, "/edit/" + salaries} {
+		wantStatus(t, carol.get(sp+p), http.StatusNotFound)
+	}
+	wantStatus(t, carol.get(sp+"/d/"+public+"/public"), http.StatusOK)
+	if b := readBody(t, carol.get(sp+"/")); strings.Contains(b, "HR") || strings.Contains(b, "Salaries") {
+		t.Fatalf("tree of carol shows the private folder:\n%s", b)
+	}
+	if b := readBody(t, carol.get(sp+"/search?q=payroll")); strings.Contains(b, "Salaries") {
+		t.Fatalf("space search of carol finds the private document:\n%s", b)
+	}
+	if b := readBody(t, carol.get("/dflt/search?q=payroll")); strings.Contains(b, "Salaries") {
+		t.Fatalf("tenant search of carol finds the private document:\n%s", b)
+	}
+	if b := readBody(t, carol.get(sp+"/recent")); strings.Contains(b, "Salaries") {
+		t.Fatalf("recent changes of carol show the private document:\n%s", b)
+	}
+	wantStatus(t, carol.get(sp+"/w/salaries"), http.StatusNotFound)
+	wantStatus(t, bob.get(sp+"/d/"+salaries+"/salaries"), http.StatusOK)
+
+	// Give carol the editor role for the folder HR only.
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"editor"}, "subject": {ids["carol"]}, "space": {"default0"}, "node": {salaries},
+	}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"editor"}, "subject": {ids["carol"]}, "space": {"default0"}, "node": {"000000000000"},
+	}), http.StatusNotFound)
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"editor"}, "subject": {ids["carol"]}, "space": {"default0"}, "node": {hr},
+		"return_to": {sp + "/access/" + hr},
+	}), http.StatusSeeOther)
+	if b := readBody(t, alice.get(sp+"/access/"+hr)); !strings.Contains(b, "carol") {
+		t.Fatalf("access page does not show the binding:\n%s", b)
+	}
+	if b := readBody(t, alice.get("/dflt/admin/bindings")); !strings.Contains(b, `Folder "HR"`) {
+		t.Fatalf("binding list does not show the folder scope:\n%s", b)
+	}
+
+	wantStatus(t, carol.get(sp+"/d/"+salaries+"/salaries"), http.StatusOK)
+	wantStatus(t, carol.save(salaries, "Salaries", "new text", 1), http.StatusSeeOther)
+	child := carol.create("document", hr, "Bonus", "x")
+	// The binding does not apply outside the folder.
+	wantStatus(t, carol.save(public, "Public", "changed", 1), http.StatusForbidden)
+	wantStatus(t, carol.post(sp+"/new", url.Values{"kind": {"document"}, "title": {"Top"}}), http.StatusForbidden)
+	wantStatus(t, carol.get(sp+"/new?kind=document"), http.StatusForbidden)
+
+	// Carol cannot move a document out of HR to the top level, or into a
+	// folder where she cannot create items.
+	wantStatus(t, carol.post(sp+"/move/"+child, url.Values{"parent": {""}}), http.StatusForbidden)
+	wantStatus(t, carol.post(sp+"/move/"+child, url.Values{"parent": {bobFolder}}), http.StatusForbidden)
+	if b := readBody(t, carol.get(sp+"/move/"+child)); strings.Contains(b, "Top of the space") || strings.Contains(b, "Bob folder") {
+		t.Fatalf("move form shows places without permission:\n%s", b)
+	}
+
+	// Editors cannot delete. A maintainer binding on the folder can.
+	wantStatus(t, carol.post(sp+"/delete/"+child, nil), http.StatusForbidden)
+
+	// Mary is a maintainer for all spaces. That binding applies also in
+	// the private folder.
+	mary := e.login("mary")
+	inner := alice.create("folder", hr, "Inner", "")
+	if b := readBody(t, mary.get(sp+"/delete/"+hr)); strings.Contains(b, "You cannot delete") {
+		t.Fatalf("delete form of mary:\n%s", b)
+	}
+
+	// A folder binding with the admin role does not give tenant
+	// administration.
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"admin"}, "subject": {ids["carol"]}, "space": {"default0"}, "node": {hr},
+	}), http.StatusSeeOther)
+	wantStatus(t, carol.get(sp+"/access/"+hr), http.StatusForbidden)
+	wantStatus(t, carol.get("/dflt/admin/users"), http.StatusForbidden)
+
+	// The delete check covers the subtree. HR gets the default role
+	// maintainer, and the inner folder gets no default role. Dave has only
+	// default roles. Thus dave cannot delete HR, because he cannot delete
+	// the inner folder.
+	wantStatus(t, alice.post(sp+"/access/"+hr, url.Values{"default_role": {"maintainer"}}), http.StatusSeeOther)
+	wantStatus(t, alice.post(sp+"/access/"+inner, url.Values{"default_role": {""}}), http.StatusSeeOther)
+	dave := e.login("dave")
+	if b := readBody(t, dave.get(sp+"/delete/"+hr)); !strings.Contains(b, "You cannot delete this item") {
+		t.Fatalf("delete form of dave:\n%s", b)
+	}
+	wantStatus(t, dave.post(sp+"/delete/"+hr, nil), http.StatusForbidden)
+	// Dave can delete the document Bonus in HR.
+	wantStatus(t, dave.post(sp+"/delete/"+child, nil), http.StatusSeeOther)
+	// Alice can delete everything.
+	wantStatus(t, alice.post(sp+"/delete/"+hr, nil), http.StatusSeeOther)
 }

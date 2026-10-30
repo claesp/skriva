@@ -235,7 +235,7 @@ func ensureAdminGroup(ctx context.Context, tx pgx.Tx, t *Tenant) error {
 	if err != nil {
 		return err
 	}
-	return bind(ctx, tx, t.ID, "admin", nil, &gid, nil)
+	return bind(ctx, tx, t.ID, "admin", nil, &gid, Scope{})
 }
 
 // checkRole returns ErrInvalid if the role name is not empty and no

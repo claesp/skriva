@@ -378,8 +378,10 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 		s.badRequest(w, r, "Select a role and a user or a group.")
 		return
 	}
-	// An empty "space" field gives a binding for all spaces.
-	var spaceID *int64
+	// An empty "space" field gives a binding for all spaces. The "node"
+	// field (the public ID of a folder in the space) gives a binding for
+	// one folder.
+	var scope store.Scope
 	if slug := r.PostFormValue("space"); slug != "" {
 		if !spaceSlugRE.MatchString(slug) {
 			s.badRequest(w, r, "The space is not valid.")
@@ -390,13 +392,25 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 			s.storeResult(w, r, err)
 			return
 		}
-		spaceID = &sp.ID
+		scope.SpaceID = sp.ID
+		if pub := r.PostFormValue("node"); pub != "" {
+			if !store.ValidPublicID(pub) {
+				s.badRequest(w, r, "The folder is not valid.")
+				return
+			}
+			n, err := s.store.Node(r.Context(), sp.ID, pub)
+			if err != nil {
+				s.storeResult(w, r, err)
+				return
+			}
+			scope.NodeID = n.ID
+		}
 	}
 	switch kind {
 	case "user":
-		err = s.store.BindRoleToUser(r.Context(), t.ID, role, id, spaceID)
+		err = s.store.BindRoleToUser(r.Context(), t.ID, role, id, scope)
 	case "group":
-		err = s.store.BindRoleToGroup(r.Context(), t.ID, role, id, spaceID)
+		err = s.store.BindRoleToGroup(r.Context(), t.ID, role, id, scope)
 	default:
 		s.badRequest(w, r, "Select a role and a user or a group.")
 		return
@@ -405,7 +419,8 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.log.Info("role binding created", "tenant", t.Code, "role", role, "subject", kind, "subject_id", id,
-		"space", r.PostFormValue("space"), "user_id", reqInfoFrom(r.Context()).Session.User.ID)
+		"space", r.PostFormValue("space"), "node", r.PostFormValue("node"),
+		"user_id", reqInfoFrom(r.Context()).Session.User.ID)
 	http.Redirect(w, r, safeReturnTo(r.PostFormValue("return_to"), adminPath(r)), http.StatusSeeOther)
 }
 

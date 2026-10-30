@@ -25,11 +25,15 @@ type Node struct {
 	Kind     string
 	Title    string
 	// Slug is a readable form of the title for the URL. It can be empty.
-	Slug      string
-	Body      string
-	Version   int
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Slug    string
+	Body    string
+	Version int
+	// DefaultRole is the default role of a folder. Nil means that the
+	// folder uses the default role of its parent. An empty value means no
+	// default role.
+	DefaultRole *string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 	// UpdatedBy is the name of the last author. It is empty if the user
 	// does not exist now.
 	UpdatedBy string
@@ -79,12 +83,12 @@ func (s *Store) Node(ctx context.Context, spaceID int64, publicID string) (*Node
 	var n Node
 	err := s.pool.QueryRow(ctx, `
 		SELECT n.id, n.public_id, n.space_id, n.parent_id, n.kind, n.title, n.slug, n.body,
-		       n.version, n.created_at, n.updated_at,
+		       n.version, n.default_role, n.created_at, n.updated_at,
 		       COALESCE(NULLIF(u.display_name, ''), u.username, '')
 		FROM nodes n LEFT JOIN users u ON u.id = n.updated_by
 		WHERE n.space_id = $1 AND n.public_id = $2`, spaceID, publicID,
 	).Scan(&n.ID, &n.PublicID, &n.SpaceID, &n.ParentID, &n.Kind, &n.Title, &n.Slug, &n.Body,
-		&n.Version, &n.CreatedAt, &n.UpdatedAt, &n.UpdatedBy)
+		&n.Version, &n.DefaultRole, &n.CreatedAt, &n.UpdatedAt, &n.UpdatedBy)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -250,6 +254,31 @@ func (s *Store) MoveNode(ctx context.Context, spaceID int64, publicID, newParent
 	})
 }
 
+// SetFolderDefaultRole sets the default role of a folder. Nil means that
+// the folder uses the default role of its parent. A pointer to "" means no
+// default role. It returns ErrInvalid if the node is not a folder or if the
+// role does not exist.
+func (s *Store) SetFolderDefaultRole(ctx context.Context, tenantID, spaceID int64, publicID string, role *string) error {
+	if role != nil {
+		if err := checkRole(ctx, s.pool, tenantID, *role); err != nil {
+			return err
+		}
+	}
+	var kind string
+	err := s.pool.QueryRow(ctx, `
+		UPDATE nodes n SET default_role = CASE WHEN n.kind = 'folder' THEN $4 ELSE NULL END
+		FROM spaces sp
+		WHERE sp.id = n.space_id AND sp.tenant_id = $1 AND n.space_id = $2 AND n.public_id = $3
+		RETURNING n.kind`, tenantID, spaceID, publicID, role).Scan(&kind)
+	if err != nil {
+		return notFound(err)
+	}
+	if kind != KindFolder {
+		return ErrInvalid
+	}
+	return nil
+}
+
 // DeleteNode removes a node and its subtree with all revisions.
 func (s *Store) DeleteNode(ctx context.Context, spaceID int64, publicID string) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -358,6 +387,7 @@ func (s *Store) summaries(ctx context.Context, sql string, args ...any) ([]NodeS
 // SearchResult is one result of a full text search.
 type SearchResult struct {
 	NodeSummary
+	SpaceID   int64
 	SpaceSlug string
 	SpaceName string
 	// Snippet is a part of the text. The marks « and » enclose the
@@ -375,7 +405,7 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at,
-		       sp.slug, sp.name,
+		       sp.id, sp.slug, sp.name,
 		       ts_headline('simple', n.body, q, 'StartSel=«, StopSel=», MaxFragments=2, MaxWords=20, MinWords=5')
 		FROM nodes n
 		JOIN spaces sp ON sp.id = n.space_id,
@@ -391,7 +421,7 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 	for rows.Next() {
 		var r SearchResult
 		if err := rows.Scan(&r.ID, &r.PublicID, &r.ParentID, &r.Kind, &r.Title, &r.Slug, &r.UpdatedAt,
-			&r.SpaceSlug, &r.SpaceName, &r.Snippet); err != nil {
+			&r.SpaceID, &r.SpaceSlug, &r.SpaceName, &r.Snippet); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -484,4 +514,39 @@ func BuildTree(nodes []NodeSummary, current int64) []*TreeNode {
 	}
 	// The order of the input stays, thus the caller controls the order.
 	return roots
+}
+
+// BuildVisibleTree makes a tree from the nodes for which visible returns
+// true. A visible node with a hidden parent goes below its nearest visible
+// ancestor, or to the top level. Thus the tree shows no titles of hidden
+// nodes, and the user can still find all visible nodes.
+func BuildVisibleTree(nodes []NodeSummary, current int64, visible func(id int64) bool) []*TreeNode {
+	byID := make(map[int64]*NodeSummary, len(nodes))
+	for i := range nodes {
+		byID[nodes[i].ID] = &nodes[i]
+	}
+	var out []NodeSummary
+	for _, n := range nodes {
+		if !visible(n.ID) {
+			continue
+		}
+		// Find the nearest visible ancestor. The limit stops the loop if
+		// the data contains a cycle.
+		var parent *int64
+		p := n.ParentID
+		for i := 0; p != nil && i <= len(nodes); i++ {
+			if visible(*p) {
+				parent = p
+				break
+			}
+			anc := byID[*p]
+			if anc == nil {
+				break
+			}
+			p = anc.ParentID
+		}
+		n.ParentID = parent
+		out = append(out, n)
+	}
+	return BuildTree(out, current)
 }

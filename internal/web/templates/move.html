@@ -5,7 +5,7 @@
   {{template "csrf" $.CSRF}}
   <label>New place
     <select name="parent">
-      <option value=""{{if .AtRoot}} selected{{end}}>(Top of the space)</option>
+      {{if .RootOpen}}<option value=""{{if .AtRoot}} selected{{end}}>(Top of the space)</option>{{end}}
       {{range .Targets}}<option value="{{.PublicID}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
     </select>
   </label>

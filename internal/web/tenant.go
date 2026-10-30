@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/clpe/skriva/internal/rbac"
 	"github.com/clpe/skriva/internal/store"
 )
 
@@ -53,6 +54,31 @@ func (s *Server) readable(r *http.Request) ([]int64, error) {
 	return s.store.ReadableSpaces(r.Context(), ri.Tenant.ID, ri.Session.User.ID)
 }
 
+// readableResults removes the results that the user cannot read. Folders
+// can have different permissions. Thus the function checks each node.
+func (s *Server) readableResults(r *http.Request, in []store.SearchResult) ([]store.SearchResult, error) {
+	ri := reqInfoFrom(r.Context())
+	access := map[int64]*store.Access{}
+	if ri.Space != nil {
+		access[ri.Space.ID] = ri.Access
+	}
+	out := in[:0:0]
+	for _, res := range in {
+		acc, ok := access[res.SpaceID]
+		if !ok {
+			var err error
+			if acc, err = s.store.Access(r.Context(), ri.Tenant.ID, res.SpaceID, ri.Session.User.ID); err != nil {
+				return nil, err
+			}
+			access[res.SpaceID] = acc
+		}
+		if acc.Can(res.ID, rbac.DocRead) {
+			out = append(out, res)
+		}
+	}
+	return out, nil
+}
+
 // handleSearch searches in the space of the request, or in all spaces of
 // the tenant if the request has no space.
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +105,10 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		var err error
 		results, err = s.store.Search(r.Context(), ri.Tenant.ID, spaceIDs, q, searchPageSize)
 		if err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		if results, err = s.readableResults(r, results); err != nil {
 			s.serverError(w, r, err)
 			return
 		}
