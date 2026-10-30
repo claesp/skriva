@@ -27,6 +27,14 @@ This document describes the security controls of Skriva.
   control of the tenant.
 - The tenant page and the search in all spaces show only the spaces
   that the user can read.
+- The server checks the permissions for each item. If a user cannot
+  read an item, the server sends status 404 and not 403. Thus a user
+  cannot find out that the item exists. The tree, the lists and the
+  search do not show the titles of items that the user cannot read.
+- A deletion also removes the subtree. Thus the server requires
+  `doc.delete` for each item in the subtree.
+- A move requires `doc.create` at the new place. Thus a user cannot move
+  an item into a folder where the user cannot make items.
 
 ## Client secrets
 
@@ -139,6 +147,8 @@ control characters.
   The limit prevents that anonymous clients fill the database.
 - The server accepts only document versions that fit in 32 bits.
 - The tree of a space shows a maximum of 10000 items.
+- For each request in a space, the server reads the parent of each node
+  in the space. For spaces with very many items, this can be slow.
 - The HTTP server has timeouts for headers, reading, writing and idle
   connections.
 

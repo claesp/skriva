@@ -101,8 +101,11 @@ space `default0` ("Default").
    - A 4-character code goes to the tenant. The dispatcher loads the
      tenant and the session for that tenant.
 3. If the second part of the path has 8 characters, the dispatcher loads
-   the space and the permissions of the user in that space. Then the
-   space router handles the request. Otherwise the
+   the space and the permission data of the user in that space. The
+   data contains the parent of each node, the folder default roles and
+   the folder bindings of the user. Then the space router handles the
+   request. The handler calculates the permissions of the node in
+   memory. Otherwise the
    tenant router handles the request.
 4. The handler checks the permission. Then it reads or changes the data.
 
@@ -112,14 +115,14 @@ space `default0` ("Default").
 |--------------------|----------|
 | `tenants`          | Tenants and their settings. The client secret is encrypted. |
 | `spaces`           | Spaces. Each space belongs to one tenant. A space can have its own default role. |
-| `nodes`            | Folders and documents. `parent_id` makes the tree. |
+| `nodes`            | Folders and documents. `parent_id` makes the tree. A folder can have its own default role. |
 | `revisions`        | All versions of each node. |
 | `users`            | Users. The key is (tenant, issuer, subject). A user with no tenant is a system administrator. |
 | `groups`           | Groups of a tenant. The source is `oidc` or `local`. |
 | `group_members`    | The members of each group. |
 | `roles`            | Built-in roles (no tenant) and custom roles (one tenant). |
 | `role_permissions` | The permissions of each role. |
-| `role_bindings`    | Each row gives one role to one user or to one group of a tenant, in all spaces or in one space. |
+| `role_bindings`    | Each row gives one role to one user or to one group of a tenant, in all spaces, in one space or in one folder. |
 | `sessions`         | Browser sessions. The table keeps only a token hash. |
 | `oidc_states`      | Data for logins that are in progress. |
 | `schema_migrations`| The migrations that the server applied. |

@@ -19,6 +19,13 @@ sign-in. If you use more than one tenant, sign in to each tenant.
 The page of a document shows the tree of the space at the left side. The
 path to the document is above the title.
 
+## Access
+
+The administrators can give access to a full space or to one folder. If
+you cannot read a folder, it is not in the tree and the search does not
+find its documents. If you have a link to a document that you cannot
+read, the wiki shows "not found".
+
 ## Links to a document
 
 Each document has two links:

@@ -69,6 +69,8 @@ Users with the permission `tenant.manage` manage these items:
 - **Access to a space.** The default role and the role bindings of one
   space. Open "Administration > Spaces" and click **Access**. See
   [Access control](access-control.md).
+- **Access to a folder.** The default role and the role bindings of one
+  folder. Open the folder and click **Access**.
 
 Users with the permission `space.manage` manage the spaces:
 
