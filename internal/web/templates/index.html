@@ -1,0 +1,14 @@
+{{define "content"}}
+<h1>All pages</h1>
+{{with .Data.Pages}}
+<ul class="pages">
+  {{range .}}<li><a href="/wiki/{{.Slug}}">{{.Title}}</a> <small>{{date .UpdatedAt}}</small></li>{{end}}
+</ul>
+{{else}}
+<p>There are no pages. {{if $.Can "page.create"}}<a href="/wiki/home/edit?title=Home">Make the start page</a>.{{end}}</p>
+{{end}}
+<p class="pager">
+  {{if gt .Data.Page 1}}<a href="/wiki/?page={{sub .Data.Page 1}}">Previous</a>{{end}}
+  {{if .Data.More}}<a href="/wiki/?page={{add .Data.Page 1}}">Next</a>{{end}}
+</p>
+{{end}}

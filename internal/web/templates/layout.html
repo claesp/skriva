@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · Skriva</title>
+<link rel="stylesheet" href="{{.StyleURL}}">
+</head>
+<body>
+<header class="site">
+  <a class="brand" href="/">Skriva</a>
+  {{if .Session}}
+  <nav aria-label="Main">
+    <a href="/wiki/">All pages</a>
+    <a href="/recent">Recent changes</a>
+    {{if .Can "page.create"}}<a href="/new">New page</a>{{end}}
+    {{if .Can "admin.manage"}}<a href="/admin/">Administration</a>{{end}}
+  </nav>
+  <form class="search" action="/search" method="get" role="search">
+    <input type="search" name="q" value="{{.Query}}" placeholder="Search" aria-label="Search" maxlength="200">
+  </form>
+  <form class="user" action="/logout" method="post">
+    <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+    <span>{{.Session.User.Name}}</span>
+    <button type="submit" class="link">Sign out</button>
+  </form>
+  {{else}}
+  <nav><a href="/login">Sign in</a></nav>
+  {{end}}
+</header>
+<main>
+{{block "content" .}}{{end}}
+</main>
+</body>
+</html>
+{{define "adminnav"}}
+<nav class="tabs" aria-label="Administration">
+  <a href="/admin/users">Users</a>
+  <a href="/admin/groups">Groups</a>
+  <a href="/admin/roles">Roles</a>
+  <a href="/admin/bindings">Role bindings</a>
+</nav>
+{{end}}
+{{define "csrf"}}<input type="hidden" name="csrf_token" value="{{.}}">{{end}}

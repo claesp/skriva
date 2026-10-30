@@ -1,0 +1,13 @@
+{{define "content"}}
+<h1>Recent changes</h1>
+{{with .Data}}
+<table>
+  <thead><tr><th>Page</th><th>Changed</th></tr></thead>
+  <tbody>
+  {{range .}}<tr><td><a href="/wiki/{{.Slug}}">{{.Title}}</a></td><td>{{date .UpdatedAt}}</td></tr>{{end}}
+  </tbody>
+</table>
+{{else}}
+<p>There are no pages.</p>
+{{end}}
+{{end}}

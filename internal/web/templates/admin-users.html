@@ -1,0 +1,20 @@
+{{define "content"}}
+<h1>Administration</h1>
+{{template "adminnav"}}
+<h2>Users</h2>
+<p>Users appear here after their first sign-in.</p>
+<table>
+  <thead><tr><th>User name</th><th>Name</th><th>E-mail</th><th>Last sign-in</th><th>Status</th></tr></thead>
+  <tbody>
+  {{range .Data}}
+  <tr>
+    <td><a href="/admin/users/{{.ID}}">{{.Username}}</a></td>
+    <td>{{.DisplayName}}</td>
+    <td>{{.Email}}</td>
+    <td>{{with .LastLoginAt}}{{date .}}{{end}}</td>
+    <td>{{if .Disabled}}<span class="tag danger">Disabled</span>{{else}}Active{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}

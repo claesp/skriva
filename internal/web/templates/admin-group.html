@@ -1,0 +1,64 @@
+{{define "content"}}
+<h1>Administration</h1>
+{{template "adminnav"}}
+{{with .Data}}
+<h2>Group {{.Group.Name}} <span class="tag">{{.Group.Source}}</span></h2>
+{{with .Group.Description}}<p>{{.}}</p>{{end}}
+
+<h3>Members</h3>
+{{with .Members}}
+<table>
+  <tbody>
+  {{range .}}
+  <tr><td><a href="/admin/users/{{.ID}}">{{.Username}}</a></td><td>{{.DisplayName}}</td>
+    <td>{{if eq $.Data.Group.Source "local"}}
+      <form method="post" action="/admin/groups/{{$.Data.Group.ID}}/members/{{.ID}}/remove">
+        {{template "csrf" $.CSRF}}<button type="submit" class="link">Remove</button>
+      </form>{{end}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p>The group has no members.</p>{{end}}
+{{if eq .Group.Source "local"}}
+<form method="post" action="/admin/groups/{{.Group.ID}}/members" class="inline">
+  {{template "csrf" $.CSRF}}
+  <label>User <select name="user_id">{{range .Users}}<option value="{{.ID}}">{{.Username}}</option>{{end}}</select></label>
+  <button type="submit">Add member</button>
+</form>
+{{else}}
+<p>The identity provider controls the members of this group.</p>
+{{end}}
+
+<h3>Role bindings</h3>
+{{with .Bindings}}
+<table>
+  <tbody>
+  {{range .}}
+  <tr><td>{{.RoleName}}</td><td>
+    <form method="post" action="/admin/bindings/{{.ID}}/delete">
+      {{template "csrf" $.CSRF}}
+      <input type="hidden" name="return_to" value="/admin/groups/{{$.Data.Group.ID}}">
+      <button type="submit" class="link">Remove</button>
+    </form>
+  </td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p>The group has no role bindings.</p>{{end}}
+<form method="post" action="/admin/bindings" class="inline">
+  {{template "csrf" $.CSRF}}
+  <input type="hidden" name="subject" value="group:{{.Group.ID}}">
+  <input type="hidden" name="return_to" value="/admin/groups/{{.Group.ID}}">
+  <label>Role <select name="role">{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
+  <button type="submit">Give role</button>
+</form>
+
+{{if eq .Group.Source "local"}}
+<h3>Delete group</h3>
+<form method="post" action="/admin/groups/{{.Group.ID}}/delete">
+  {{template "csrf" $.CSRF}}
+  <button type="submit" class="danger">Delete group</button>
+</form>
+{{end}}
+{{end}}
+{{end}}

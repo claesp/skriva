@@ -1,0 +1,9 @@
+{{define "content"}}
+{{with .Data}}
+<p class="notice">This is version {{.Revision.Version}} from {{date .Revision.CreatedAt}}{{with .Revision.Author}} by {{.}}{{end}}.
+  <a href="/wiki/{{.Slug}}">Go to the current version</a>.
+  {{if $.Can "page.edit"}}<a href="/wiki/{{.Slug}}/edit?from={{.Revision.Version}}">Restore this version</a>.{{end}}</p>
+<h1>{{.Revision.Title}}</h1>
+<article class="markdown">{{.HTML}}</article>
+{{end}}
+{{end}}

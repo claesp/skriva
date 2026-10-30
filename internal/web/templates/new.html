@@ -1,0 +1,9 @@
+{{define "content"}}
+<h1>New page</h1>
+{{with .Data}}<p class="error" role="alert">{{.}}</p>{{end}}
+<form action="/new" method="post" class="stack">
+  {{template "csrf" .CSRF}}
+  <label>Title <input name="title" required maxlength="200" autofocus></label>
+  <div class="buttons"><button type="submit">Continue</button></div>
+</form>
+{{end}}

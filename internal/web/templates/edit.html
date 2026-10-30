@@ -1,0 +1,38 @@
+{{define "content"}}
+{{with .Data}}
+<h1>{{if .IsNew}}New page{{else}}Edit page{{end}}</h1>
+{{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+<form action="/wiki/{{.Slug}}/edit" method="post" class="stack">
+  {{template "csrf" $.CSRF}}
+  <input type="hidden" name="version" value="{{.Version}}">
+  <label>Title <input name="title" value="{{.Title}}" required maxlength="200"></label>
+  <label>Text (Markdown)
+    <textarea name="body" rows="24" spellcheck="true">{{.Body}}</textarea>
+  </label>
+  <label>Comment about the change <input name="comment" value="{{.Comment}}" maxlength="500"></label>
+  <div class="buttons">
+    <button type="submit" name="action" value="save">Save</button>
+    <button type="submit" name="action" value="preview" class="secondary">Preview</button>
+    <a href="/wiki/{{if .IsNew}}{{else}}{{.Slug}}{{end}}">Cancel</a>
+  </div>
+</form>
+<details class="help">
+  <summary>Markdown help</summary>
+  <pre># Heading
+**bold**, *italic*, `code`, ~~strike~~
+[link](https://example.com)
+[[Other page]] or [[Other page#Section]]
+- list item
+- [ ] task
+| column | column |
+|--------|--------|
+| cell   | cell   |</pre>
+</details>
+{{with .Preview}}
+<section class="preview" aria-label="Preview">
+  <h2>Preview</h2>
+  <article class="markdown">{{.}}</article>
+</section>
+{{end}}
+{{end}}
+{{end}}

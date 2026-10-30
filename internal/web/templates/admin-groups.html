@@ -1,0 +1,21 @@
+{{define "content"}}
+<h1>Administration</h1>
+{{template "adminnav"}}
+<h2>Groups</h2>
+<p>OIDC groups come from the identity provider. The application updates their members at each sign-in. You can change the members of local groups here.</p>
+<table>
+  <thead><tr><th>Name</th><th>Source</th><th>Members</th><th>Description</th></tr></thead>
+  <tbody>
+  {{range .Data}}
+  <tr><td><a href="/admin/groups/{{.ID}}">{{.Name}}</a></td><td><span class="tag">{{.Source}}</span></td><td>{{.Members}}</td><td>{{.Description}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+<h3>New local group</h3>
+<form method="post" action="/admin/groups" class="stack narrow">
+  {{template "csrf" .CSRF}}
+  <label>Name <input name="name" required maxlength="200"></label>
+  <label>Description <input name="description" maxlength="500"></label>
+  <div class="buttons"><button type="submit">Create group</button></div>
+</form>
+{{end}}

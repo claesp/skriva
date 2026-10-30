@@ -1,0 +1,15 @@
+{{define "content"}}
+{{with .Data.Page}}
+<div class="pagehead">
+  <h1>{{.Title}}</h1>
+  <nav class="actions" aria-label="Page">
+    {{if $.Can "page.edit"}}<a href="/wiki/{{.Slug}}/edit">Edit</a>{{end}}
+    <a href="/wiki/{{.Slug}}/history">History</a>
+    <a href="/wiki/{{.Slug}}/raw">Source</a>
+    {{if $.Can "page.delete"}}<a href="/wiki/{{.Slug}}/delete">Delete</a>{{end}}
+  </nav>
+</div>
+<article class="markdown">{{$.Data.HTML}}</article>
+<footer class="meta">Version {{.Version}}. Changed {{date .UpdatedAt}}{{with .UpdatedBy}} by {{.}}{{end}}.</footer>
+{{end}}
+{{end}}

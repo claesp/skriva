@@ -1,0 +1,18 @@
+{{define "content"}}
+<h1>Search</h1>
+<form action="/search" method="get" class="stack">
+  <label>Text <input type="search" name="q" value="{{.Data.Query}}" maxlength="200" autofocus></label>
+  <button type="submit">Search</button>
+</form>
+{{if .Data.Query}}
+  {{with .Data.Results}}
+  <ol class="results">
+    {{range .}}
+    <li><a href="/wiki/{{.Slug}}">{{.Title}}</a><p>{{.SnippetHTML}}</p></li>
+    {{end}}
+  </ol>
+  {{else}}
+  <p>No pages match "{{$.Data.Query}}".</p>
+  {{end}}
+{{end}}
+{{end}}

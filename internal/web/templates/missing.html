@@ -1,0 +1,5 @@
+{{define "content"}}
+<h1>Page not found</h1>
+<p>The page "{{.Data}}" does not exist.</p>
+{{if .Can "page.create"}}<p><a class="button" href="/wiki/{{.Data}}/edit">Make this page</a></p>{{end}}
+{{end}}
