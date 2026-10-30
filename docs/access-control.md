@@ -90,7 +90,7 @@ member of the admin group can always get access again.
 
 An administrator can disable a user. The server then deletes all
 sessions of the user at once. A disabled user cannot sign in. An
-administrator cannot disable his or her own account.
+administrator cannot disable the account that the administrator uses.
 
 ## Limits of the current design
 
