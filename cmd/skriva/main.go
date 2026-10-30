@@ -111,9 +111,9 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-// bootstrap gives the admin role to the configured admin group. Thus a
-// new installation has an administrator, and an administrator can always
-// get access again with a restart.
+// bootstrap gives roles to the groups in SKRIVA_ADMIN_GROUP and
+// SKRIVA_GROUP_ROLES. Thus a new installation has an administrator, and an
+// administrator can always get access again with a restart.
 func bootstrap(ctx context.Context, st *store.Store, cfg *config.Config, log *slog.Logger) error {
 	if cfg.DefaultRole != "" {
 		ok, err := st.RoleExists(ctx, cfg.DefaultRole)
@@ -124,17 +124,20 @@ func bootstrap(ctx context.Context, st *store.Store, cfg *config.Config, log *sl
 			return fmt.Errorf("SKRIVA_DEFAULT_ROLE: role %q does not exist", cfg.DefaultRole)
 		}
 	}
-	if cfg.AdminGroup == "" {
-		return nil
+	for _, gr := range cfg.GroupRoles {
+		id, err := st.EnsureOIDCGroup(ctx, gr.Group)
+		if err != nil {
+			return fmt.Errorf("create group %q: %w", gr.Group, err)
+		}
+		err = st.BindRoleToGroup(ctx, gr.Role, id)
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("SKRIVA_GROUP_ROLES: role %q does not exist", gr.Role)
+		}
+		if err != nil {
+			return fmt.Errorf("bind role %q to group %q: %w", gr.Role, gr.Group, err)
+		}
+		log.Info("group has role", "group", gr.Group, "role", gr.Role)
 	}
-	id, err := st.EnsureOIDCGroup(ctx, cfg.AdminGroup)
-	if err != nil {
-		return fmt.Errorf("create admin group: %w", err)
-	}
-	if err := st.BindRoleToGroup(ctx, "admin", id); err != nil {
-		return fmt.Errorf("bind admin role: %w", err)
-	}
-	log.Info("admin group has the admin role", "group", cfg.AdminGroup)
 	return nil
 }
 

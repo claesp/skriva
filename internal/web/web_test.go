@@ -56,7 +56,7 @@ func (f *fakeIdP) Exchange(_ context.Context, code, verifier, nonce string) (sto
 	}, nil
 }
 
-func (f *fakeIdP) LogoutURL(_ context.Context, redirect string) string {
+func (f *fakeIdP) LogoutURL(_ context.Context, _, redirect string) string {
 	return "https://idp.example/logout?post_logout_redirect_uri=" + url.QueryEscape(redirect)
 }
 

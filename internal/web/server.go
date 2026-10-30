@@ -17,7 +17,7 @@ import (
 type Authenticator interface {
 	AuthCodeURL(ctx context.Context, state, nonce, verifier string) (string, error)
 	Exchange(ctx context.Context, code, verifier, nonce string) (store.Identity, error)
-	LogoutURL(ctx context.Context, postLogoutRedirect string) string
+	LogoutURL(ctx context.Context, idTokenHint, postLogoutRedirect string) string
 }
 
 // Options contains the settings for the Server.

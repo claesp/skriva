@@ -40,4 +40,5 @@ run: build
 	SKRIVA_OIDC_CLIENT_ID=skriva \
 	SKRIVA_OIDC_CLIENT_SECRET=skriva-dev-secret \
 	SKRIVA_ADMIN_GROUP=skriva-admins \
+	SKRIVA_GROUP_ROLES=skriva-editors=editor \
 	./bin/skriva

@@ -3,7 +3,10 @@ package store
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/clpe/skriva/internal/rbac"
 )
@@ -18,13 +21,14 @@ type Session struct {
 
 // CreateSession makes a new session for the user. It returns the secret
 // token for the cookie. The database keeps only a hash of the token.
-func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Duration) (string, error) {
+// idToken is the ID token from the login. It can be empty.
+func (s *Store) CreateSession(ctx context.Context, userID int64, idToken string, ttl time.Duration) (string, error) {
 	token := rand.Text()
 	csrf := rand.Text()
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO sessions (token_hash, user_id, csrf_token, created_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5)`,
-		hashToken(token), userID, csrf, s.now(), s.now().Add(ttl))
+		INSERT INTO sessions (token_hash, user_id, csrf_token, id_token, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		hashToken(token), userID, csrf, idToken, s.now(), s.now().Add(ttl))
 	if err != nil {
 		return "", err
 	}
@@ -74,10 +78,16 @@ func permissionsQuery(roleParam string) string {
 		WHERE gm.user_id = u.id)`
 }
 
-// DeleteSession removes the session for token.
-func (s *Store) DeleteSession(ctx context.Context, token string) error {
-	_, err := s.pool.Exec(ctx, "DELETE FROM sessions WHERE token_hash = $1", hashToken(token))
-	return err
+// DeleteSession removes the session for token. It returns the ID token
+// of the session, or "" if the session does not exist.
+func (s *Store) DeleteSession(ctx context.Context, token string) (string, error) {
+	var idToken string
+	err := s.pool.QueryRow(ctx,
+		"DELETE FROM sessions WHERE token_hash = $1 RETURNING id_token", hashToken(token)).Scan(&idToken)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	return idToken, nil
 }
 
 // LoginState is the data that the application keeps between the start

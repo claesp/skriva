@@ -81,6 +81,7 @@ app() {
 		-e SKRIVA_OIDC_CLIENT_ID=skriva \
 		-e SKRIVA_OIDC_CLIENT_SECRET=skriva-dev-secret \
 		-e SKRIVA_ADMIN_GROUP=skriva-admins \
+		-e SKRIVA_GROUP_ROLES=skriva-editors=editor \
 		"$APP_IMAGE"
 	wait_for app "http://localhost:$APP_PORT/readyz"
 	echo "Skriva:     http://localhost:$APP_PORT (users: alice/alice, bob/bob, carol/carol)"

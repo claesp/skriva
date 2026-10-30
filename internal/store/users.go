@@ -50,6 +50,8 @@ type Identity struct {
 	DisplayName string
 	// Groups are the names of the OIDC groups of the user.
 	Groups []string
+	// IDToken is the raw ID token from the login.
+	IDToken string
 }
 
 // SyncLogin records a login. It makes or updates the user and replaces

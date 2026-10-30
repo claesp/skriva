@@ -148,12 +148,16 @@ func (a *OIDC) Exchange(ctx context.Context, code, verifier, nonce string) (stor
 	if err := idt.Claims(&claims); err != nil {
 		return store.Identity{}, fmt.Errorf("read claims: %w", err)
 	}
-	return identityFromClaims(idt.Issuer, idt.Subject, claims, a.cfg.GroupsClaim)
+	id, err := identityFromClaims(idt.Issuer, idt.Subject, claims, a.cfg.GroupsClaim)
+	id.IDToken = raw
+	return id, err
 }
 
 // LogoutURL returns the URL of the logout endpoint of the provider, or an
-// empty string if the provider does not have one.
-func (a *OIDC) LogoutURL(ctx context.Context, postLogoutRedirect string) string {
+// empty string if the provider does not have one. idTokenHint is the ID
+// token of the session. It can be empty, but some providers then ask the
+// user to confirm the logout.
+func (a *OIDC) LogoutURL(ctx context.Context, idTokenHint, postLogoutRedirect string) string {
 	if _, err := a.init(ctx); err != nil || a.endSession == "" {
 		return ""
 	}
@@ -163,6 +167,9 @@ func (a *OIDC) LogoutURL(ctx context.Context, postLogoutRedirect string) string 
 	}
 	q := u.Query()
 	q.Set("client_id", a.cfg.ClientID)
+	if idTokenHint != "" {
+		q.Set("id_token_hint", idTokenHint)
+	}
 	q.Set("post_logout_redirect_uri", postLogoutRedirect)
 	u.RawQuery = q.Encode()
 	return u.String()

@@ -26,6 +26,9 @@ type Config struct {
 	// AdminGroup is the name of an OIDC group. At start, the application
 	// gives the "admin" role to this group. Empty means no group.
 	AdminGroup string
+	// GroupRoles maps OIDC group names to role names. At start, the
+	// application gives each role to its group.
+	GroupRoles []GroupRole
 	// DefaultRole is the role that all signed-in users get.
 	// Empty means no role.
 	DefaultRole string
@@ -33,6 +36,12 @@ type Config struct {
 	SessionTTL time.Duration
 	// MaxPageBytes is the largest permitted page body.
 	MaxPageBytes int64
+}
+
+// GroupRole is one item of SKRIVA_GROUP_ROLES.
+type GroupRole struct {
+	Group string
+	Role  string
 }
 
 // SecureCookies reports whether cookies must have the Secure attribute.
@@ -71,6 +80,21 @@ func load(getenv func(string) string) (*Config, error) {
 		errs = append(errs, err)
 	}
 	c.OIDCClientSecret = secret
+
+	if c.AdminGroup != "" {
+		c.GroupRoles = append(c.GroupRoles, GroupRole{Group: c.AdminGroup, Role: "admin"})
+	}
+	if v := get("SKRIVA_GROUP_ROLES", ""); v != "" {
+		for _, item := range strings.Split(v, ",") {
+			group, role, ok := strings.Cut(strings.TrimSpace(item), "=")
+			group, role = strings.TrimSpace(group), strings.TrimSpace(role)
+			if !ok || group == "" || role == "" {
+				errs = append(errs, fmt.Errorf("SKRIVA_GROUP_ROLES: item %q must have the form group=role", item))
+				continue
+			}
+			c.GroupRoles = append(c.GroupRoles, GroupRole{Group: group, Role: role})
+		}
+	}
 
 	c.OIDCScopes = strings.Fields(get("SKRIVA_OIDC_SCOPES", "openid profile email"))
 

@@ -81,3 +81,27 @@ func TestDefaultRoleNone(t *testing.T) {
 		t.Fatalf("got default role %q", c.DefaultRole)
 	}
 }
+
+func TestGroupRoles(t *testing.T) {
+	m := validEnv()
+	m["SKRIVA_ADMIN_GROUP"] = "admins"
+	m["SKRIVA_GROUP_ROLES"] = "editors=editor, readers = viewer"
+	c, err := load(env(m))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []GroupRole{{"admins", "admin"}, {"editors", "editor"}, {"readers", "viewer"}}
+	if len(c.GroupRoles) != len(want) {
+		t.Fatalf("got %v", c.GroupRoles)
+	}
+	for i := range want {
+		if c.GroupRoles[i] != want[i] {
+			t.Fatalf("got %v, want %v", c.GroupRoles, want)
+		}
+	}
+
+	m["SKRIVA_GROUP_ROLES"] = "editors"
+	if _, err := load(env(m)); err == nil {
+		t.Fatal("expected an error for an item without a role")
+	}
+}

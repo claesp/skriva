@@ -94,9 +94,9 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	// Remove an old session. A new token after login prevents session
 	// fixation.
 	if old, err := r.Cookie(s.sessionCookie); err == nil {
-		_ = s.store.DeleteSession(r.Context(), old.Value)
+		_, _ = s.store.DeleteSession(r.Context(), old.Value)
 	}
-	token, err := s.store.CreateSession(r.Context(), user.ID, s.opts.SessionTTL)
+	token, err := s.store.CreateSession(r.Context(), user.ID, id.IDToken, s.opts.SessionTTL)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -107,14 +107,15 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	var idToken string
 	if c, err := r.Cookie(s.sessionCookie); err == nil {
-		if err := s.store.DeleteSession(r.Context(), c.Value); err != nil {
+		if idToken, err = s.store.DeleteSession(r.Context(), c.Value); err != nil {
 			s.serverError(w, r, err)
 			return
 		}
 	}
 	s.clearCookie(w, s.sessionCookie)
-	target := s.auth.LogoutURL(r.Context(), s.absURL("/signed-out"))
+	target := s.auth.LogoutURL(r.Context(), idToken, s.absURL("/signed-out"))
 	if target == "" {
 		target = "/signed-out"
 	}

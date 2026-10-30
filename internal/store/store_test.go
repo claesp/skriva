@@ -174,7 +174,7 @@ func TestSessions(t *testing.T) {
 	st := newStore(t)
 	u := login(t, st, "dave")
 
-	token, err := st.CreateSession(ctx, u.ID, time.Hour)
+	token, err := st.CreateSession(ctx, u.ID, "id-token", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	short, err := st.CreateSession(ctx, u.ID, -time.Second)
+	short, err := st.CreateSession(ctx, u.ID, "", -time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,6 +209,18 @@ func TestSessions(t *testing.T) {
 	}
 	if err := st.DeleteExpired(ctx); err != nil {
 		t.Fatal(err)
+	}
+
+	token, err = st.CreateSession(ctx, u.ID, "id-token-2", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idt, err := st.DeleteSession(ctx, token)
+	if err != nil || idt != "id-token-2" {
+		t.Fatalf("DeleteSession = %q, %v", idt, err)
+	}
+	if idt, err := st.DeleteSession(ctx, token); err != nil || idt != "" {
+		t.Fatalf("second DeleteSession = %q, %v", idt, err)
 	}
 }
 
