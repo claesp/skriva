@@ -102,10 +102,11 @@ space `default0` ("Default").
      tenant and the session for that tenant.
 3. If the second part of the path has 8 characters, the dispatcher loads
    the space and the permission data of the user in that space. The
-   data contains the parent of each node, the folder default roles and
-   the folder bindings of the user. Then the space router handles the
-   request. The handler calculates the permissions of the node in
-   memory. Otherwise the
+   data contains the cached access paths, the default roles of the
+   items with their own default role and the item bindings of the user.
+   It does not contain the tree. Then the space router handles the
+   request. The handler calculates the permissions of an item from its
+   access path, in memory. Otherwise the
    tenant router handles the request.
 4. The handler checks the permission. Then it reads or changes the data.
 
@@ -115,14 +116,15 @@ space `default0` ("Default").
 |--------------------|----------|
 | `tenants`          | Tenants and their settings. The client secret is encrypted. |
 | `spaces`           | Spaces. Each space belongs to one tenant. A space can have its own default role. |
-| `nodes`            | Folders and documents. `parent_id` makes the tree. A folder can have its own default role. |
+| `nodes`            | Folders and documents. `parent_id` makes the tree. An item can have its own default role. `access_path_id` points to the cached access path. |
+| `access_paths`     | A cache: the access paths of the items of each space. See [Access control](access-control.md). |
 | `revisions`        | All versions of each node. |
 | `users`            | Users. The key is (tenant, issuer, subject). A user with no tenant is a system administrator. |
 | `groups`           | Groups of a tenant. The source is `oidc` or `local`. |
 | `group_members`    | The members of each group. |
 | `roles`            | Built-in roles (no tenant) and custom roles (one tenant). |
 | `role_permissions` | The permissions of each role. |
-| `role_bindings`    | Each row gives one role to one user or to one group of a tenant, in all spaces, in one space or in one folder. |
+| `role_bindings`    | Each row gives one role to one user or to one group of a tenant, in all spaces, in one space or in one item. |
 | `sessions`         | Browser sessions. The table keeps only a token hash. |
 | `oidc_states`      | Data for logins that are in progress. |
 | `schema_migrations`| The migrations that the server applied. |
@@ -169,6 +171,19 @@ extensions:
 The server does not permit raw HTML in Markdown. After the conversion,
 [bluemonday](https://github.com/microcosm-cc/bluemonday) removes all
 unsafe HTML a second time.
+
+### Large spaces
+
+- The permission data of a request does not depend on the number of
+  items in the space. See "The permission cache" in
+  [Access control](access-control.md).
+- If a space has more than 2000 items, the tree at the left side shows
+  only the top level and the levels on the path to the current item.
+  The page of a folder or a document always shows its children.
+- The benchmark `BenchmarkAccessLargeSpace` in `internal/store` measures
+  the permission data for a space with 50000 items and 100 items with
+  their own settings. On a development computer, it takes approximately
+  2 ms.
 
 ### Search
 

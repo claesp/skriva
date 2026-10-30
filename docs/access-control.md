@@ -7,9 +7,9 @@
 | Permission   | The right to do one action, for example `doc.edit`. |
 | Role         | A named set of permissions. |
 | Group        | A set of users of one tenant. |
-| Role binding | A connection that gives one role to one user or to one group. The binding applies in all spaces, in one space or in one folder. |
-| Default role | A role that all signed-in users of a tenant get. A space or a folder can have its own default role. |
-| Space permission | A document permission (`doc.*`). Only these permissions can apply to one space or one folder. |
+| Role binding | A connection that gives one role to one user or to one group. The binding applies in all spaces, in one space, or in one item (a folder or a document). |
+| Default role | A role that all signed-in users of a tenant get. A space, a folder or a document can have its own default role. |
+| Space permission | A document permission (`doc.*`). Only these permissions can apply to one space or one item. |
 
 All roles, groups and role bindings apply to one tenant. A user of one
 tenant has no access to a different tenant. The same person can be a
@@ -31,7 +31,7 @@ The permissions are part of the program code. An administrator cannot
 add permissions.
 
 The `doc.*` permissions are space permissions. They can apply to all
-spaces, to one space or to one folder. `space.manage` and `tenant.manage`
+spaces, to one space or to one item. `space.manage` and `tenant.manage`
 always apply to the full tenant.
 
 ## Built-in roles
@@ -56,9 +56,9 @@ A role binding has one of two scopes:
 |------------|--------|
 | All spaces | The binding gives all permissions of the role, in all spaces of the tenant. |
 | One space  | The binding gives only the space permissions (`doc.*`) of the role, and only in that space. |
-| One folder | The binding gives only the space permissions (`doc.*`) of the role, for the folder and all items in it. |
+| One item   | The binding gives only the space permissions (`doc.*`) of the role, for the folder or document and all items in it. |
 
-Thus a binding for one space or one folder never gives `space.manage`
+Thus a binding for one space or one item never gives `space.manage`
 or `tenant.manage`. For example, the `admin` role for one space gives
 `doc.read`, `doc.create`, `doc.edit` and `doc.delete` in that space,
 and no other permissions.
@@ -86,41 +86,72 @@ Users with a role binding for all spaces also have access to a private
 space. For example, a member of the admin group has access to all
 spaces.
 
-## Folder permissions
+## Folder and document permissions
 
-A folder can have its own default role and its own role bindings. They
-apply to the folder and to all items in it: documents, sub-documents
-and folders. A document does not have its own permissions. It has the
-permissions of its nearest folder.
+A folder or a document can have its own default role and its own role
+bindings. They apply to the item and to all items in it: documents,
+sub-documents and folders.
 
-The default role of a folder has one of these settings:
+The default role of an item has one of these settings:
 
 | Setting                | Effect |
 |------------------------|--------|
-| Same as the parent     | The nearest folder above with its own setting applies. If there is none, the default role of the space applies. This is the initial setting. |
-| None                   | No default role applies in the folder. |
-| A role                 | This role applies in the folder. |
+| Same as the parent     | The nearest parent (folder or document) with its own setting applies. If there is none, the default role of the space applies. This is the initial setting. |
+| None                   | No default role applies to the item. |
+| A role                 | This role applies to the item. |
 
-A folder inside a private folder can have a different default role
-again. For example, the folder "HR" can be private, and its subfolder
-"HR / Public forms" can have the default role `viewer`.
+An item inside a private item can have a different default role again.
+For example, the folder "HR" can be private, and its subfolder
+"HR / Public forms" can have the default role `viewer`. A document
+"Plan" can be private in a public folder. Then its sub-documents are
+also private.
 
-### Make a private folder
+### Make a private folder or document
 
-1. Open the folder.
+1. Open the folder or the document.
 2. Click **Access**. Only users with `tenant.manage` see this link.
 3. Set the default role to "None".
-4. Give roles for this folder to users or groups.
+4. Give roles for this item to users or groups.
 
 ### Bindings at a higher level
 
 Bindings add permissions. A default role "None" does not remove the
 permissions from bindings at a higher level. Thus these users also have
-access to a private folder:
+access to a private item:
 
 - users with a binding for all spaces,
 - users with a binding for the space,
-- users with a binding for a parent folder.
+- users with a binding for a parent folder or a parent document.
+
+## The permission cache
+
+The server does not read the full tree of a space to calculate the
+permissions. Each item has a cached **access path**. The access path is
+the list of the items above the item (and the item itself) that have
+their own access settings: a default role or a role binding. The
+permissions of a user for an item depend only on its access path.
+
+Many items share one access path. For example, all items in a space
+without settings have the empty path. Thus a space has few paths, also
+if it has very many items. For each request in a space, the server reads:
+
+- the access paths of the space,
+- the default roles of the items with their own default role,
+- the item bindings of the user.
+
+The table `access_paths` keeps the paths. The column
+`nodes.access_path_id` points to the path of each item. The server
+updates the paths in the same transaction as these changes:
+
+- a new item (it gets the path of its parent),
+- a move,
+- a change of the default role of an item,
+- a new or a deleted role binding for an item.
+
+The database function `refresh_access_paths` calculates the paths of a
+subtree again. The changes to the tree of one space use a lock on the
+space. Thus the paths are always correct. A change to a role, a group or
+a binding for a space or for the tenant does not change the paths.
 
 ## Effective permissions
 
@@ -129,14 +160,14 @@ The server calculates the permissions of a user at each request.
 For an item in a space, the permissions are the union of:
 
 1. The space permissions of the nearest default role. The server looks
-   at the folder of the item, then at its parent folders, then at the
+   at the item, then at its parents, then at the
    space, then at the tenant. The first setting that is not "Same as
    the parent" (or "Same as the tenant") applies.
 2. All permissions of the roles with a binding for all spaces, to the
    user or to a group of the user.
 3. The space permissions of the roles with a binding for this space.
-4. The space permissions of the roles with a binding for the folder of
-   the item or for a parent folder.
+4. The space permissions of the roles with a binding for the item or for
+   a parent of the item.
 5. The permissions `space.manage` and `tenant.manage` from the default
    role of the tenant.
 
@@ -149,7 +180,7 @@ The server uses these permissions:
 | Edit or rename an item | `doc.edit` for the item |
 | Move an item | `doc.edit` for the item, and `doc.create` for the new parent |
 | Delete an item | `doc.delete` for the item and for each item in it |
-| Change the access to a folder | `tenant.manage` |
+| Change the access to an item | `tenant.manage` |
 
 If a user cannot read an item, the server shows "not found". Thus the
 server does not tell that the item exists. The tree, the path above the
@@ -163,7 +194,7 @@ permissions are the union of the default role of the tenant and the
 bindings for all spaces.
 
 The start page of the tenant shows a space if the user can read the top
-level of the space or at least one folder in it.
+level of the space or at least one item in it.
 
 A change of a role binding has an effect at the next request. The user
 does not have to sign in again.
@@ -217,11 +248,9 @@ session has no permissions in a tenant.
 
 ## Limits of the current design
 
-- A document does not have its own permissions. The smallest unit is a
-  folder.
-- A user who moves a folder also moves its subtree. Then the items in it
-  get the permissions of the new place, except where the folder has its
-  own settings.
+- A user who moves an item also moves its subtree. Then the items in it
+  get the permissions of the new place, except where an item has its own
+  settings.
 - A user with `space.manage` can make, change and delete spaces. Only a
   user with `tenant.manage` can change the access to a space.
 - The server does not delete users. Disable a user to stop access.

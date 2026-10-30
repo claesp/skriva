@@ -72,6 +72,12 @@ There are three levels of tests.
 | `make test-integration` | All unit tests and database tests. | Podman |
 | `make test-e2e`         | Sign-in through Keycloak, documents, RBAC, system administration and a second tenant. | `make dev-app` |
 
+To run the benchmark for large spaces:
+
+```sh
+scripts/test-integration.sh -run '^$' -bench AccessLargeSpace ./internal/store/
+```
+
 `make test-integration` starts a temporary PostgreSQL container. Each
 test package gets its own database. The script removes the container
 after the tests. The tests run with the race detector.

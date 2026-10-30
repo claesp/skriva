@@ -146,9 +146,13 @@ control characters.
   clients together. Each login start writes one row to the database.
   The limit prevents that anonymous clients fill the database.
 - The server accepts only document versions that fit in 32 bits.
-- The tree of a space shows a maximum of 10000 items.
-- For each request in a space, the server reads the parent of each node
-  in the space. For spaces with very many items, this can be slow.
+- The tree of a space shows a maximum of 10000 items. A space with more
+  than 2000 items shows only the path to the current item.
+- The server keeps a cache of the access paths in the database. The
+  server updates the cache in the same transaction as each change to
+  the tree or to the access settings of an item. The integration tests
+  compare the cache with a full calculation after many random changes.
+  `Store.RebuildAccessPaths` calculates the cache of a space again.
 - The HTTP server has timeouts for headers, reading, writing and idle
   connections.
 

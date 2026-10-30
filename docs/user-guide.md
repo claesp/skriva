@@ -21,7 +21,9 @@ path to the document is above the title.
 
 ## Access
 
-The administrators can give access to a full space or to one folder. If
+The administrators can give access to a full space, to one folder or to
+one document. A document has the access of its parent, except if an
+administrator changes it. If
 you cannot read a folder, it is not in the tree and the search does not
 find its documents. If you have a link to a document that you cannot
 read, the wiki shows "not found".
