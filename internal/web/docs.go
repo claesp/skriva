@@ -42,8 +42,8 @@ func (s *Server) spaceRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/history/{id}", s.node(rbac.DocRead, s.handleHistory))
 	mux.Handle("GET "+p+"/history/{id}/{version}", s.node(rbac.DocRead, s.handleRevision))
 	mux.Handle("GET "+p+"/raw/{id}", s.node(rbac.DocRead, s.handleRaw))
-	mux.Handle("GET "+p+"/access/{id}", s.node(rbac.TenantManage, s.handleFolderAccess))
-	mux.Handle("POST "+p+"/access/{id}", s.node(rbac.TenantManage, s.handleFolderDefaultRole))
+	mux.Handle("GET "+p+"/access/{id}", s.node(rbac.TenantManage, s.handleNodeAccess))
+	mux.Handle("POST "+p+"/access/{id}", s.node(rbac.TenantManage, s.handleNodeDefaultRole))
 	mux.Handle("GET "+p+"/w/{slug}", s.require("", s.handleWikiLink))
 	mux.Handle("GET "+p+"/recent", s.require("", s.handleRecent))
 	mux.Handle("GET "+p+"/search", s.require("", s.handleSearch))
@@ -83,7 +83,7 @@ func (s *Server) node(perm rbac.Permission, h nodeHandler) http.Handler {
 			s.serverError(w, r, err)
 			return
 		}
-		perms := ri.Access.For(n.ID)
+		perms := ri.Access.For(n.AccessPathID)
 		if !perms.Has(rbac.DocRead) {
 			s.notFound(w, r)
 			return
@@ -97,16 +97,17 @@ func (s *Server) node(perm rbac.Permission, h nodeHandler) http.Handler {
 	})
 }
 
-// canRead reports whether the user can read the node.
-func canRead(r *http.Request, id int64) bool {
-	return reqInfoFrom(r.Context()).Access.Can(id, rbac.DocRead)
+// canRead reports whether the user can read a node with the given access
+// path.
+func canRead(r *http.Request, pathID int64) bool {
+	return reqInfoFrom(r.Context()).Access.Can(pathID, rbac.DocRead)
 }
 
 // readableOnly returns the nodes that the user can read.
 func readableOnly(r *http.Request, nodes []store.NodeSummary) []store.NodeSummary {
 	out := nodes[:0:0]
 	for _, n := range nodes {
-		if canRead(r, n.ID) {
+		if canRead(r, n.AccessPathID) {
 			out = append(out, n)
 		}
 	}
@@ -114,18 +115,45 @@ func readableOnly(r *http.Request, nodes []store.NodeSummary) []store.NodeSummar
 }
 
 // tree returns the tree of the space with the nodes that the user can
-// read. The current node and its ancestors are open.
-func (s *Server) tree(r *http.Request, current int64) ([]*store.TreeNode, error) {
-	nodes, err := s.store.SpaceNodes(r.Context(), reqInfoFrom(r.Context()).Space.ID)
+// read. The current node and its ancestors are open. ancestors are the
+// ancestors of the current node. For a large space, the tree contains
+// only the top level and the children of the current node and its
+// ancestors.
+func (s *Server) tree(r *http.Request, current int64, ancestors []store.NodeSummary) ([]*store.TreeNode, error) {
+	spaceID := reqInfoFrom(r.Context()).Space.ID
+	large, err := s.store.IsLargeSpace(r.Context(), spaceID)
 	if err != nil {
 		return nil, err
 	}
-	return store.BuildVisibleTree(nodes, current, func(id int64) bool { return canRead(r, id) }), nil
+	var nodes []store.NodeSummary
+	if large {
+		ids := make([]int64, 0, len(ancestors)+1)
+		for _, a := range ancestors {
+			ids = append(ids, a.ID)
+		}
+		if current != 0 {
+			ids = append(ids, current)
+		}
+		nodes, err = s.store.PathTreeNodes(r.Context(), spaceID, ids)
+	} else {
+		nodes, err = s.store.SpaceNodes(r.Context(), spaceID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	paths := make(map[int64]int64, len(nodes))
+	for _, n := range nodes {
+		paths[n.ID] = n.AccessPathID
+	}
+	return store.BuildVisibleTree(nodes, current, func(id int64) bool {
+		p, ok := paths[id]
+		return ok && canRead(r, p)
+	}), nil
 }
 
 func (s *Server) handleSpaceHome(w http.ResponseWriter, r *http.Request) {
 	ri := reqInfoFrom(r.Context())
-	tree, err := s.tree(r, 0)
+	tree, err := s.tree(r, 0, nil)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -154,7 +182,7 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Nod
 		s.serverError(w, r, err)
 		return
 	}
-	tree, err := s.tree(r, n.ID)
+	tree, err := s.tree(r, n.ID, ancestors)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -236,7 +264,7 @@ func (s *Server) checkParent(w http.ResponseWriter, r *http.Request, f *nodeForm
 			s.serverError(w, r, err)
 			return false
 		}
-		if err != nil || !canRead(r, p.ID) {
+		if err != nil || !canRead(r, p.AccessPathID) {
 			s.badRequest(w, r, "The parent does not exist.")
 			return false
 		}
@@ -245,7 +273,7 @@ func (s *Server) checkParent(w http.ResponseWriter, r *http.Request, f *nodeForm
 			return false
 		}
 		f.ParentTitle = p.Title
-		perms = ri.Access.For(p.ID)
+		perms = ri.Access.For(p.AccessPathID)
 	}
 	if !perms.Has(rbac.DocCreate) {
 		s.forbidden(w, r)
@@ -442,7 +470,7 @@ func moveTargets(nodes []store.NodeSummary, n *store.Node, acc *store.Access) []
 			if x = byID[*x.ParentID]; x == nil {
 				break
 			}
-			if acc.Can(x.ID, rbac.DocRead) {
+			if acc.Can(x.AccessPathID, rbac.DocRead) {
 				parts = append(parts, x.Title)
 			} else {
 				parts = append(parts, "…")
@@ -457,7 +485,7 @@ func moveTargets(nodes []store.NodeSummary, n *store.Node, acc *store.Access) []
 	for i := range nodes {
 		x := &nodes[i]
 		if (n.IsFolder() && !x.IsFolder()) || inSubtree(x.ID) ||
-			!acc.Can(x.ID, rbac.DocRead) || !acc.Can(x.ID, rbac.DocCreate) {
+			!acc.Can(x.AccessPathID, rbac.DocRead) || !acc.Can(x.AccessPathID, rbac.DocCreate) {
 			continue
 		}
 		out = append(out, moveTarget{
@@ -484,11 +512,11 @@ func (s *Server) handleMove(w http.ResponseWriter, r *http.Request, n *store.Nod
 			s.serverError(w, r, err)
 			return
 		}
-		if err != nil || !canRead(r, p.ID) {
+		if err != nil || !canRead(r, p.AccessPathID) {
 			s.badRequest(w, r, "The new place does not exist.")
 			return
 		}
-		target = ri.Access.For(p.ID)
+		target = ri.Access.For(p.AccessPathID)
 	}
 	if !target.Has(rbac.DocCreate) {
 		s.forbidden(w, r)
@@ -508,15 +536,20 @@ func (s *Server) handleMove(w http.ResponseWriter, r *http.Request, n *store.Nod
 
 // canDeleteSubtree reports whether the user can delete each node in the
 // subtree of n. A deletion also removes the subtree. Thus a user cannot
-// delete items that the user cannot delete one by one.
-func canDeleteSubtree(r *http.Request, n *store.Node) bool {
+// delete items that the user cannot delete one by one. The check uses the
+// access paths: many nodes have the same path.
+func (s *Server) canDeleteSubtree(r *http.Request, n *store.Node) (bool, error) {
 	acc := reqInfoFrom(r.Context()).Access
-	for _, id := range acc.Subtree(n.ID) {
-		if !acc.Can(id, rbac.DocDelete) {
-			return false
+	paths, err := s.store.SubtreePaths(r.Context(), n.ID)
+	if err != nil {
+		return false, err
+	}
+	for _, p := range paths {
+		if !acc.Can(p, rbac.DocDelete) {
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
 
 func (s *Server) handleDeleteForm(w http.ResponseWriter, r *http.Request, n *store.Node) {
@@ -525,15 +558,25 @@ func (s *Server) handleDeleteForm(w http.ResponseWriter, r *http.Request, n *sto
 		s.serverError(w, r, err)
 		return
 	}
+	permitted, err := s.canDeleteSubtree(r, n)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	s.render(w, r, http.StatusOK, "delete", "Delete "+n.Title, struct {
 		Node        *store.Node
 		Descendants int
 		Permitted   bool
-	}{n, count, canDeleteSubtree(r, n)})
+	}{n, count, permitted})
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, n *store.Node) {
-	if !canDeleteSubtree(r, n) {
+	permitted, err := s.canDeleteSubtree(r, n)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	if !permitted {
 		s.renderError(w, r, http.StatusForbidden,
 			"You cannot delete this item. It contains items that you do not have permission to delete.")
 		return
@@ -640,13 +683,9 @@ func (s *Server) handleRecent(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "recent", "Recent changes", list)
 }
 
-// handleFolderAccess shows the default role and the role bindings of a
-// folder.
-func (s *Server) handleFolderAccess(w http.ResponseWriter, r *http.Request, n *store.Node) {
-	if !n.IsFolder() {
-		s.notFound(w, r)
-		return
-	}
+// handleNodeAccess shows the default role and the role bindings of a
+// folder or a document.
+func (s *Server) handleNodeAccess(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	ctx := r.Context()
 	t := tenantOf(r)
 	bindings, err := s.store.Bindings(ctx, t.ID)
@@ -680,7 +719,7 @@ func (s *Server) handleFolderAccess(w http.ResponseWriter, r *http.Request, n *s
 	if n.DefaultRole != nil {
 		defaultRole = *n.DefaultRole
 	}
-	s.render(w, r, http.StatusOK, "folder-access", "Access to "+n.Title, struct {
+	s.render(w, r, http.StatusOK, "node-access", "Access to "+n.Title, struct {
 		Node        *store.Node
 		DefaultRole string
 		Bindings    []store.Binding
@@ -690,9 +729,9 @@ func (s *Server) handleFolderAccess(w http.ResponseWriter, r *http.Request, n *s
 	}{n, defaultRole, own, roles, groups, users})
 }
 
-// handleFolderDefaultRole sets the default role of a folder. The value
-// "-" means "same as the parent", and "" means no default role.
-func (s *Server) handleFolderDefaultRole(w http.ResponseWriter, r *http.Request, n *store.Node) {
+// handleNodeDefaultRole sets the default role of a folder or a document.
+// The value "-" means "same as the parent", and "" means no default role.
+func (s *Server) handleNodeDefaultRole(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	ri := reqInfoFrom(r.Context())
 	var role *string
 	switch v := r.PostFormValue("default_role"); {
@@ -703,10 +742,10 @@ func (s *Server) handleFolderDefaultRole(w http.ResponseWriter, r *http.Request,
 		s.badRequest(w, r, "The role is not valid.")
 		return
 	}
-	if !s.storeResult(w, r, s.store.SetFolderDefaultRole(r.Context(), ri.Tenant.ID, ri.Space.ID, n.PublicID, role)) {
+	if !s.storeResult(w, r, s.store.SetNodeDefaultRole(r.Context(), ri.Tenant.ID, ri.Space.ID, n.PublicID, role)) {
 		return
 	}
-	s.log.Info("folder default role changed", "tenant", ri.Tenant.Code, "space", ri.Space.Slug,
+	s.log.Info("node default role changed", "tenant", ri.Tenant.Code, "space", ri.Space.Slug,
 		"node", n.PublicID, "user_id", ri.Session.User.ID)
 	http.Redirect(w, r, base(r)+"/access/"+n.PublicID, http.StatusSeeOther)
 }

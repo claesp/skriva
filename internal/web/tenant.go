@@ -72,7 +72,7 @@ func (s *Server) readableResults(r *http.Request, in []store.SearchResult) ([]st
 			}
 			access[res.SpaceID] = acc
 		}
-		if acc.Can(res.ID, rbac.DocRead) {
+		if acc.Can(res.AccessPathID, rbac.DocRead) {
 			out = append(out, res)
 		}
 	}

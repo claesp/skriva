@@ -28,12 +28,15 @@ type Node struct {
 	Slug    string
 	Body    string
 	Version int
-	// DefaultRole is the default role of a folder. Nil means that the
-	// folder uses the default role of its parent. An empty value means no
+	// DefaultRole is the default role of the node. Nil means that the
+	// node uses the default role of its parent. An empty value means no
 	// default role.
 	DefaultRole *string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// AccessPathID identifies the cached access path of the node. The
+	// permissions for the node depend only on it. See Access.
+	AccessPathID int64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 	// UpdatedBy is the name of the last author. It is empty if the user
 	// does not exist now.
 	UpdatedBy string
@@ -44,13 +47,14 @@ func (n *Node) IsFolder() bool { return n.Kind == KindFolder }
 
 // NodeSummary is a short form of a node for lists and trees.
 type NodeSummary struct {
-	ID        int64
-	PublicID  string
-	ParentID  *int64
-	Kind      string
-	Title     string
-	Slug      string
-	UpdatedAt time.Time
+	ID           int64
+	PublicID     string
+	ParentID     *int64
+	Kind         string
+	Title        string
+	Slug         string
+	UpdatedAt    time.Time
+	AccessPathID int64
 }
 
 // IsFolder reports whether the node is a folder.
@@ -83,12 +87,12 @@ func (s *Store) Node(ctx context.Context, spaceID int64, publicID string) (*Node
 	var n Node
 	err := s.pool.QueryRow(ctx, `
 		SELECT n.id, n.public_id, n.space_id, n.parent_id, n.kind, n.title, n.slug, n.body,
-		       n.version, n.default_role, n.created_at, n.updated_at,
+		       n.version, n.default_role, n.access_path_id, n.created_at, n.updated_at,
 		       COALESCE(NULLIF(u.display_name, ''), u.username, '')
 		FROM nodes n LEFT JOIN users u ON u.id = n.updated_by
 		WHERE n.space_id = $1 AND n.public_id = $2`, spaceID, publicID,
 	).Scan(&n.ID, &n.PublicID, &n.SpaceID, &n.ParentID, &n.Kind, &n.Title, &n.Slug, &n.Body,
-		&n.Version, &n.DefaultRole, &n.CreatedAt, &n.UpdatedAt, &n.UpdatedBy)
+		&n.Version, &n.DefaultRole, &n.AccessPathID, &n.CreatedAt, &n.UpdatedAt, &n.UpdatedBy)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -113,23 +117,77 @@ func lockSpace(ctx context.Context, tx pgx.Tx, spaceID int64) error {
 
 // parentFor finds the parent with the given public ID and makes sure that
 // a node of the given kind can be its child. It returns nil for the root.
-func parentFor(ctx context.Context, tx pgx.Tx, spaceID int64, parentPublicID, kind string) (*int64, error) {
+// It also returns the access path that a new child without own settings
+// gets: the path of the parent, or the empty path of the space.
+func parentFor(ctx context.Context, tx pgx.Tx, spaceID int64, parentPublicID, kind string) (*int64, int64, error) {
 	if parentPublicID == "" {
-		return nil, nil
+		pathID, err := rootPath(ctx, tx, spaceID)
+		return nil, pathID, err
 	}
-	var id int64
+	var id, pathID int64
 	var parentKind string
-	err := tx.QueryRow(ctx, "SELECT id, kind FROM nodes WHERE space_id = $1 AND public_id = $2",
-		spaceID, parentPublicID).Scan(&id, &parentKind)
+	err := tx.QueryRow(ctx, "SELECT id, kind, access_path_id FROM nodes WHERE space_id = $1 AND public_id = $2",
+		spaceID, parentPublicID).Scan(&id, &parentKind, &pathID)
 	if err != nil {
-		return nil, notFound(err)
+		return nil, 0, notFound(err)
 	}
 	// A folder can be only in a folder. A document can be in a folder or
 	// in a document.
 	if kind == KindFolder && parentKind != KindFolder {
-		return nil, ErrInvalid
+		return nil, 0, ErrInvalid
 	}
-	return &id, nil
+	return &id, pathID, nil
+}
+
+// rootPath returns the ID of the empty access path of a space. It makes
+// the path if it does not exist.
+func rootPath(ctx context.Context, tx pgx.Tx, spaceID int64) (int64, error) {
+	var id int64
+	err := tx.QueryRow(ctx, `
+		WITH ins AS (
+			INSERT INTO access_paths (space_id, path) VALUES ($1, '{}')
+			ON CONFLICT (space_id, path) DO NOTHING RETURNING id)
+		SELECT id FROM ins
+		UNION ALL
+		SELECT id FROM access_paths WHERE space_id = $1 AND path = '{}'
+		LIMIT 1`, spaceID).Scan(&id)
+	return id, err
+}
+
+// refreshAccess calculates the access paths of a node and of its subtree
+// again, and removes the paths that no node uses. The caller must hold
+// the lock on the row of the space.
+func refreshAccess(ctx context.Context, tx pgx.Tx, spaceID, nodeID int64) error {
+	if nodeID != 0 {
+		if _, err := tx.Exec(ctx, "SELECT refresh_access_paths($1)", nodeID); err != nil {
+			return err
+		}
+	}
+	return deleteUnusedPaths(ctx, tx, spaceID)
+}
+
+func deleteUnusedPaths(ctx context.Context, tx pgx.Tx, spaceID int64) error {
+	_, err := tx.Exec(ctx, `
+		DELETE FROM access_paths ap
+		WHERE ap.space_id = $1 AND ap.path <> '{}'
+		  AND NOT EXISTS (SELECT 1 FROM nodes n WHERE n.access_path_id = ap.id)`, spaceID)
+	return err
+}
+
+// RebuildAccessPaths calculates all access paths of a space again. The
+// cache stays correct without this function. Use it to repair the cache
+// after a manual change in the database.
+func (s *Store) RebuildAccessPaths(ctx context.Context, spaceID int64) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := lockSpace(ctx, tx, spaceID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			SELECT refresh_access_paths(id) FROM nodes WHERE space_id = $1 AND parent_id IS NULL`, spaceID); err != nil {
+			return err
+		}
+		return deleteUnusedPaths(ctx, tx, spaceID)
+	})
 }
 
 // CreateNode makes a folder or a document with version 1. It returns the
@@ -147,18 +205,20 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 		if err := lockSpace(ctx, tx, spaceID); err != nil {
 			return err
 		}
-		parentID, err := parentFor(ctx, tx, spaceID, nn.ParentPublicID, nn.Kind)
+		parentID, pathID, err := parentFor(ctx, tx, spaceID, nn.ParentPublicID, nn.Kind)
 		if err != nil {
 			return err
 		}
 		now := s.now()
 		var id int64
+		// A new node has no own access settings. Thus it gets the access
+		// path of its parent.
 		err = tx.QueryRow(ctx, `
 			INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug, body, version,
-			                   created_by, updated_by, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $8, $9, $9)
+			                   created_by, updated_by, created_at, updated_at, access_path_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $8, $9, $9, $10)
 			RETURNING id`,
-			publicID, spaceID, parentID, nn.Kind, nn.Title, nn.Slug, nn.Body, nullID(nn.AuthorID), now).Scan(&id)
+			publicID, spaceID, parentID, nn.Kind, nn.Title, nn.Slug, nn.Body, nullID(nn.AuthorID), now, pathID).Scan(&id)
 		if err != nil {
 			return err
 		}
@@ -226,7 +286,7 @@ func (s *Store) MoveNode(ctx context.Context, spaceID int64, publicID, newParent
 			spaceID, publicID).Scan(&id, &kind); err != nil {
 			return notFound(err)
 		}
-		parentID, err := parentFor(ctx, tx, spaceID, newParentPublicID, kind)
+		parentID, _, err := parentFor(ctx, tx, spaceID, newParentPublicID, kind)
 		if err != nil {
 			return err
 		}
@@ -248,35 +308,40 @@ func (s *Store) MoveNode(ctx context.Context, spaceID int64, publicID, newParent
 				return ErrInvalid
 			}
 		}
-		_, err = tx.Exec(ctx, "UPDATE nodes SET parent_id = $2, updated_at = $3 WHERE id = $1",
-			id, parentID, s.now())
-		return err
+		if _, err := tx.Exec(ctx, "UPDATE nodes SET parent_id = $2, updated_at = $3 WHERE id = $1",
+			id, parentID, s.now()); err != nil {
+			return err
+		}
+		// The subtree now has a different parent path.
+		return refreshAccess(ctx, tx, spaceID, id)
 	})
 }
 
-// SetFolderDefaultRole sets the default role of a folder. Nil means that
-// the folder uses the default role of its parent. A pointer to "" means no
-// default role. It returns ErrInvalid if the node is not a folder or if the
-// role does not exist.
-func (s *Store) SetFolderDefaultRole(ctx context.Context, tenantID, spaceID int64, publicID string, role *string) error {
+// SetNodeDefaultRole sets the default role of a folder or a document.
+// Nil means that the node uses the default role of its parent. A pointer
+// to "" means no default role. It returns ErrInvalid if the role does not
+// exist.
+func (s *Store) SetNodeDefaultRole(ctx context.Context, tenantID, spaceID int64, publicID string, role *string) error {
 	if role != nil {
 		if err := checkRole(ctx, s.pool, tenantID, *role); err != nil {
 			return err
 		}
 	}
-	var kind string
-	err := s.pool.QueryRow(ctx, `
-		UPDATE nodes n SET default_role = CASE WHEN n.kind = 'folder' THEN $4 ELSE NULL END
-		FROM spaces sp
-		WHERE sp.id = n.space_id AND sp.tenant_id = $1 AND n.space_id = $2 AND n.public_id = $3
-		RETURNING n.kind`, tenantID, spaceID, publicID, role).Scan(&kind)
-	if err != nil {
-		return notFound(err)
-	}
-	if kind != KindFolder {
-		return ErrInvalid
-	}
-	return nil
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := lockSpace(ctx, tx, spaceID); err != nil {
+			return err
+		}
+		var id int64
+		err := tx.QueryRow(ctx, `
+			UPDATE nodes n SET default_role = $4
+			FROM spaces sp
+			WHERE sp.id = n.space_id AND sp.tenant_id = $1 AND n.space_id = $2 AND n.public_id = $3
+			RETURNING n.id`, tenantID, spaceID, publicID, role).Scan(&id)
+		if err != nil {
+			return notFound(err)
+		}
+		return refreshAccess(ctx, tx, spaceID, id)
+	})
 }
 
 // DeleteNode removes a node and its subtree with all revisions.
@@ -292,8 +357,33 @@ func (s *Store) DeleteNode(ctx context.Context, spaceID int64, publicID string) 
 		if tag.RowsAffected() == 0 {
 			return ErrNotFound
 		}
-		return nil
+		return deleteUnusedPaths(ctx, tx, spaceID)
 	})
+}
+
+// SubtreePaths returns the IDs of the access paths of the descendants of
+// a node.
+func (s *Store) SubtreePaths(ctx context.Context, nodeID int64) ([]int64, error) {
+	rows, err := s.pool.Query(ctx, `
+		WITH RECURSIVE sub(id) AS (
+			SELECT id FROM nodes WHERE parent_id = $1
+			UNION
+			SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id
+		)
+		SELECT DISTINCT n.access_path_id FROM nodes n JOIN sub ON sub.id = n.id`, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // CountDescendants returns the number of nodes in the subtree of a node,
@@ -318,7 +408,7 @@ const MaxTreeNodes = 10000
 // MaxTreeNodes nodes.
 func (s *Store) SpaceNodes(ctx context.Context, spaceID int64) ([]NodeSummary, error) {
 	return s.summaries(ctx, `
-		SELECT id, public_id, parent_id, kind, title, slug, updated_at FROM nodes
+		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
 		WHERE space_id = $1
 		ORDER BY kind = 'document', lower(title), id
 		LIMIT $2`, spaceID, MaxTreeNodes)
@@ -328,7 +418,7 @@ func (s *Store) SpaceNodes(ctx context.Context, spaceID int64) ([]NodeSummary, e
 // if parentID is nil.
 func (s *Store) Children(ctx context.Context, spaceID int64, parentID *int64) ([]NodeSummary, error) {
 	return s.summaries(ctx, `
-		SELECT id, public_id, parent_id, kind, title, slug, updated_at FROM nodes
+		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
 		WHERE space_id = $1 AND parent_id IS NOT DISTINCT FROM $2
 		ORDER BY kind = 'document', lower(title), id`, spaceID, parentID)
 }
@@ -343,7 +433,7 @@ func (s *Store) Ancestors(ctx context.Context, nodeID int64) ([]NodeSummary, err
 			WHERE n.parent_id IS NOT NULL
 		)
 		CYCLE id SET is_cycle USING path
-		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at
+		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id
 		FROM up JOIN nodes n ON n.id = up.id
 		WHERE NOT up.is_cycle
 		ORDER BY up.depth DESC`, nodeID)
@@ -354,7 +444,7 @@ func (s *Store) Ancestors(ctx context.Context, nodeID int64) ([]NodeSummary, err
 // use it.
 func (s *Store) NodesBySlug(ctx context.Context, spaceID int64, slug string) ([]NodeSummary, error) {
 	return s.summaries(ctx, `
-		SELECT id, public_id, parent_id, kind, title, slug, updated_at FROM nodes
+		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
 		WHERE space_id = $1 AND slug = $2
 		ORDER BY kind = 'folder', created_at, id LIMIT 50`, spaceID, slug)
 }
@@ -362,7 +452,7 @@ func (s *Store) NodesBySlug(ctx context.Context, spaceID int64, slug string) ([]
 // RecentNodes returns the documents of a space that changed last.
 func (s *Store) RecentNodes(ctx context.Context, spaceID int64, limit int) ([]NodeSummary, error) {
 	return s.summaries(ctx, `
-		SELECT id, public_id, parent_id, kind, title, slug, updated_at FROM nodes
+		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
 		WHERE space_id = $1 AND kind = 'document'
 		ORDER BY updated_at DESC LIMIT $2`, spaceID, limit)
 }
@@ -376,7 +466,7 @@ func (s *Store) summaries(ctx context.Context, sql string, args ...any) ([]NodeS
 	var out []NodeSummary
 	for rows.Next() {
 		var n NodeSummary
-		if err := rows.Scan(&n.ID, &n.PublicID, &n.ParentID, &n.Kind, &n.Title, &n.Slug, &n.UpdatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.PublicID, &n.ParentID, &n.Kind, &n.Title, &n.Slug, &n.UpdatedAt, &n.AccessPathID); err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -404,7 +494,7 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 		return nil, nil
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at,
+		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id,
 		       sp.id, sp.slug, sp.name,
 		       ts_headline('simple', n.body, q, 'StartSel=«, StopSel=», MaxFragments=2, MaxWords=20, MinWords=5')
 		FROM nodes n
@@ -421,7 +511,7 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 	for rows.Next() {
 		var r SearchResult
 		if err := rows.Scan(&r.ID, &r.PublicID, &r.ParentID, &r.Kind, &r.Title, &r.Slug, &r.UpdatedAt,
-			&r.SpaceID, &r.SpaceSlug, &r.SpaceName, &r.Snippet); err != nil {
+			&r.AccessPathID, &r.SpaceID, &r.SpaceSlug, &r.SpaceName, &r.Snippet); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -549,4 +639,92 @@ func BuildVisibleTree(nodes []NodeSummary, current int64, visible func(id int64)
 		out = append(out, n)
 	}
 	return BuildTree(out, current)
+}
+
+// AccessCacheReport returns the cached access path of each node in a
+// space, and the path that the function calculates from the tree. The two
+// maps must be equal. The tests use this function to check the cache.
+func (s *Store) AccessCacheReport(ctx context.Context, spaceID int64) (cached, calculated map[int64][]int64, err error) {
+	type row struct {
+		parent   *int64
+		settings bool
+		path     []int64
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT n.id, n.parent_id,
+		       n.default_role IS NOT NULL OR EXISTS (SELECT 1 FROM role_bindings rb WHERE rb.node_id = n.id),
+		       ap.path
+		FROM nodes n JOIN access_paths ap ON ap.id = n.access_path_id
+		WHERE n.space_id = $1`, spaceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	all := map[int64]*row{}
+	for rows.Next() {
+		var id int64
+		r := &row{}
+		if err := rows.Scan(&id, &r.parent, &r.settings, &r.path); err != nil {
+			return nil, nil, err
+		}
+		all[id] = r
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	cached = map[int64][]int64{}
+	calculated = map[int64][]int64{}
+	var calc func(id int64, depth int) []int64
+	calc = func(id int64, depth int) []int64 {
+		if p, ok := calculated[id]; ok {
+			return p
+		}
+		r := all[id]
+		var path []int64
+		if r.parent != nil && depth < len(all) {
+			path = append(path, calc(*r.parent, depth+1)...)
+		}
+		if r.settings {
+			path = append(path, id)
+		}
+		if path == nil {
+			path = []int64{}
+		}
+		calculated[id] = path
+		return path
+	}
+	for id, r := range all {
+		cached[id] = r.path
+		calc(id, 0)
+	}
+	return cached, calculated, nil
+}
+
+// FullTreeLimit is the largest space for which the tree shows all nodes.
+// A larger space shows only the top level and the levels on the path to
+// the current node.
+const FullTreeLimit = 2000
+
+// IsLargeSpace reports whether the space has more than FullTreeLimit
+// nodes. The query reads at most FullTreeLimit+1 index entries.
+func (s *Store) IsLargeSpace(ctx context.Context, spaceID int64) (bool, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FROM (SELECT 1 FROM nodes WHERE space_id = $1 LIMIT $2) x`,
+		spaceID, FullTreeLimit+1).Scan(&n)
+	return n > FullTreeLimit, err
+}
+
+// PathTreeNodes returns the nodes at the top level of a space and the
+// children of the given nodes. The tree of a large space uses it: the
+// given nodes are the current node and its ancestors.
+func (s *Store) PathTreeNodes(ctx context.Context, spaceID int64, nodeIDs []int64) ([]NodeSummary, error) {
+	if nodeIDs == nil {
+		nodeIDs = []int64{}
+	}
+	return s.summaries(ctx, `
+		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
+		WHERE space_id = $1 AND (parent_id IS NULL OR parent_id = ANY($2))
+		ORDER BY kind = 'document', lower(title), id
+		LIMIT $3`, spaceID, nodeIDs, MaxTreeNodes)
 }

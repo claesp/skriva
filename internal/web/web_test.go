@@ -844,7 +844,7 @@ func TestFolderPermissions(t *testing.T) {
 	// access. Carol (default role viewer) has no access.
 	wantStatus(t, carol.get(sp+"/access/"+hr), http.StatusForbidden)
 	wantStatus(t, bob.get(sp+"/access/"+hr), http.StatusForbidden)
-	wantStatus(t, alice.get(sp+"/access/"+salaries), http.StatusNotFound)
+	wantStatus(t, alice.get(sp+"/access/"+salaries), http.StatusOK)
 	wantStatus(t, alice.post(sp+"/access/"+hr, url.Values{"default_role": {""}}), http.StatusSeeOther)
 	wantStatus(t, alice.get(sp+"/access/"+hr), http.StatusOK)
 
@@ -869,9 +869,6 @@ func TestFolderPermissions(t *testing.T) {
 
 	// Give carol the editor role for the folder HR only.
 	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
-		"role": {"editor"}, "subject": {ids["carol"]}, "space": {"default0"}, "node": {salaries},
-	}), http.StatusBadRequest)
-	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
 		"role": {"editor"}, "subject": {ids["carol"]}, "space": {"default0"}, "node": {"000000000000"},
 	}), http.StatusNotFound)
 	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
@@ -881,7 +878,7 @@ func TestFolderPermissions(t *testing.T) {
 	if b := readBody(t, alice.get(sp+"/access/"+hr)); !strings.Contains(b, "carol") {
 		t.Fatalf("access page does not show the binding:\n%s", b)
 	}
-	if b := readBody(t, alice.get("/dflt/admin/bindings")); !strings.Contains(b, `Folder "HR"`) {
+	if b := readBody(t, alice.get("/dflt/admin/bindings")); !strings.Contains(b, `Item "HR"`) {
 		t.Fatalf("binding list does not show the folder scope:\n%s", b)
 	}
 
@@ -935,4 +932,90 @@ func TestFolderPermissions(t *testing.T) {
 	wantStatus(t, dave.post(sp+"/delete/"+child, nil), http.StatusSeeOther)
 	// Alice can delete everything.
 	wantStatus(t, alice.post(sp+"/delete/"+hr, nil), http.StatusSeeOther)
+}
+
+func TestDocumentPermissions(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	carol := e.login("carol")
+	dave := e.login("dave")
+	users, _ := e.st.Users(ctx, e.dft.ID)
+	ids := map[string]string{}
+	for _, u := range users {
+		ids[u.Username] = "user:" + strconv.FormatInt(u.ID, 10)
+	}
+
+	guide := alice.create("folder", "", "Guide", "")
+	plan := alice.create("document", guide, "Plan", "secret plan")
+	detail := alice.create("document", plan, "Detail", "secret detail")
+	other := alice.create("document", guide, "Other", "x")
+
+	// The default is "Same as the parent": carol can read the document.
+	wantStatus(t, carol.get(sp+"/d/"+plan+"/plan"), http.StatusOK)
+	if b := readBody(t, alice.get(sp+"/access/"+plan)); !strings.Contains(b, `value="-" selected`) {
+		t.Fatalf("access page of a document does not show the default:\n%s", b)
+	}
+
+	// A private document. Its sub-documents inherit the setting.
+	wantStatus(t, alice.post(sp+"/access/"+plan, url.Values{"default_role": {""}}), http.StatusSeeOther)
+	wantStatus(t, carol.get(sp+"/d/"+plan+"/plan"), http.StatusNotFound)
+	wantStatus(t, carol.get(sp+"/d/"+detail+"/detail"), http.StatusNotFound)
+	wantStatus(t, carol.get(sp+"/d/"+other+"/other"), http.StatusOK)
+	if b := readBody(t, carol.get(sp+"/d/"+guide+"/guide")); strings.Contains(b, "Plan") || strings.Contains(b, "Detail") {
+		t.Fatalf("folder page of carol shows the private document:\n%s", b)
+	}
+
+	// A binding for carol on the document gives access to the document and
+	// its sub-documents only.
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"editor"}, "subject": {ids["carol"]}, "space": {"default0"}, "node": {plan},
+		"return_to": {sp + "/access/" + plan},
+	}), http.StatusSeeOther)
+	wantStatus(t, carol.get(sp+"/d/"+detail+"/detail"), http.StatusOK)
+	wantStatus(t, carol.save(plan, "Plan", "changed", 1), http.StatusSeeOther)
+	wantStatus(t, carol.save(other, "Other", "changed", 1), http.StatusForbidden)
+	wantStatus(t, dave.get(sp+"/d/"+plan+"/plan"), http.StatusNotFound)
+
+	// "Same as the parent" gives the access of the folder back.
+	wantStatus(t, alice.post(sp+"/access/"+plan, url.Values{"default_role": {"-"}}), http.StatusSeeOther)
+	wantStatus(t, dave.get(sp+"/d/"+detail+"/detail"), http.StatusOK)
+}
+
+func TestLargeSpaceTree(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	// Make a space with more nodes than the full tree limit. The store is
+	// faster than the HTTP interface for this.
+	a := alice.create("folder", "", "Branch A", "")
+	b := alice.create("folder", "", "Branch B", "")
+	deep := alice.create("folder", a, "Deep A", "")
+	leaf := alice.create("document", deep, "Leaf", "x")
+	alice.create("document", b, "Only in B", "x")
+	for i := range store.FullTreeLimit {
+		if _, err := e.st.CreateNode(ctx, e.sp.ID, store.NewNode{
+			ParentPublicID: b, Kind: store.KindDocument, Title: "Filler " + strconv.Itoa(i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	large, err := e.st.IsLargeSpace(ctx, e.sp.ID)
+	if err != nil || !large {
+		t.Fatalf("IsLargeSpace = %v, %v", large, err)
+	}
+
+	// The page of the leaf shows its path, but not the content of branch B.
+	body := readBody(t, alice.get(sp+"/d/"+leaf+"/leaf"))
+	for _, want := range []string{"Branch A", "Branch B", "Deep A", "Leaf"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("tree does not show %q", want)
+		}
+	}
+	if strings.Contains(body, "Only in B") || strings.Contains(body, "Filler") {
+		t.Fatal("tree of a large space shows a different branch")
+	}
+	// The page of branch B shows its children.
+	if page := readBody(t, alice.get(sp+"/d/"+b+"/branch-b")); !strings.Contains(page, "Only in B") {
+		t.Fatal("folder page does not show its children")
+	}
+	wantStatus(t, alice.get(sp+"/"), http.StatusOK)
 }

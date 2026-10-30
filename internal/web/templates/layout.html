@@ -47,7 +47,7 @@
 </main>
 </body>
 </html>
-{{define "scope"}}{{if .NodeID}}Folder "{{.NodeTitle}}" in space {{.SpaceName}}{{else if .SpaceID}}Space {{.SpaceName}} <code>{{.SpaceSlug}}</code>{{else}}All spaces{{end}}{{end}}
+{{define "scope"}}{{if .NodeID}}Item "{{.NodeTitle}}" in space {{.SpaceName}}{{else if .SpaceID}}Space {{.SpaceName}} <code>{{.SpaceSlug}}</code>{{else}}All spaces{{end}}{{end}}
 {{define "spaceselect"}}<label>Scope
     <select name="space">
       <option value="">All spaces</option>

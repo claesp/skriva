@@ -1,20 +1,20 @@
 {{define "content"}}
 {{with .Data}}
-<h1>Access to folder "{{.Node.Title}}"</h1>
-<p><a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Go to the folder</a></p>
-<p>A user has these permissions in the folder and in all items in it:</p>
+<h1>Access to {{.Node.Kind}} "{{.Node.Title}}"</h1>
+<p><a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Go to the {{.Node.Kind}}</a></p>
+<p>A user has these permissions for this {{.Node.Kind}} and for all items in it:</p>
 <ul>
-  <li>The document permissions of the default role of the folder.</li>
-  <li>The permissions of the role bindings for all spaces, for this space and for the parent folders.</li>
-  <li>The document permissions of the role bindings for this folder.</li>
+  <li>The document permissions of the default role. If this {{.Node.Kind}} uses "Same as the parent", the nearest parent folder or document with its own setting gives the default role. If there is none, the space gives it.</li>
+  <li>The permissions of the role bindings for all spaces, for this space and for the parents.</li>
+  <li>The document permissions of the role bindings for this {{.Node.Kind}}.</li>
 </ul>
 
 <h2>Default role</h2>
 <form method="post" action="{{$.SpacePath}}/access/{{.Node.PublicID}}" class="inline">
   {{template "csrf" $.CSRF}}
-  <label>Default role of all signed-in users in this folder
+  <label>Default role of all signed-in users in this {{.Node.Kind}}
     <select name="default_role">
-      <option value="-"{{if eq .DefaultRole "-"}} selected{{end}}>Same as the parent folder or the space</option>
+      <option value="-"{{if eq .DefaultRole "-"}} selected{{end}}>Same as the parent (folder, document or space)</option>
       <option value=""{{if eq .DefaultRole ""}} selected{{end}}>None. Only users with a role binding have access.</option>
       {{range .Roles}}<option value="{{.Name}}"{{if eq .Name $.Data.DefaultRole}} selected{{end}}>{{.Name}}</option>{{end}}
     </select>
@@ -22,7 +22,7 @@
   <button type="submit">Save</button>
 </form>
 
-<h2>Role bindings for this folder</h2>
+<h2>Role bindings for this {{.Node.Kind}}</h2>
 {{with .Bindings}}
 <table>
   <thead><tr><th>Role</th><th>Given to</th><th></th></tr></thead>
@@ -41,7 +41,7 @@
   {{end}}
   </tbody>
 </table>
-{{else}}<p>The folder has no role bindings of its own.</p>{{end}}
+{{else}}<p>This {{.Node.Kind}} has no role bindings of its own.</p>{{end}}
 <form method="post" action="{{$.TenantPath}}/admin/bindings" class="inline">
   {{template "csrf" $.CSRF}}
   <input type="hidden" name="space" value="{{$.Space.Slug}}">
@@ -60,7 +60,7 @@
   </label>
   <button type="submit">Give role</button>
 </form>
-<p><small>Bindings for this folder give only document permissions (<code>doc.*</code>). The access to the space is on the page
+<p><small>Bindings for this {{.Node.Kind}} give only document permissions (<code>doc.*</code>). The access to the space is on the page
   <a href="{{$.TenantPath}}/admin/spaces/{{$.Space.Slug}}/access">Administration › Spaces › Access</a>.</small></p>
 {{end}}
 {{end}}

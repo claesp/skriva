@@ -825,148 +825,265 @@ func TestSpaceBindingIsolation(t *testing.T) {
 	}
 }
 
-func TestFolderPermissions(t *testing.T) {
+func TestNodePermissions(t *testing.T) {
 	st := newStore(t)
 	tn := defaultTenant(t, st)
 	sp := defaultSpace(t, st, tn)
 	carol := login(t, st, tn, "carol", "hr")
 	dave := login(t, st, tn, "dave")
 
-	mk := func(parent, kind, title string) *store.Node {
+	mk := func(parent, kind, title string) string {
 		t.Helper()
 		id, err := st.CreateNode(ctx, sp.ID, store.NewNode{ParentPublicID: parent, Kind: kind, Title: title})
 		if err != nil {
 			t.Fatal(err)
 		}
-		n, _ := st.Node(ctx, sp.ID, id)
+		return id
+	}
+	node := func(id string) *store.Node {
+		t.Helper()
+		n, err := st.Node(ctx, sp.ID, id)
+		if err != nil {
+			t.Fatal(err)
+		}
 		return n
 	}
-	public := mk("", store.KindDocument, "Public")
-	hr := mk("", store.KindFolder, "HR")
-	salaries := mk(hr.PublicID, store.KindDocument, "Salaries")
-	sub := mk(salaries.PublicID, store.KindDocument, "Details")
-	inner := mk(hr.PublicID, store.KindFolder, "Open inside")
-	innerDoc := mk(inner.PublicID, store.KindDocument, "Open doc")
-
-	access := func(u *store.User) *store.Access {
+	// perms reads the node again, because the access path can change.
+	perms := func(u *store.User, id string) rbac.Set {
 		t.Helper()
 		a, err := st.Access(ctx, tn.ID, sp.ID, u.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return a
+		return a.For(node(id).AccessPathID)
 	}
+	public := mk("", store.KindDocument, "Public")
+	hr := mk("", store.KindFolder, "HR")
+	salaries := mk(hr, store.KindDocument, "Salaries")
+	sub := mk(salaries, store.KindDocument, "Details")
+	inner := mk(hr, store.KindFolder, "Open inside")
+	innerDoc := mk(inner, store.KindDocument, "Open doc")
 
-	// Without folder settings, all nodes have the space permissions.
-	a := access(dave)
-	if !a.Can(salaries.ID, rbac.DocRead) || a.Can(salaries.ID, rbac.DocEdit) {
-		t.Fatalf("default permissions: %v", a.For(salaries.ID).List())
+	// Without settings, all nodes have the space permissions and one
+	// access path.
+	if p := perms(dave, salaries); !p.Has(rbac.DocRead) || p.Has(rbac.DocEdit) {
+		t.Fatalf("default permissions: %v", p.List())
+	}
+	if node(public).AccessPathID != node(innerDoc).AccessPathID {
+		t.Fatal("nodes without settings have different access paths")
 	}
 
 	// Make the folder HR private. Its subtree inherits the setting.
 	none := ""
-	if err := st.SetFolderDefaultRole(ctx, tn.ID, sp.ID, hr.PublicID, &none); err != nil {
+	if err := st.SetNodeDefaultRole(ctx, tn.ID, sp.ID, hr, &none); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetFolderDefaultRole(ctx, tn.ID, sp.ID, salaries.PublicID, &none); !errors.Is(err, store.ErrInvalid) {
-		t.Fatalf("default role for a document: %v", err)
-	}
-	a = access(dave)
-	for _, n := range []*store.Node{hr, salaries, sub, inner, innerDoc} {
-		if len(a.For(n.ID)) != 0 {
-			t.Fatalf("%s in private folder gives %v", n.Title, a.For(n.ID).List())
+	for _, id := range []string{hr, salaries, sub, inner, innerDoc} {
+		if p := perms(dave, id); len(p) != 0 {
+			t.Fatalf("%s in private folder gives %v", node(id).Title, p.List())
 		}
 	}
-	if !a.Can(public.ID, rbac.DocRead) || !a.Root().Has(rbac.DocRead) {
+	if !perms(dave, public).Has(rbac.DocRead) {
 		t.Fatal("the private folder changed the rest of the space")
 	}
 
 	// A folder inside the private folder can open again.
 	viewer := "viewer"
-	if err := st.SetFolderDefaultRole(ctx, tn.ID, sp.ID, inner.PublicID, &viewer); err != nil {
+	if err := st.SetNodeDefaultRole(ctx, tn.ID, sp.ID, inner, &viewer); err != nil {
 		t.Fatal(err)
 	}
-	a = access(dave)
-	if !a.Can(innerDoc.ID, rbac.DocRead) || a.Can(salaries.ID, rbac.DocRead) {
-		t.Fatal("nested folder default role does not apply")
+	if !perms(dave, innerDoc).Has(rbac.DocRead) || perms(dave, salaries).Has(rbac.DocRead) {
+		t.Fatal("nested default role does not apply")
 	}
 
-	// A folder binding for a group gives permissions in the subtree.
-	gid, _ := st.EnsureOIDCGroup(ctx, tn.ID, "hr")
-	if err := st.BindRoleToGroup(ctx, tn.ID, "maintainer", gid, store.Scope{SpaceID: sp.ID, NodeID: hr.ID}); err != nil {
+	// A document can open again inside the private folder. Its
+	// sub-documents inherit the setting.
+	if err := st.SetNodeDefaultRole(ctx, tn.ID, sp.ID, salaries, &viewer); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.BindRoleToGroup(ctx, tn.ID, "editor", gid, store.Scope{SpaceID: sp.ID, NodeID: salaries.ID}); !errors.Is(err, store.ErrInvalid) {
-		t.Fatalf("binding to a document: %v", err)
+	if !perms(dave, salaries).Has(rbac.DocRead) || !perms(dave, sub).Has(rbac.DocRead) || len(perms(dave, hr)) != 0 {
+		t.Fatal("document default role does not apply")
 	}
-	a = access(carol)
-	if !a.Can(sub.ID, rbac.DocDelete) || !a.Can(hr.ID, rbac.DocCreate) {
-		t.Fatalf("folder binding in subtree: %v", a.For(sub.ID).List())
+	// "Same as the parent" removes the setting.
+	if err := st.SetNodeDefaultRole(ctx, tn.ID, sp.ID, salaries, nil); err != nil {
+		t.Fatal(err)
 	}
-	if a.Can(public.ID, rbac.DocEdit) || a.Root().Has(rbac.DocEdit) {
+	if perms(dave, sub).Has(rbac.DocRead) {
+		t.Fatal("removed document default role still applies")
+	}
+
+	// A binding for a group on the folder gives permissions in the
+	// subtree. A binding on a document applies to the document and its
+	// sub-documents.
+	gid, _ := st.EnsureOIDCGroup(ctx, tn.ID, "hr")
+	if err := st.BindRoleToGroup(ctx, tn.ID, "editor", gid, store.Scope{SpaceID: sp.ID, NodeID: node(hr).ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BindRoleToGroup(ctx, tn.ID, "maintainer", gid, store.Scope{SpaceID: sp.ID, NodeID: node(salaries).ID}); err != nil {
+		t.Fatal(err)
+	}
+	if p := perms(carol, sub); !p.Has(rbac.DocDelete) {
+		t.Fatalf("document binding in sub-document: %v", p.List())
+	}
+	if p := perms(carol, innerDoc); !p.Has(rbac.DocEdit) || p.Has(rbac.DocDelete) {
+		t.Fatalf("folder binding: %v", p.List())
+	}
+	if perms(carol, public).Has(rbac.DocEdit) {
 		t.Fatal("folder binding applies outside the folder")
 	}
 
-	// The admin role for a folder gives only document permissions.
-	if err := st.BindRoleToUser(ctx, tn.ID, "admin", dave.ID, store.Scope{SpaceID: sp.ID, NodeID: inner.ID}); err != nil {
+	// The admin role for a node gives only document permissions.
+	if err := st.BindRoleToUser(ctx, tn.ID, "admin", dave.ID, store.Scope{SpaceID: sp.ID, NodeID: node(inner).ID}); err != nil {
 		t.Fatal(err)
 	}
-	a = access(dave)
-	if p := a.For(innerDoc.ID); !p.Has(rbac.DocDelete) || p.Has(rbac.TenantManage) {
-		t.Fatalf("folder admin binding gives %v", p.List())
+	if p := perms(dave, innerDoc); !p.Has(rbac.DocDelete) || p.Has(rbac.TenantManage) {
+		t.Fatalf("node admin binding gives %v", p.List())
 	}
-	if len(a.For(salaries.ID)) != 0 {
-		t.Fatal("binding on the inner folder applies to its parent")
+
+	// The deletion of a binding refreshes the cache.
+	bindings, _ := st.Bindings(ctx, tn.ID)
+	for _, b := range bindings {
+		if b.NodeID == node(salaries).ID {
+			if err := st.DeleteBinding(ctx, tn.ID, b.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if perms(carol, sub).Has(rbac.DocDelete) {
+		t.Fatal("deleted document binding still applies")
 	}
 
 	// A move takes the subtree out of the private folder.
-	if err := st.MoveNode(ctx, sp.ID, salaries.PublicID, ""); err != nil {
+	if err := st.MoveNode(ctx, sp.ID, salaries, ""); err != nil {
 		t.Fatal(err)
 	}
-	if !access(dave).Can(sub.ID, rbac.DocRead) {
+	if !perms(dave, sub).Has(rbac.DocRead) {
 		t.Fatal("moved document keeps the permissions of the old folder")
 	}
 
-	// Subtree and the space with a folder binding only.
-	if got := access(dave).Subtree(hr.ID); len(got) != 2 {
-		t.Fatalf("subtree of HR = %v", got)
+	// The two nodes below HR (the inner folder and its document) have the
+	// same access path.
+	paths, err := st.SubtreePaths(ctx, node(hr).ID)
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("subtree paths of HR = %v, %v", paths, err)
 	}
+
+	// Readable spaces.
 	none2 := ""
 	if err := st.SetSpaceDefaultRole(ctx, tn.ID, "default0", &none2); err != nil {
 		t.Fatal(err)
 	}
 	if ids, _ := st.ReadableSpaces(ctx, tn.ID, carol.ID); len(ids) != 1 {
-		t.Fatalf("space with a folder binding is not readable: %v", ids)
+		t.Fatalf("space with a node binding is not readable: %v", ids)
 	}
 	eve := login(t, st, tn, "eve")
 	if ids, _ := st.ReadableSpaces(ctx, tn.ID, eve.ID); len(ids) != 1 {
-		t.Fatalf("space with a readable folder default role is not readable: %v", ids)
+		t.Fatalf("space with a readable node default role is not readable: %v", ids)
 	}
-	if err := st.SetFolderDefaultRole(ctx, tn.ID, sp.ID, inner.PublicID, nil); err != nil {
+	if err := st.SetNodeDefaultRole(ctx, tn.ID, sp.ID, inner, nil); err != nil {
 		t.Fatal(err)
 	}
 	if ids, _ := st.ReadableSpaces(ctx, tn.ID, eve.ID); len(ids) != 0 {
 		t.Fatalf("private space is readable: %v", ids)
 	}
 
-	// The binding list shows the folder. The deletion removes it.
-	bindings, _ := st.Bindings(ctx, tn.ID)
+	// The binding list shows the node. The deletion removes the binding.
+	bindings, _ = st.Bindings(ctx, tn.ID)
 	found := false
 	for _, b := range bindings {
-		found = found || (b.NodeID == hr.ID && b.NodeTitle == "HR" && b.SpaceSlug == "default0")
+		found = found || (b.NodePublicID == hr && b.NodeTitle == "HR" && b.SpaceSlug == "default0")
 	}
 	if !found {
-		t.Fatalf("no folder binding in the list: %+v", bindings)
+		t.Fatalf("no node binding in the list: %+v", bindings)
 	}
-	if err := st.DeleteNode(ctx, sp.ID, hr.PublicID); err != nil {
+	if err := st.DeleteNode(ctx, sp.ID, hr); err != nil {
 		t.Fatal(err)
 	}
 	bindings, _ = st.Bindings(ctx, tn.ID)
 	for _, b := range bindings {
 		if b.NodeID != 0 {
-			t.Fatalf("folder binding stays after deletion: %+v", b)
+			t.Fatalf("node binding stays after deletion: %+v", b)
 		}
 	}
+	checkAccessCache(t, st, sp.ID)
+}
+
+// checkAccessCache compares the cached access path of each node with a
+// path that the test calculates from the tree.
+func checkAccessCache(t *testing.T, st *store.Store, spaceID int64) {
+	t.Helper()
+	got, want, err := st.AccessCacheReport(ctx, spaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, w := range want {
+		if !slices.Equal(got[id], w) {
+			t.Fatalf("node %d: cached path %v, want %v", id, got[id], w)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("%d cached paths, %d nodes", len(got), len(want))
+	}
+}
+
+func TestAccessCacheRandomOperations(t *testing.T) {
+	st := newStore(t)
+	tn := defaultTenant(t, st)
+	sp := defaultSpace(t, st, tn)
+	u := login(t, st, tn, "ann")
+	var ids []string
+	rnd := uint64(42)
+	next := func(n int) int {
+		rnd = rnd*6364136223846793005 + 1442695040888963407
+		return int((rnd >> 33) % uint64(n))
+	}
+	viewer, none := "viewer", ""
+	for i := range 300 {
+		switch op := next(6); {
+		case op <= 1 || len(ids) < 5:
+			parent := ""
+			if len(ids) > 0 && next(4) > 0 {
+				parent = ids[next(len(ids))]
+			}
+			id, err := st.CreateNode(ctx, sp.ID, store.NewNode{ParentPublicID: parent, Kind: store.KindDocument, Title: fmt.Sprint("N", i)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids = append(ids, id)
+		case op == 2:
+			roles := []*string{nil, &viewer, &none}
+			if err := st.SetNodeDefaultRole(ctx, tn.ID, sp.ID, ids[next(len(ids))], roles[next(3)]); err != nil {
+				t.Fatal(err)
+			}
+		case op == 3:
+			n, _ := st.Node(ctx, sp.ID, ids[next(len(ids))])
+			if err := st.BindRoleToUser(ctx, tn.ID, "editor", u.ID, store.Scope{SpaceID: sp.ID, NodeID: n.ID}); err != nil {
+				t.Fatal(err)
+			}
+		case op == 4:
+			bindings, _ := st.Bindings(ctx, tn.ID)
+			if len(bindings) > 0 {
+				if err := st.DeleteBinding(ctx, tn.ID, bindings[next(len(bindings))].ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+		case op == 5:
+			parent := ""
+			if next(3) > 0 {
+				parent = ids[next(len(ids))]
+			}
+			err := st.MoveNode(ctx, sp.ID, ids[next(len(ids))], parent)
+			if err != nil && !errors.Is(err, store.ErrInvalid) {
+				t.Fatal(err)
+			}
+		}
+	}
+	checkAccessCache(t, st, sp.ID)
+	// A full rebuild gives the same result.
+	if err := st.RebuildAccessPaths(ctx, sp.ID); err != nil {
+		t.Fatal(err)
+	}
+	checkAccessCache(t, st, sp.ID)
 }
 
 func TestFolderBindingIsolation(t *testing.T) {
@@ -984,11 +1101,11 @@ func TestFolderBindingIsolation(t *testing.T) {
 	if err := st.BindRoleToUser(ctx, tn.ID, "editor", u.ID, store.Scope{SpaceID: other.ID, NodeID: f.ID}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("folder of a different space: %v", err)
 	}
-	if err := st.SetFolderDefaultRole(ctx, tn.ID, other.ID, f.PublicID, nil); !errors.Is(err, store.ErrNotFound) {
+	if err := st.SetNodeDefaultRole(ctx, tn.ID, other.ID, f.PublicID, nil); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("default role through a different space: %v", err)
 	}
 	b := newTenant(t, st, "bbbb")
-	if err := st.SetFolderDefaultRole(ctx, b.ID, sp.ID, f.PublicID, nil); !errors.Is(err, store.ErrNotFound) {
+	if err := st.SetNodeDefaultRole(ctx, b.ID, sp.ID, f.PublicID, nil); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("default role through a different tenant: %v", err)
 	}
 }

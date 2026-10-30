@@ -347,7 +347,7 @@ func (s *Store) Bindings(ctx context.Context, tenantID int64) ([]Binding, error)
 
 // Scope is the scope of a role binding. The zero value is the full
 // tenant. With SpaceID, the binding applies in one space. With SpaceID and
-// NodeID, the binding applies to one folder and its subtree.
+// NodeID, the binding applies to one folder or document and its subtree.
 type Scope struct {
 	SpaceID int64
 	NodeID  int64
@@ -365,35 +365,42 @@ func (sc Scope) ids() (spaceID, nodeID *int64) {
 
 // BindRoleToUser gives a role to a user of the tenant, in the given scope.
 func (s *Store) BindRoleToUser(ctx context.Context, tenantID int64, roleName string, userID int64, sc Scope) error {
-	return bind(ctx, s.pool, tenantID, roleName, &userID, nil, sc)
+	return s.bindScoped(ctx, tenantID, roleName, &userID, nil, sc)
 }
 
 // BindRoleToGroup gives a role to a group of the tenant, in the given
 // scope.
 func (s *Store) BindRoleToGroup(ctx context.Context, tenantID int64, roleName string, groupID int64, sc Scope) error {
-	return bind(ctx, s.pool, tenantID, roleName, nil, &groupID, sc)
+	return s.bindScoped(ctx, tenantID, roleName, nil, &groupID, sc)
+}
+
+// bindScoped makes a role binding. A binding for a node changes the access
+// paths of the subtree of the node. Thus the function refreshes them in
+// the same transaction.
+func (s *Store) bindScoped(ctx context.Context, tenantID int64, roleName string, userID, groupID *int64, sc Scope) error {
+	if sc.NodeID == 0 {
+		return bind(ctx, s.pool, tenantID, roleName, userID, groupID, sc)
+	}
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if err := lockSpace(ctx, tx, sc.SpaceID); err != nil {
+			return err
+		}
+		if err := bind(ctx, tx, tenantID, roleName, userID, groupID, sc); err != nil {
+			return err
+		}
+		return refreshAccess(ctx, tx, sc.SpaceID, sc.NodeID)
+	})
 }
 
 // bind makes a role binding. The role must be a built-in role or a custom
 // role of the tenant. The foreign keys make sure that the user, the group,
-// the space and the node are in the tenant. The node must be a folder: it
-// returns ErrInvalid for a document.
+// the space and the node are in the tenant.
 func bind(ctx context.Context, q querier, tenantID int64, roleName string, userID, groupID *int64, sc Scope) error {
 	if err := checkRole(ctx, q, tenantID, roleName); err != nil {
 		if err == ErrInvalid {
 			return ErrNotFound
 		}
 		return err
-	}
-	if sc.NodeID != 0 {
-		var kind string
-		err := q.QueryRow(ctx, "SELECT kind FROM nodes WHERE id = $1 AND space_id = $2", sc.NodeID, sc.SpaceID).Scan(&kind)
-		if err != nil {
-			return notFound(err)
-		}
-		if kind != KindFolder {
-			return ErrInvalid
-		}
 	}
 	spaceID, nodeID := sc.ids()
 	_, err := q.Exec(ctx, `
@@ -408,16 +415,33 @@ func bind(ctx context.Context, q querier, tenantID int64, roleName string, userI
 	return err
 }
 
-// DeleteBinding removes a role binding of a tenant.
+// DeleteBinding removes a role binding of a tenant. For a binding of a
+// node, it also refreshes the access paths of the subtree of the node.
 func (s *Store) DeleteBinding(ctx context.Context, tenantID, id int64) error {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM role_bindings WHERE tenant_id = $1 AND id = $2", tenantID, id)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var spaceID, nodeID *int64
+		err := tx.QueryRow(ctx, "SELECT space_id, node_id FROM role_bindings WHERE tenant_id = $1 AND id = $2",
+			tenantID, id).Scan(&spaceID, &nodeID)
+		if err != nil {
+			return notFound(err)
+		}
+		if nodeID != nil {
+			if err := lockSpace(ctx, tx, *spaceID); err != nil {
+				return err
+			}
+		}
+		tag, err := tx.Exec(ctx, "DELETE FROM role_bindings WHERE tenant_id = $1 AND id = $2", tenantID, id)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		if nodeID != nil {
+			return refreshAccess(ctx, tx, *spaceID, *nodeID)
+		}
+		return nil
+	})
 }
 
 func prefixed(prefix, columns string) string {

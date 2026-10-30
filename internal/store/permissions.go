@@ -11,13 +11,14 @@ import (
 //   - A role binding without a space applies in all spaces of the tenant.
 //     It gives all permissions of the role.
 //   - A role binding for a space applies only in that space. A role
-//     binding for a folder applies to the folder and its subtree. These
+//     binding for a node (a folder or a document) applies to the node and
+//     its subtree. These
 //     bindings give only the space permissions of the role
 //     (rbac.Permission.SpaceScoped).
 //   - The default role of the tenant applies everywhere, except where a
-//     space or a folder has its own default role. The nearest setting
-//     applies: first the folder, then its parent folders, then the space,
-//     then the tenant. The default role of a space or a folder gives only
+//     space or a node has its own default role. The nearest setting
+//     applies: first the node, then its parents, then the space, then the
+//     tenant. The default role of a space or a folder gives only
 //     space permissions.
 //   - Bindings add permissions. A default role "none" does not remove the
 //     permissions from bindings at a higher level.
@@ -166,7 +167,12 @@ func (s *Store) ReadableSpaces(ctx context.Context, tenantID, userID int64) ([]i
 }
 
 // Access contains the data to calculate the permissions of one user for
-// each node of one space. It is not safe for concurrent use.
+// the nodes of one space. It does not read the tree: each node has a
+// cached access path (see migration 0006), and the permissions depend only
+// on that path. Thus the size of the data depends on the number of nodes
+// with own access settings, and not on the size of the space.
+//
+// Access is not safe for concurrent use.
 type Access struct {
 	// spaceDefault contains the space permissions of the default role of
 	// the space.
@@ -175,13 +181,15 @@ type Access struct {
 	// for the space, and the tenant permissions of the default role of
 	// the tenant.
 	bound rbac.Set
-	// parent maps each node to its parent. Nil is the top level.
-	parent map[int64]*int64
-	// overrides contains the default role permissions of folders with
-	// their own default role.
+	// paths maps each access path ID to the nodes in the path, from the
+	// top level down.
+	paths map[int64][]int64
+	// overrides contains the default role permissions of nodes with their
+	// own default role.
 	overrides map[int64]rbac.Set
-	// folderBound contains the permissions from the folder bindings.
-	folderBound map[int64]rbac.Set
+	// nodeBound contains the permissions from the node bindings of the
+	// user.
+	nodeBound map[int64]rbac.Set
 
 	memo map[int64]rbac.Set
 }
@@ -189,10 +197,10 @@ type Access struct {
 // Access loads the permission data of a user in a space.
 func (s *Store) Access(ctx context.Context, tenantID, spaceID, userID int64) (*Access, error) {
 	a := &Access{
-		parent:      map[int64]*int64{},
-		overrides:   map[int64]rbac.Set{},
-		folderBound: map[int64]rbac.Set{},
-		memo:        map[int64]rbac.Set{},
+		paths:     map[int64][]int64{},
+		overrides: map[int64]rbac.Set{},
+		nodeBound: map[int64]rbac.Set{},
+		memo:      map[int64]rbac.Set{},
 	}
 	var def, bound []string
 	err := s.pool.QueryRow(ctx, `
@@ -206,18 +214,18 @@ func (s *Store) Access(ctx context.Context, tenantID, spaceID, userID int64) (*A
 	a.spaceDefault = rbac.NewSet(def...)
 	a.bound = rbac.NewSet(bound...)
 
-	rows, err := s.pool.Query(ctx, "SELECT id, parent_id FROM nodes WHERE space_id = $1", spaceID)
+	rows, err := s.pool.Query(ctx, "SELECT id, path FROM access_paths WHERE space_id = $1", spaceID)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var id int64
-		var parent *int64
-		if err := rows.Scan(&id, &parent); err != nil {
+		var path []int64
+		if err := rows.Scan(&id, &path); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		a.parent[id] = parent
+		a.paths[id] = path
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -234,7 +242,7 @@ func (s *Store) Access(ctx context.Context, tenantID, spaceID, userID int64) (*A
 		tenantID, spaceID); err != nil {
 		return nil, err
 	}
-	if err := s.permissionMap(ctx, a.folderBound, `
+	if err := s.permissionMap(ctx, a.nodeBound, `
 		SELECT rb.node_id, array_agg(DISTINCT rp.permission)
 		FROM role_bindings rb
 		JOIN role_permissions rp ON rp.role_id = rb.role_id
@@ -272,67 +280,36 @@ func (a *Access) Root() rbac.Set {
 	return union(a.spaceDefault, a.bound)
 }
 
-// For returns the permissions of the user for a node. A node that is not
-// in the space gets the permissions of the top level.
-func (a *Access) For(id int64) rbac.Set {
-	if p, ok := a.memo[id]; ok {
+// For returns the permissions of the user for a node with the given access
+// path ID. An unknown path gives no permissions: the path can be new after
+// the data was loaded.
+func (a *Access) For(pathID int64) rbac.Set {
+	if p, ok := a.memo[pathID]; ok {
 		return p
 	}
-	// Find the path to the top level. The visited set stops the loop if
-	// the data contains a cycle.
-	var path []int64
-	visited := map[int64]bool{}
-	for cur := &id; cur != nil && !visited[*cur]; {
-		if _, ok := a.parent[*cur]; !ok {
-			break
-		}
-		visited[*cur] = true
-		path = append(path, *cur)
-		cur = a.parent[*cur]
+	path, ok := a.paths[pathID]
+	if !ok {
+		return rbac.Set{}
 	}
-	// Go from the top level down to the node. def is the nearest default
-	// role. bound adds the folder bindings.
+	// Go from the top level down. def is the nearest default role. bound
+	// adds the node bindings.
 	def, bound := a.spaceDefault, a.bound
-	for i := len(path) - 1; i >= 0; i-- {
-		n := path[i]
+	for _, n := range path {
 		if o, ok := a.overrides[n]; ok {
 			def = o
 		}
-		if b, ok := a.folderBound[n]; ok {
+		if b, ok := a.nodeBound[n]; ok {
 			bound = union(bound, b)
 		}
 	}
 	p := union(def, bound)
-	a.memo[id] = p
+	a.memo[pathID] = p
 	return p
 }
 
-// Can reports whether the user has permission p for the node.
-func (a *Access) Can(id int64, p rbac.Permission) bool { return a.For(id).Has(p) }
-
-// Subtree returns the IDs of the descendants of a node.
-func (a *Access) Subtree(id int64) []int64 {
-	children := map[int64][]int64{}
-	for n, p := range a.parent {
-		if p != nil {
-			children[*p] = append(children[*p], n)
-		}
-	}
-	var out []int64
-	visited := map[int64]bool{id: true}
-	queue := children[id]
-	for len(queue) > 0 {
-		n := queue[0]
-		queue = queue[1:]
-		if visited[n] {
-			continue
-		}
-		visited[n] = true
-		out = append(out, n)
-		queue = append(queue, children[n]...)
-	}
-	return out
-}
+// Can reports whether the user has permission p for a node with the given
+// access path ID.
+func (a *Access) Can(pathID int64, p rbac.Permission) bool { return a.For(pathID).Has(p) }
 
 func union(a, b rbac.Set) rbac.Set {
 	out := make(rbac.Set, len(a)+len(b))
