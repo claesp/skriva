@@ -132,7 +132,7 @@ func load(getenv func(string) string) (*Config, error) {
 // better for secrets because environment variables can leak to logs.
 func secretValue(getenv func(string) string, key string) (string, error) {
 	if path := getenv(key + "_FILE"); path != "" {
-		b, err := os.ReadFile(path)
+		b, err := os.ReadFile(path) // #nosec G304 -- the operator sets the path.
 		if err != nil {
 			return "", fmt.Errorf("%s_FILE: %w", key, err)
 		}

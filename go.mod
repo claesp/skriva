@@ -12,6 +12,7 @@ require (
 	go.abhg.dev/goldmark/wikilink v0.6.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/text v0.43.0
+	golang.org/x/time v0.16.0
 )
 
 require (

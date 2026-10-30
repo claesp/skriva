@@ -21,7 +21,16 @@ const loginTTL = 10 * time.Minute
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	returnTo := safeReturnTo(r.URL.Query().Get("return_to"))
 	if sessionFrom(r.Context()) != nil {
-		http.Redirect(w, r, returnTo, http.StatusSeeOther)
+		http.Redirect(w, r, returnTo, http.StatusSeeOther) // #nosec G710 -- safeReturnTo checks the value.
+		return
+	}
+
+	// Each login writes a row to the database before the user signs in.
+	// The limit prevents that anonymous clients fill the database.
+	if !s.loginLimit.Allow() {
+		s.log.Warn("login rate limit reached")
+		w.Header().Set("Retry-After", "10")
+		s.renderError(w, r, http.StatusTooManyRequests, "There are too many sign-in requests. Try again in a short time.")
 		return
 	}
 
@@ -103,7 +112,8 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setCookie(w, s.sessionCookie, token, s.opts.SessionTTL)
 	s.log.Info("user signed in", "user_id", user.ID, "username", user.Username)
-	http.Redirect(w, r, st.ReturnTo, http.StatusSeeOther)
+	// Check the value again. The database is a different trust boundary.
+	http.Redirect(w, r, safeReturnTo(st.ReturnTo), http.StatusSeeOther) // #nosec G710 -- checked.
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {

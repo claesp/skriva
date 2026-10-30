@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/clpe/skriva/internal/markdown"
 	"github.com/clpe/skriva/internal/store"
 )
@@ -30,6 +32,9 @@ type Options struct {
 	// RequestTimeout is the maximum time for one request. Zero gives
 	// a default value.
 	RequestTimeout time.Duration
+	// LoginRate is the maximum number of login starts per second, for
+	// all clients together. Zero gives a default value.
+	LoginRate float64
 }
 
 // Server is the HTTP handler for the application.
@@ -43,6 +48,7 @@ type Server struct {
 
 	sessionCookie string
 	stateCookie   string
+	loginLimit    *rate.Limiter
 	handler       http.Handler
 }
 
@@ -53,6 +59,9 @@ func New(st *store.Store, auth Authenticator, opts Options, log *slog.Logger) (*
 	}
 	if opts.MaxPageBytes == 0 {
 		opts.MaxPageBytes = 1 << 20
+	}
+	if opts.LoginRate == 0 {
+		opts.LoginRate = 20
 	}
 	tmpl, err := loadTemplates()
 	if err != nil {
@@ -67,6 +76,7 @@ func New(st *store.Store, auth Authenticator, opts Options, log *slog.Logger) (*
 		tmpl:          tmpl,
 		sessionCookie: "skriva_session",
 		stateCookie:   "skriva_login",
+		loginLimit:    rate.NewLimiter(rate.Limit(opts.LoginRate), int(opts.LoginRate*5)),
 	}
 	if opts.SecureCookies {
 		// The __Host- prefix makes the browser refuse the cookie if it

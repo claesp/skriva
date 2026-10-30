@@ -76,6 +76,10 @@ control characters.
 - The maximum request body is 2 MiB.
 - The maximum page text is 1 MiB.
 - The maximum time for a request is 30 seconds.
+- The server permits a maximum of 20 login starts per second, for all
+  clients together. Each login start writes one row to the database.
+  The limit prevents that anonymous clients fill the database.
+- The server accepts only page versions that fit in 32 bits.
 - The HTTP server has timeouts for headers, reading, writing and idle
   connections.
 
@@ -90,17 +94,23 @@ program runs as user 65532, not as root.
 
 ## Known limits
 
-- The server does not limit the rate of requests. Use a reverse proxy to
-  limit the rate of requests to `/login` and `/auth/callback`.
+- The login limit applies to all clients together. Thus a flood of
+  requests can stop the login for all users for a short time. Use a
+  reverse proxy to limit the rate of requests for each client.
 - The server does not encrypt the connection. Use a reverse proxy with
   TLS, or a load balancer with TLS.
 - Images from external `https` sites can show in pages. The external
   site can see the IP address of the reader.
 
-## Vulnerability check
+## Security checks
 
-Run this command to find known vulnerabilities in the dependencies:
+Run these commands before a release:
 
 ```sh
 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+go run github.com/securego/gosec/v2/cmd/gosec@latest -exclude-dir=e2e ./...
 ```
+
+The first command finds known vulnerabilities in the dependencies. The
+second command does a static analysis of the code. Each `#nosec` comment
+in the code gives the reason for the exception.

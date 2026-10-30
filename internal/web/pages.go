@@ -20,7 +20,15 @@ const (
 	maxCommentLen  = 500
 	maxSearchLen   = 200
 	searchPageSize = 50
+	maxListPage    = 100_000
 )
+
+// parseVersion parses a page version. Versions are PostgreSQL integer
+// values, thus the function accepts only values that fit in 32 bits.
+func parseVersion(s string) (int, bool) {
+	v, err := strconv.ParseInt(s, 10, 32)
+	return int(v), err == nil && v >= 0
+}
 
 // pageSlug returns the slug from the URL, or "" if it is not valid.
 func pageSlug(r *http.Request) string {
@@ -33,7 +41,8 @@ func pageSlug(r *http.Request) string {
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	page = max(page, 1)
+	// The limit prevents an integer overflow in the offset.
+	page = min(max(page, 1), maxListPage)
 	list, err := s.store.ListPages(r.Context(), pageSize+1, (page-1)*pageSize)
 	if err != nil {
 		s.serverError(w, r, err)
@@ -93,7 +102,7 @@ func toSearchResults(in []store.PageSummary) []searchResult {
 		esc := template.HTMLEscapeString(p.Snippet)
 		esc = strings.ReplaceAll(esc, "«", "<mark>")
 		esc = strings.ReplaceAll(esc, "»", "</mark>")
-		out[i] = searchResult{PageSummary: p, SnippetHTML: template.HTML(esc)} //nolint:gosec // Escaped above.
+		out[i] = searchResult{PageSummary: p, SnippetHTML: template.HTML(esc)} // #nosec G203 -- esc is escaped above.
 	}
 	return out
 }
@@ -187,7 +196,7 @@ func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request) {
 	d := editData{Slug: slug, Title: p.Title, Body: p.Body, Version: p.Version}
 	// "from" loads the text of an old revision. The user can then save
 	// it as a new version to restore the page.
-	if from, err := strconv.Atoi(r.URL.Query().Get("from")); err == nil && from > 0 && from != p.Version {
+	if from, ok := parseVersion(r.URL.Query().Get("from")); ok && from > 0 && from != p.Version {
 		rev, err := s.store.Revision(r.Context(), slug, from)
 		if errors.Is(err, store.ErrNotFound) {
 			s.notFound(w, r)
@@ -210,11 +219,12 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess := sessionFrom(r.Context())
-	version, err := strconv.Atoi(r.PostFormValue("version"))
-	if err != nil || version < 0 {
+	version, ok := parseVersion(r.PostFormValue("version"))
+	if !ok {
 		s.badRequest(w, r, "The form is not valid.")
 		return
 	}
+	var err error
 	d := editData{
 		Slug:    slug,
 		IsNew:   version == 0,
@@ -336,8 +346,8 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request) {
 	slug := pageSlug(r)
-	version, err := strconv.Atoi(r.PathValue("version"))
-	if slug == "" || err != nil || version < 1 {
+	version, ok := parseVersion(r.PathValue("version"))
+	if slug == "" || !ok || version < 1 {
 		s.notFound(w, r)
 		return
 	}

@@ -188,8 +188,10 @@ func (s *Server) require(perm rbac.Permission, h http.HandlerFunc) http.Handler 
 	})
 }
 
+// setCookie sets a session cookie. Secure is false only if the base URL
+// uses http, for example in local development.
 func (s *Server) setCookie(w http.ResponseWriter, name, value string, maxAge time.Duration) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure follows the base URL.
 		Name:     name,
 		Value:    value,
 		Path:     "/",
@@ -201,7 +203,7 @@ func (s *Server) setCookie(w http.ResponseWriter, name, value string, maxAge tim
 }
 
 func (s *Server) clearCookie(w http.ResponseWriter, name string) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure follows the base URL.
 		Name:     name,
 		Value:    "",
 		Path:     "/",

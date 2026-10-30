@@ -55,7 +55,7 @@ func (r *Renderer) Render(src string) (template.HTML, error) {
 	}
 	// The policy removes all unsafe content. Thus the conversion to
 	// template.HTML is safe.
-	return template.HTML(r.policy.SanitizeBytes(buf.Bytes())), nil //nolint:gosec
+	return template.HTML(r.policy.SanitizeBytes(buf.Bytes())), nil // #nosec G203 -- sanitized.
 }
 
 type resolver struct{ prefix string }

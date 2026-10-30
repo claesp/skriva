@@ -270,6 +270,23 @@ func TestLoginStateIsOneTime(t *testing.T) {
 	wantStatus(t, c.get(cb), http.StatusBadRequest)
 }
 
+func TestLoginRateLimit(t *testing.T) {
+	e := newEnv(t)
+	c := e.anon()
+	limited := false
+	for range 200 {
+		resp := c.get("/login")
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusTooManyRequests {
+			limited = true
+			break
+		}
+	}
+	if !limited {
+		t.Fatal("200 login requests did not reach the rate limit")
+	}
+}
+
 func TestOpenRedirectBlocked(t *testing.T) {
 	e := newEnv(t)
 	c := e.login("carol")
@@ -477,3 +494,15 @@ func TestAdmin(t *testing.T) {
 }
 
 func fmtID(id int64) string { return strconv.FormatInt(id, 10) }
+
+func TestLargeNumbersInInput(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob")
+	wantStatus(t, savePage(bob, "home", "Home", "x", 0), http.StatusSeeOther)
+	wantStatus(t, bob.get("/wiki/?page=99999999999999999"), http.StatusOK)
+	wantStatus(t, bob.get("/wiki/home/history/99999999999"), http.StatusNotFound)
+	wantStatus(t, bob.get("/wiki/home/edit?from=99999999999"), http.StatusOK)
+	wantStatus(t, bob.post("/wiki/home/edit", url.Values{
+		"title": {"Home"}, "body": {"x"}, "version": {"99999999999"}, "action": {"save"},
+	}), http.StatusBadRequest)
+}
