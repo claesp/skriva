@@ -159,7 +159,7 @@ func bootstrap(ctx context.Context, st *store.Store, cfg *config.Config, log *sl
 		if err != nil {
 			return fmt.Errorf("create group %q: %w", gr.Group, err)
 		}
-		err = st.BindRoleToGroup(ctx, t.ID, gr.Role, id)
+		err = st.BindRoleToGroup(ctx, t.ID, gr.Role, id, nil)
 		if errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("SKRIVA_GROUP_ROLES: role %q does not exist", gr.Role)
 		}

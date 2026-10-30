@@ -9,6 +9,7 @@
   <label>Description <input name="description" value="{{.Description}}" maxlength="500"></label>
   <div class="buttons"><button type="submit">Save</button> <a href="{{$.TenantPath}}/admin/spaces">Cancel</a></div>
 </form>
+{{if $.Can "tenant.manage"}}<p><a href="{{$.TenantPath}}/admin/spaces/{{.Slug}}/access">Change the access to this space</a></p>{{end}}
 <h3>Delete space</h3>
 <p>This deletes all folders and documents in the space. You cannot undo this.</p>
 <form method="post" action="{{$.TenantPath}}/admin/spaces/{{.Slug}}/delete" class="inline">

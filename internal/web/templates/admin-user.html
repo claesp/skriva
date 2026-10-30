@@ -29,7 +29,7 @@
 <table>
   <tbody>
   {{range .}}
-  <tr><td>{{.RoleName}}</td><td>
+  <tr><td>{{.RoleName}}</td><td>{{template "scope" .}}</td><td>
     <form method="post" action="{{$.TenantPath}}/admin/bindings/{{.ID}}/delete">
       {{template "csrf" $.CSRF}}
       <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/users/{{$.Data.User.ID}}">
@@ -45,13 +45,25 @@
   <input type="hidden" name="subject" value="user:{{.User.ID}}">
   <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/users/{{.User.ID}}">
   <label>Role <select name="role">{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
+  {{template "spaceselect" .Spaces}}
   <button type="submit">Give role</button>
 </form>
 
 <h3>Effective permissions</h3>
 <p>These permissions come from direct role bindings, group role bindings{{with $.Tenant.DefaultRole}} and the default role "{{.}}"{{end}}.</p>
+<h4>In the tenant</h4>
 {{with .Permissions}}
 <ul>{{range .}}<li><code>{{.}}</code>: {{.Description}}</li>{{end}}</ul>
-{{else}}<p>The user has no permissions.</p>{{end}}
+{{else}}<p>The user has no tenant permissions.</p>{{end}}
+<h4>In each space</h4>
+<table>
+  <thead><tr><th>Space</th><th>Permissions</th></tr></thead>
+  <tbody>
+  {{range .SpacePermissions}}
+  <tr><td><a href="{{$.TenantPath}}/admin/spaces/{{.Space.Slug}}/access">{{.Space.Name}}</a></td>
+    <td>{{range .Permissions}}<code>{{.}}</code> {{else}}(none){{end}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
 {{end}}
 {{end}}

@@ -177,6 +177,11 @@ func TestSystemAdminAndSecondTenant(t *testing.T) {
 		t.Fatalf("no login form:\n%s", body)
 	}
 	resp, body = carol.post(html.UnescapeString(m[1]), url.Values{"username": {"carol"}, "password": {"carol"}})
+	wantCode(t, resp, body, http.StatusOK)
+	if strings.Contains(body, "e2espace") {
+		t.Fatalf("carol sees a space without a role:\n%s", body)
+	}
+	resp, body = carol.get("/" + code + "/e2espace/")
 	wantCode(t, resp, body, http.StatusForbidden)
 
 	// The new tenant cannot see the default space.

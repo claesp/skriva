@@ -7,7 +7,10 @@
 // apply to the user directly or through a group.
 package rbac
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // Permission is the name of one action that the application controls.
 type Permission string
@@ -37,6 +40,11 @@ var descriptions = map[Permission]string{
 
 // Description returns a short text that tells what the permission allows.
 func (p Permission) Description() string { return descriptions[p] }
+
+// SpaceScoped reports whether a role binding for one space can give the
+// permission. Only the document permissions are space scoped. The store
+// package has the same rule in SQL.
+func (p Permission) SpaceScoped() bool { return strings.HasPrefix(string(p), "doc.") }
 
 // Valid reports whether p is a known permission.
 func (p Permission) Valid() bool {

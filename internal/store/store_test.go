@@ -240,10 +240,10 @@ func TestTenantIsolation(t *testing.T) {
 	if err := st.AddLocalGroupMember(ctx, b.ID, ga, ub.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("add user to group of other tenant: %v", err)
 	}
-	if err := st.BindRoleToUser(ctx, b.ID, "admin", ua.ID); !errors.Is(err, store.ErrNotFound) {
+	if err := st.BindRoleToUser(ctx, b.ID, "admin", ua.ID, nil); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("bind role to user of other tenant: %v", err)
 	}
-	if err := st.BindRoleToGroup(ctx, b.ID, "admin", ga); !errors.Is(err, store.ErrNotFound) {
+	if err := st.BindRoleToGroup(ctx, b.ID, "admin", ga, nil); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("bind role to group of other tenant: %v", err)
 	}
 	if err := st.DeleteGroup(ctx, b.ID, ga); !errors.Is(err, store.ErrNotFound) {
@@ -254,7 +254,7 @@ func TestTenantIsolation(t *testing.T) {
 	if err := st.CreateRole(ctx, a.ID, "deleter", "", []rbac.Permission{rbac.DocDelete}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.BindRoleToUser(ctx, b.ID, "deleter", ub.ID); !errors.Is(err, store.ErrNotFound) {
+	if err := st.BindRoleToUser(ctx, b.ID, "deleter", ub.ID, nil); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("bind custom role of other tenant: %v", err)
 	}
 	if err := st.CreateRole(ctx, b.ID, "deleter", "", nil); err != nil {
@@ -287,10 +287,10 @@ func TestTenantIsolation(t *testing.T) {
 	if _, err := st.Node(ctx, spB.ID, id); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("node from other space: %v", err)
 	}
-	if res, _ := st.Search(ctx, b.ID, 0, "zebra", 10); len(res) != 0 {
+	if res, _ := st.Search(ctx, b.ID, []int64{spB.ID}, "zebra", 10); len(res) != 0 {
 		t.Fatalf("search in tenant b finds tenant a data: %+v", res)
 	}
-	if res, _ := st.Search(ctx, a.ID, 0, "zebra", 10); len(res) != 1 || res[0].SpaceSlug != "default0" {
+	if res, _ := st.Search(ctx, a.ID, []int64{spA.ID}, "zebra", 10); len(res) != 1 || res[0].SpaceSlug != "default0" {
 		t.Fatalf("search in tenant a: %+v", res)
 	}
 }
@@ -312,7 +312,7 @@ func TestPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.BindRoleToGroup(ctx, tn.ID, "editor", gid); err != nil {
+	if err := st.BindRoleToGroup(ctx, tn.ID, "editor", gid, nil); err != nil {
 		t.Fatal(err)
 	}
 	perms, _ = st.UserPermissions(ctx, tn.ID, u.ID)
@@ -323,17 +323,17 @@ func TestPermissions(t *testing.T) {
 	if err := st.CreateRole(ctx, tn.ID, "deleter", "", []rbac.Permission{rbac.DocDelete}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.BindRoleToUser(ctx, tn.ID, "deleter", u.ID); err != nil {
+	if err := st.BindRoleToUser(ctx, tn.ID, "deleter", u.ID, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.BindRoleToUser(ctx, tn.ID, "deleter", u.ID); err != nil {
+	if err := st.BindRoleToUser(ctx, tn.ID, "deleter", u.ID, nil); err != nil {
 		t.Fatalf("second binding: %v", err)
 	}
 	perms, _ = st.UserPermissions(ctx, tn.ID, u.ID)
 	if !perms.Has(rbac.DocDelete) || perms.Has(rbac.TenantManage) {
 		t.Fatalf("custom role gives %v", perms.List())
 	}
-	if err := st.BindRoleToUser(ctx, tn.ID, "no-such-role", u.ID); !errors.Is(err, store.ErrNotFound) {
+	if err := st.BindRoleToUser(ctx, tn.ID, "no-such-role", u.ID, nil); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("binding to unknown role: %v", err)
 	}
 
@@ -657,7 +657,7 @@ func TestNodeVersions(t *testing.T) {
 	if res, _ := st.NodesBySlug(ctx, sp.ID, "home"); len(res) != 1 || res[0].PublicID != id {
 		t.Fatalf("NodesBySlug = %+v", res)
 	}
-	if _, err := st.Search(ctx, tn.ID, sp.ID, `"unclosed OR -( & |`, 10); err != nil {
+	if _, err := st.Search(ctx, tn.ID, []int64{sp.ID}, `"unclosed OR -( & |`, 10); err != nil {
 		t.Fatalf("search with odd syntax: %v", err)
 	}
 
@@ -682,5 +682,145 @@ func TestNodeVersions(t *testing.T) {
 	}
 	if ok != 1 {
 		t.Fatalf("%d updates succeeded", ok)
+	}
+}
+
+func TestSpacePermissions(t *testing.T) {
+	st := newStore(t)
+	tn := defaultTenant(t, st)
+	pub := defaultSpace(t, st, tn)
+	if err := st.CreateSpace(ctx, tn.ID, "private0", "Private", ""); err != nil {
+		t.Fatal(err)
+	}
+	priv, _ := st.Space(ctx, tn.ID, "private0")
+	carol := login(t, st, tn, "carol", "team")
+	dave := login(t, st, tn, "dave")
+
+	perms := func(u *store.User, sp *store.Space) rbac.Set {
+		t.Helper()
+		p, err := st.SpacePermissions(ctx, tn.ID, sp.ID, u.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	// Without a space default role, the tenant default role applies.
+	if !perms(carol, priv).Has(rbac.DocRead) {
+		t.Fatal("tenant default role does not apply in the space")
+	}
+
+	// "No default role" makes the space private.
+	none := ""
+	if err := st.SetSpaceDefaultRole(ctx, tn.ID, "private0", &none); err != nil {
+		t.Fatal(err)
+	}
+	if p := perms(carol, priv); len(p) != 0 {
+		t.Fatalf("private space gives %v", p.List())
+	}
+	if !perms(carol, pub).Has(rbac.DocRead) {
+		t.Fatal("the other space changed")
+	}
+	bad := "no-such-role"
+	if err := st.SetSpaceDefaultRole(ctx, tn.ID, "private0", &bad); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("unknown space default role: %v", err)
+	}
+
+	// A space binding to a group gives document permissions only in that
+	// space.
+	gid, _ := st.EnsureOIDCGroup(ctx, tn.ID, "team")
+	if err := st.BindRoleToGroup(ctx, tn.ID, "editor", gid, &priv.ID); err != nil {
+		t.Fatal(err)
+	}
+	if p := perms(carol, priv); !p.Has(rbac.DocEdit) || p.Has(rbac.DocDelete) {
+		t.Fatalf("space binding gives %v", p.List())
+	}
+	if perms(carol, pub).Has(rbac.DocEdit) {
+		t.Fatal("space binding applies in a different space")
+	}
+	if tp, _ := st.UserPermissions(ctx, tn.ID, carol.ID); tp.Has(rbac.DocEdit) {
+		t.Fatal("space binding gives tenant-level permissions")
+	}
+
+	// The admin role for one space gives only the document permissions.
+	if err := st.BindRoleToUser(ctx, tn.ID, "admin", dave.ID, &priv.ID); err != nil {
+		t.Fatal(err)
+	}
+	if p := perms(dave, priv); !p.Has(rbac.DocDelete) || p.Has(rbac.TenantManage) || p.Has(rbac.SpaceManage) {
+		t.Fatalf("space admin binding gives %v", p.List())
+	}
+
+	// A binding without a space applies in all spaces, also in a private
+	// space. Tenant permissions apply in each space.
+	if err := st.BindRoleToUser(ctx, tn.ID, "maintainer", dave.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BindRoleToUser(ctx, tn.ID, "admin", dave.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if p := perms(dave, pub); !p.Has(rbac.DocDelete) || !p.Has(rbac.TenantManage) {
+		t.Fatalf("tenant binding in space gives %v", p.List())
+	}
+
+	// A space default role gives only document permissions.
+	adminRole := "admin"
+	if err := st.SetSpaceDefaultRole(ctx, tn.ID, "default0", &adminRole); err != nil {
+		t.Fatal(err)
+	}
+	if p := perms(carol, pub); !p.Has(rbac.DocDelete) || p.Has(rbac.TenantManage) {
+		t.Fatalf("space default role admin gives %v", p.List())
+	}
+
+	readable, err := st.ReadableSpaces(ctx, tn.ID, carol.ID)
+	if err != nil || len(readable) != 2 {
+		t.Fatalf("readable spaces = %v, %v", readable, err)
+	}
+	stranger := login(t, st, tn, "eve")
+	if readable, _ := st.ReadableSpaces(ctx, tn.ID, stranger.ID); len(readable) != 1 || readable[0] != pub.ID {
+		t.Fatalf("readable spaces of eve = %v", readable)
+	}
+
+	// The binding list shows the space. The deletion of the space removes
+	// its bindings.
+	bindings, _ := st.Bindings(ctx, tn.ID)
+	n := 0
+	for _, b := range bindings {
+		if b.SpaceSlug == "private0" {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("%d bindings for the private space", n)
+	}
+	if err := st.DeleteSpace(ctx, tn.ID, "private0"); err != nil {
+		t.Fatal(err)
+	}
+	bindings, _ = st.Bindings(ctx, tn.ID)
+	for _, b := range bindings {
+		if b.SpaceID != 0 {
+			t.Fatalf("binding stays after space deletion: %+v", b)
+		}
+	}
+}
+
+func TestSpaceBindingIsolation(t *testing.T) {
+	st := newStore(t)
+	a := defaultTenant(t, st)
+	b := newTenant(t, st, "bbbb")
+	if err := st.CreateSpace(ctx, b.ID, "bspace00", "B", ""); err != nil {
+		t.Fatal(err)
+	}
+	spB, _ := st.Space(ctx, b.ID, "bspace00")
+	ua := login(t, st, a, "ann")
+	// A binding in tenant a cannot use a space of tenant b.
+	if err := st.BindRoleToUser(ctx, a.ID, "editor", ua.ID, &spB.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("binding to space of other tenant: %v", err)
+	}
+	// Space permissions for a space of a different tenant do not exist.
+	if _, err := st.SpacePermissions(ctx, a.ID, spB.ID, ua.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("permissions in space of other tenant: %v", err)
+	}
+	if err := st.SetSpaceDefaultRole(ctx, a.ID, "bspace00", nil); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("default role for space of other tenant: %v", err)
 	}
 }

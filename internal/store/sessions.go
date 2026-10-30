@@ -71,27 +71,6 @@ func (s *Store) Session(ctx context.Context, token string, tenantID *int64) (*Se
 	return &sess, nil
 }
 
-// permissionsQuery selects the effective permissions of user u in the
-// tenant of the user. These roles give permissions:
-//   - the default role of the tenant,
-//   - the roles with a binding to the user,
-//   - the roles with a binding to a group of the user.
-//
-// A system administrator (u.tenant_id IS NULL) gets no permissions.
-const permissionsQuery = `
-	SELECT DISTINCT rp.permission
-	FROM role_permissions rp
-	JOIN roles r ON r.id = rp.role_id
-	WHERE (r.tenant_id IS NULL OR r.tenant_id = u.tenant_id)
-	  AND (r.name = (SELECT t.default_role FROM tenants t WHERE t.id = u.tenant_id)
-	       OR r.id IN (
-		SELECT rb.role_id FROM role_bindings rb
-		WHERE rb.tenant_id = u.tenant_id AND rb.user_id = u.id
-		UNION
-		SELECT rb.role_id FROM role_bindings rb
-		JOIN group_members gm ON gm.tenant_id = rb.tenant_id AND gm.group_id = rb.group_id
-		WHERE rb.tenant_id = u.tenant_id AND gm.user_id = u.id))`
-
 // DeleteSession removes the session for token. It returns the ID token
 // of the session, or "" if the session does not exist.
 func (s *Store) DeleteSession(ctx context.Context, token string) (string, error) {

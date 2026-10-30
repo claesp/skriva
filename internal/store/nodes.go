@@ -365,10 +365,14 @@ type SearchResult struct {
 	Snippet string
 }
 
-// Search does a full text search in the documents of a tenant. If spaceID
-// is not zero, the search includes only that space. The query uses the
-// syntax of the PostgreSQL function websearch_to_tsquery.
-func (s *Store) Search(ctx context.Context, tenantID, spaceID int64, query string, limit int) ([]SearchResult, error) {
+// Search does a full text search in the documents of the given spaces of
+// a tenant. The caller must give only the spaces that the user can read.
+// The query uses the syntax of the PostgreSQL function
+// websearch_to_tsquery.
+func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, query string, limit int) ([]SearchResult, error) {
+	if len(spaceIDs) == 0 {
+		return nil, nil
+	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at,
 		       sp.slug, sp.name,
@@ -376,9 +380,9 @@ func (s *Store) Search(ctx context.Context, tenantID, spaceID int64, query strin
 		FROM nodes n
 		JOIN spaces sp ON sp.id = n.space_id,
 		     websearch_to_tsquery('simple', $3) q
-		WHERE sp.tenant_id = $1 AND ($2 = 0 OR sp.id = $2) AND n.search @@ q
+		WHERE sp.tenant_id = $1 AND sp.id = ANY($2) AND n.search @@ q
 		ORDER BY ts_rank(n.search, q) DESC, n.updated_at DESC
-		LIMIT $4`, tenantID, spaceID, query, limit)
+		LIMIT $4`, tenantID, spaceIDs, query, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -12,6 +12,10 @@ type Space struct {
 	Slug        string
 	Name        string
 	Description string
+	// DefaultRole is the default role in the space. Nil means that the
+	// space uses the default role of the tenant. An empty value means no
+	// default role.
+	DefaultRole *string
 	CreatedAt   time.Time
 	// Nodes is the number of folders and documents. Only Spaces sets it.
 	Nodes int
@@ -20,7 +24,7 @@ type Space struct {
 // Spaces returns the spaces of a tenant, sorted by name.
 func (s *Store) Spaces(ctx context.Context, tenantID int64) ([]Space, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT sp.id, sp.tenant_id, sp.slug, sp.name, sp.description, sp.created_at,
+		SELECT sp.id, sp.tenant_id, sp.slug, sp.name, sp.description, sp.default_role, sp.created_at,
 		       (SELECT count(*) FROM nodes n WHERE n.space_id = sp.id)
 		FROM spaces sp WHERE sp.tenant_id = $1
 		ORDER BY lower(sp.name), sp.slug`, tenantID)
@@ -32,7 +36,7 @@ func (s *Store) Spaces(ctx context.Context, tenantID int64) ([]Space, error) {
 	for rows.Next() {
 		var sp Space
 		if err := rows.Scan(&sp.ID, &sp.TenantID, &sp.Slug, &sp.Name, &sp.Description,
-			&sp.CreatedAt, &sp.Nodes); err != nil {
+			&sp.DefaultRole, &sp.CreatedAt, &sp.Nodes); err != nil {
 			return nil, err
 		}
 		out = append(out, sp)
@@ -44,9 +48,9 @@ func (s *Store) Spaces(ctx context.Context, tenantID int64) ([]Space, error) {
 func (s *Store) Space(ctx context.Context, tenantID int64, slug string) (*Space, error) {
 	var sp Space
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, tenant_id, slug, name, description, created_at
+		SELECT id, tenant_id, slug, name, description, default_role, created_at
 		FROM spaces WHERE tenant_id = $1 AND slug = $2`, tenantID, slug,
-	).Scan(&sp.ID, &sp.TenantID, &sp.Slug, &sp.Name, &sp.Description, &sp.CreatedAt)
+	).Scan(&sp.ID, &sp.TenantID, &sp.Slug, &sp.Name, &sp.Description, &sp.DefaultRole, &sp.CreatedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -74,6 +78,26 @@ func (s *Store) UpdateSpace(ctx context.Context, tenantID int64, slug, name, des
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE spaces SET name = $3, description = $4 WHERE tenant_id = $1 AND slug = $2`,
 		tenantID, slug, name, description)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetSpaceDefaultRole sets the default role in a space. Nil means that
+// the space uses the default role of the tenant. A pointer to "" means no
+// default role. It returns ErrInvalid if the role does not exist.
+func (s *Store) SetSpaceDefaultRole(ctx context.Context, tenantID int64, slug string, role *string) error {
+	if role != nil {
+		if err := checkRole(ctx, s.pool, tenantID, *role); err != nil {
+			return err
+		}
+	}
+	tag, err := s.pool.Exec(ctx, "UPDATE spaces SET default_role = $3 WHERE tenant_id = $1 AND slug = $2",
+		tenantID, slug, role)
 	if err != nil {
 		return err
 	}

@@ -2,14 +2,16 @@
 <h1>Administration</h1>
 {{template "adminnav" .}}
 <h2>Role bindings</h2>
+<p>A binding for all spaces gives all permissions of the role. A binding for one space gives only the document permissions (<code>doc.*</code>) of the role, in that space.</p>
 <table>
-  <thead><tr><th>Role</th><th>Given to</th><th></th></tr></thead>
+  <thead><tr><th>Role</th><th>Given to</th><th>Scope</th><th></th></tr></thead>
   <tbody>
   {{range .Data.Bindings}}
   <tr>
     <td>{{.RoleName}}</td>
     <td>{{if .GroupID}}Group <a href="{{$.TenantPath}}/admin/groups/{{.GroupID}}">{{.GroupName}}</a> <span class="tag">{{.GroupSource}}</span>
         {{else}}User <a href="{{$.TenantPath}}/admin/users/{{.UserID}}">{{.UserName}}</a>{{end}}</td>
+    <td>{{template "scope" .}}</td>
     <td><form method="post" action="{{$.TenantPath}}/admin/bindings/{{.ID}}/delete">
       {{template "csrf" $.CSRF}}
       <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/bindings">
@@ -17,7 +19,7 @@
     </form></td>
   </tr>
   {{else}}
-  <tr><td colspan="3">There are no role bindings.</td></tr>
+  <tr><td colspan="4">There are no role bindings.</td></tr>
   {{end}}
   </tbody>
 </table>
@@ -36,6 +38,7 @@
       </optgroup>
     </select>
   </label>
+  {{template "spaceselect" .Data.Spaces}}
   <div class="buttons"><button type="submit">Create binding</button></div>
 </form>
 {{end}}

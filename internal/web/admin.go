@@ -44,6 +44,10 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/spaces/{slug}", s.require(sm, s.handleAdminSpace))
 	mux.Handle("POST "+p+"/spaces/{slug}", s.require(sm, s.handleAdminSpaceUpdate))
 	mux.Handle("POST "+p+"/spaces/{slug}/delete", s.require(sm, s.handleAdminSpaceDelete))
+	// The access of a space is part of the access control of the tenant.
+	// Thus it needs tenant.manage, not space.manage.
+	mux.Handle("GET "+p+"/spaces/{slug}/access", s.require(m, s.handleAdminSpaceAccess))
+	mux.Handle("POST "+p+"/spaces/{slug}/access", s.require(m, s.handleAdminSpaceDefaultRole))
 }
 
 func pathID(r *http.Request, name string) (int64, bool) {
@@ -114,14 +118,30 @@ func (s *Server) handleAdminUser(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	spaces, err := s.store.Spaces(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	all, err := s.store.AllSpacePermissions(ctx, t.ID, id)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	spacePerms := make([]spacePermissions, len(spaces))
+	for i, sp := range spaces {
+		spacePerms[i] = spacePermissions{Space: sp, Permissions: all[sp.ID].List()}
+	}
 	s.render(w, r, http.StatusOK, "admin-user", user.Name(), struct {
-		User        *store.User
-		Groups      []store.Group
-		Permissions []rbac.Permission
-		Bindings    []store.Binding
-		Roles       []store.Role
-		IsSelf      bool
-	}{user, groups, perms.List(), own, roles, id == reqInfoFrom(ctx).Session.User.ID})
+		User             *store.User
+		Groups           []store.Group
+		Permissions      []rbac.Permission
+		SpacePermissions []spacePermissions
+		Bindings         []store.Binding
+		Roles            []store.Role
+		Spaces           []store.Space
+		IsSelf           bool
+	}{user, groups, perms.List(), spacePerms, own, roles, spaces, id == reqInfoFrom(ctx).Session.User.ID})
 }
 
 func (s *Server) handleAdminUserDisable(disabled bool) http.HandlerFunc {
@@ -209,13 +229,19 @@ func (s *Server) handleAdminGroup(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	spaces, err := s.store.Spaces(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	s.render(w, r, http.StatusOK, "admin-group", "Group "+group.Name, struct {
 		Group    *store.Group
 		Members  []*store.User
 		Users    []*store.User
 		Bindings []store.Binding
 		Roles    []store.Role
-	}{group, members, users, own, roles})
+		Spaces   []store.Space
+	}{group, members, users, own, roles, spaces})
 }
 
 func (s *Server) handleAdminGroupDelete(w http.ResponseWriter, r *http.Request) {
@@ -327,12 +353,18 @@ func (s *Server) handleAdminBindings(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	spaces, err := s.store.Spaces(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	s.render(w, r, http.StatusOK, "admin-bindings", "Role bindings", struct {
 		Bindings []store.Binding
 		Roles    []store.Role
 		Groups   []store.Group
 		Users    []*store.User
-	}{bindings, roles, groups, users})
+		Spaces   []store.Space
+	}{bindings, roles, groups, users, spaces})
 }
 
 // handleAdminBindingCreate gives a role to a user or a group. The form
@@ -346,11 +378,25 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 		s.badRequest(w, r, "Select a role and a user or a group.")
 		return
 	}
+	// An empty "space" field gives a binding for all spaces.
+	var spaceID *int64
+	if slug := r.PostFormValue("space"); slug != "" {
+		if !spaceSlugRE.MatchString(slug) {
+			s.badRequest(w, r, "The space is not valid.")
+			return
+		}
+		sp, err := s.store.Space(r.Context(), t.ID, slug)
+		if err != nil {
+			s.storeResult(w, r, err)
+			return
+		}
+		spaceID = &sp.ID
+	}
 	switch kind {
 	case "user":
-		err = s.store.BindRoleToUser(r.Context(), t.ID, role, id)
+		err = s.store.BindRoleToUser(r.Context(), t.ID, role, id, spaceID)
 	case "group":
-		err = s.store.BindRoleToGroup(r.Context(), t.ID, role, id)
+		err = s.store.BindRoleToGroup(r.Context(), t.ID, role, id, spaceID)
 	default:
 		s.badRequest(w, r, "Select a role and a user or a group.")
 		return
@@ -359,7 +405,7 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.log.Info("role binding created", "tenant", t.Code, "role", role, "subject", kind, "subject_id", id,
-		"user_id", reqInfoFrom(r.Context()).Session.User.ID)
+		"space", r.PostFormValue("space"), "user_id", reqInfoFrom(r.Context()).Session.User.ID)
 	http.Redirect(w, r, safeReturnTo(r.PostFormValue("return_to"), adminPath(r)), http.StatusSeeOther)
 }
 
@@ -455,4 +501,83 @@ func (s *Server) handleAdminSpaceDelete(w http.ResponseWriter, r *http.Request) 
 	s.log.Info("space deleted", "tenant", t.Code, "space", slug,
 		"user_id", reqInfoFrom(r.Context()).Session.User.ID)
 	http.Redirect(w, r, adminPath(r)+"/spaces", http.StatusSeeOther)
+}
+
+// spacePermissions is one row of the per-space permission table.
+type spacePermissions struct {
+	Space       store.Space
+	Permissions []rbac.Permission
+}
+
+// handleAdminSpaceAccess shows the default role and the role bindings of a
+// space.
+func (s *Server) handleAdminSpaceAccess(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	t := tenantOf(r)
+	sp, err := s.store.Space(ctx, t.ID, r.PathValue("slug"))
+	if err != nil {
+		s.storeResult(w, r, err)
+		return
+	}
+	bindings, err := s.store.Bindings(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	var own []store.Binding
+	for _, b := range bindings {
+		if b.SpaceID == sp.ID {
+			own = append(own, b)
+		}
+	}
+	roles, err := s.store.Roles(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	groups, err := s.store.Groups(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	users, err := s.store.Users(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	// The default role select uses "-" for "same as the tenant".
+	defaultRole := "-"
+	if sp.DefaultRole != nil {
+		defaultRole = *sp.DefaultRole
+	}
+	s.render(w, r, http.StatusOK, "admin-space-access", "Access to "+sp.Name, struct {
+		Space       *store.Space
+		DefaultRole string
+		Bindings    []store.Binding
+		Roles       []store.Role
+		Groups      []store.Group
+		Users       []*store.User
+	}{sp, defaultRole, own, roles, groups, users})
+}
+
+// handleAdminSpaceDefaultRole sets the default role of a space. The value
+// "-" means "same as the tenant", and "" means no default role.
+func (s *Server) handleAdminSpaceDefaultRole(w http.ResponseWriter, r *http.Request) {
+	t := tenantOf(r)
+	slug := r.PathValue("slug")
+	var role *string
+	switch v := r.PostFormValue("default_role"); {
+	case v == "-":
+	case v == "" || roleNameRE.MatchString(v):
+		role = &v
+	default:
+		s.badRequest(w, r, "The role is not valid.")
+		return
+	}
+	if !s.storeResult(w, r, s.store.SetSpaceDefaultRole(r.Context(), t.ID, slug, role)) {
+		return
+	}
+	s.log.Info("space default role changed", "tenant", t.Code, "space", slug,
+		"user_id", reqInfoFrom(r.Context()).Session.User.ID)
+	http.Redirect(w, r, adminPath(r)+"/spaces/"+slug+"/access", http.StatusSeeOther)
 }

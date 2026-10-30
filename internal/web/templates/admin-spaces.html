@@ -11,7 +11,8 @@
     <td><code>{{.Slug}}</code></td>
     <td>{{.Nodes}}</td>
     <td>{{.Description}}</td>
-    <td><a href="{{$.TenantPath}}/admin/spaces/{{.Slug}}">Change</a></td>
+    <td><a href="{{$.TenantPath}}/admin/spaces/{{.Slug}}">Change</a>
+      {{if $.Can "tenant.manage"}} · <a href="{{$.TenantPath}}/admin/spaces/{{.Slug}}/access">Access</a>{{end}}</td>
   </tr>
   {{else}}
   <tr><td colspan="5">There are no spaces.</td></tr>

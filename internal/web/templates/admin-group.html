@@ -34,7 +34,7 @@
 <table>
   <tbody>
   {{range .}}
-  <tr><td>{{.RoleName}}</td><td>
+  <tr><td>{{.RoleName}}</td><td>{{template "scope" .}}</td><td>
     <form method="post" action="{{$.TenantPath}}/admin/bindings/{{.ID}}/delete">
       {{template "csrf" $.CSRF}}
       <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/groups/{{$.Data.Group.ID}}">
@@ -50,6 +50,7 @@
   <input type="hidden" name="subject" value="group:{{.Group.ID}}">
   <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/groups/{{.Group.ID}}">
   <label>Role <select name="role">{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
+  {{template "spaceselect" .Spaces}}
   <button type="submit">Give role</button>
 </form>
 

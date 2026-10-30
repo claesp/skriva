@@ -107,7 +107,7 @@ func newEnv(t *testing.T) *env {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := st.BindRoleToGroup(ctx, dft.ID, role, id); err != nil {
+		if err := st.BindRoleToGroup(ctx, dft.ID, role, id, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -732,4 +732,93 @@ func testLogOutput() io.Writer {
 		return os.Stderr
 	}
 	return io.Discard
+}
+
+func TestSpacePermissions(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	carol := e.login("carol")
+	bob := e.login("bob")
+
+	// Make a private space with a document.
+	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Secret"}, "slug": {"secret00"}}), http.StatusSeeOther)
+	wantStatus(t, alice.get("/dflt/admin/spaces/secret00/access"), http.StatusOK)
+	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/access", url.Values{"default_role": {"bad role"}}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/access", url.Values{"default_role": {"nothere"}}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/access", url.Values{"default_role": {""}}), http.StatusSeeOther)
+	resp := alice.post("/dflt/secret00/new", url.Values{"kind": {"document"}, "title": {"Plans"}, "body": {"walrus"}, "action": {"save"}})
+	wantStatus(t, resp, http.StatusSeeOther)
+	doc := resp.Header.Get("Location")
+
+	// Carol has only the tenant default role, thus no access. Bob is an
+	// editor through a group binding for all spaces. That binding applies
+	// also in the private space.
+	wantStatus(t, carol.get("/dflt/secret00/"), http.StatusForbidden)
+	wantStatus(t, carol.get(doc), http.StatusForbidden)
+	wantStatus(t, bob.get(doc), http.StatusOK)
+
+	// Carol does not see the space on the tenant page or in the search.
+	if b := readBody(t, carol.get("/dflt/")); strings.Contains(b, "secret00") || !strings.Contains(b, "default0") {
+		t.Fatalf("tenant page of carol:\n%s", b)
+	}
+	if b := readBody(t, carol.get("/dflt/search?q=walrus")); strings.Contains(b, "Plans") {
+		t.Fatalf("search of carol finds the private document:\n%s", b)
+	}
+	if b := readBody(t, alice.get("/dflt/search?q=walrus")); !strings.Contains(b, "Plans") {
+		t.Fatalf("search of alice does not find the document:\n%s", b)
+	}
+
+	// Give carol the editor role only in the private space.
+	users, _ := e.st.Users(ctx, e.dft.ID)
+	var carolID int64
+	for _, u := range users {
+		if u.Username == "carol" {
+			carolID = u.ID
+		}
+	}
+	subject := "user:" + strconv.FormatInt(carolID, 10)
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"editor"}, "subject": {subject}, "space": {"nospace0"},
+	}), http.StatusNotFound)
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"editor"}, "subject": {subject}, "space": {"bad"},
+	}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"editor"}, "subject": {subject}, "space": {"secret00"},
+		"return_to": {"/dflt/admin/spaces/secret00/access"},
+	}), http.StatusSeeOther)
+	if b := readBody(t, alice.get("/dflt/admin/spaces/secret00/access")); !strings.Contains(b, "carol") {
+		t.Fatalf("access page does not show the binding:\n%s", b)
+	}
+
+	wantStatus(t, carol.get(doc), http.StatusOK)
+	wantStatus(t, carol.get("/dflt/secret00/new"), http.StatusOK)
+	// The space binding does not apply in the default space.
+	wantStatus(t, carol.get(sp+"/new"), http.StatusForbidden)
+	// The new space appears for carol.
+	if b := readBody(t, carol.get("/dflt/")); !strings.Contains(b, "secret00") {
+		t.Fatalf("tenant page of carol after the binding:\n%s", b)
+	}
+	// The user page shows the permissions per space.
+	if b := readBody(t, alice.get("/dflt/admin/users/"+strconv.FormatInt(carolID, 10))); !strings.Contains(b, "<code>doc.edit</code>") {
+		t.Fatalf("user page does not show the space permissions:\n%s", b)
+	}
+
+	// The admin role for one space does not give tenant administration.
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"admin"}, "subject": {subject}, "space": {"secret00"},
+	}), http.StatusSeeOther)
+	wantStatus(t, carol.post("/dflt/secret00/delete/"+doc[strings.Index(doc, "/d/")+3:][:12], nil), http.StatusSeeOther)
+	wantStatus(t, carol.get("/dflt/admin/users"), http.StatusForbidden)
+	wantStatus(t, carol.get("/dflt/admin/spaces"), http.StatusForbidden)
+	if b := readBody(t, carol.get("/dflt/secret00/")); strings.Contains(b, "Administration") {
+		t.Fatalf("space admin sees the administration link:\n%s", b)
+	}
+
+	// "Same as the tenant" gives the tenant default role back.
+	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/access", url.Values{"default_role": {"-"}}), http.StatusSeeOther)
+	sp2, _ := e.st.Space(ctx, e.dft.ID, "secret00")
+	if sp2.DefaultRole != nil {
+		t.Fatalf("default role = %q", *sp2.DefaultRole)
+	}
 }

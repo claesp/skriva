@@ -47,6 +47,13 @@
 </main>
 </body>
 </html>
+{{define "scope"}}{{if .SpaceID}}Space {{.SpaceName}} <code>{{.SpaceSlug}}</code>{{else}}All spaces{{end}}{{end}}
+{{define "spaceselect"}}<label>Scope
+    <select name="space">
+      <option value="">All spaces</option>
+      {{range .}}<option value="{{.Slug}}">Space {{.Name}} ({{.Slug}})</option>{{end}}
+    </select>
+  </label>{{end}}
 {{define "csrf"}}<input type="hidden" name="csrf_token" value="{{.}}">{{end}}
 {{define "adminnav"}}
 <nav class="tabs" aria-label="Administration">
