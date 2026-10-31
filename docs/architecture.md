@@ -215,7 +215,8 @@ The files in `internal/db/migrations` are SQL files with the name
 did not apply before. Each file runs in one transaction. An advisory
 lock makes sure that only one server applies migrations at a time.
 
-Migration `0003` moved the existing pages to the default space. It also
-deleted all sessions. Thus all users had to sign in again.
-
-Do not change a migration file after a release. Add a new file.
+The application has no release yet. Thus there is only one file,
+`0001_init.sql`, with the full schema. Change this file for a schema
+change, and make the development database again (see
+[development.md](development.md)). After the first release, do not
+change a migration file. Add a new file.

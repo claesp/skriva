@@ -685,7 +685,42 @@ func TestNodeVersions(t *testing.T) {
 	}
 }
 
-func TestSpacePermissions(t *testing.T) {
+// TestAllSpacePermissionsPerSpace makes sure that a space binding applies
+// to its space in a query for all spaces. An earlier query gave the
+// result of the first space for all spaces.
+func TestAllSpacePermissionsPerSpace(t *testing.T) {
+	st := newStore(t)
+	tn := defaultTenant(t, st)
+	def := defaultSpace(t, st, tn)
+	if err := st.CreateSpace(ctx, tn.ID, "secret00", "Secret", ""); err != nil {
+		t.Fatal(err)
+	}
+	none := ""
+	if err := st.SetSpaceDefaultRole(ctx, tn.ID, "secret00", &none); err != nil {
+		t.Fatal(err)
+	}
+	secret, _ := st.Space(ctx, tn.ID, "secret00")
+	u := login(t, st, tn, "carol")
+	if err := st.BindRoleToUser(ctx, tn.ID, "editor", u.ID, store.Scope{SpaceID: secret.ID}); err != nil {
+		t.Fatal(err)
+	}
+	all, err := st.AllSpacePermissions(ctx, tn.ID, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := all[secret.ID]; !p.Has(rbac.DocEdit) {
+		t.Fatalf("secret space: %v", p.List())
+	}
+	if p := all[def.ID]; p.Has(rbac.DocEdit) || !p.Has(rbac.DocRead) {
+		t.Fatalf("default space: %v", p.List())
+	}
+	ids, err := st.ReadableSpaces(ctx, tn.ID, u.ID)
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("ReadableSpaces = %v, %v", ids, err)
+	}
+}
+
+func TestSpaceTopLevelPermissions(t *testing.T) {
 	st := newStore(t)
 	tn := defaultTenant(t, st)
 	pub := defaultSpace(t, st, tn)
@@ -698,11 +733,11 @@ func TestSpacePermissions(t *testing.T) {
 
 	perms := func(u *store.User, sp *store.Space) rbac.Set {
 		t.Helper()
-		p, err := st.SpacePermissions(ctx, tn.ID, sp.ID, u.ID)
+		a, err := st.Access(ctx, tn.ID, sp.ID, u.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return p
+		return a.Root()
 	}
 
 	// Without a space default role, the tenant default role applies.
@@ -817,7 +852,7 @@ func TestSpaceBindingIsolation(t *testing.T) {
 		t.Fatalf("binding to space of other tenant: %v", err)
 	}
 	// Space permissions for a space of a different tenant do not exist.
-	if _, err := st.SpacePermissions(ctx, a.ID, spB.ID, ua.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.Access(ctx, a.ID, spB.ID, ua.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("permissions in space of other tenant: %v", err)
 	}
 	if err := st.SetSpaceDefaultRole(ctx, a.ID, "bspace00", nil); !errors.Is(err, store.ErrNotFound) {

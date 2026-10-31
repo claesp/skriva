@@ -70,17 +70,32 @@ var spaceDefaultQuery = `
 
 // spaceBoundQuery selects the permissions of user u in space sp that do
 // not come from a default role of the space or of a folder.
+//
+// The query is a UNION and not one WHERE clause with OR. With OR,
+// PostgreSQL can use one hashed subquery at two places in the plan. In a
+// query for more than one space, one of the two places then keeps the
+// result for the first space. PostgreSQL 17 gave incorrect results for
+// AllSpacePermissions in this way.
 var spaceBoundQuery = `
-	SELECT DISTINCT rp.permission
+	SELECT rp.permission
 	FROM role_permissions rp
 	JOIN roles r ON r.id = rp.role_id
-	WHERE ` + rolesOfTenant + `
-	  AND (r.id IN (` + boundRoles(tenantScope) + `)
-	       OR (rp.permission LIKE 'doc.%' AND r.id IN (` + boundRoles(spaceScope) + `))
-	       OR (rp.permission NOT LIKE 'doc.%' AND r.name = ` + tenantDefaultRole + `))`
+	WHERE ` + rolesOfTenant + ` AND r.id IN (` + boundRoles(tenantScope) + `)
+	UNION
+	SELECT rp.permission
+	FROM role_permissions rp
+	JOIN roles r ON r.id = rp.role_id
+	WHERE ` + rolesOfTenant + ` AND rp.permission LIKE 'doc.%'
+	  AND r.id IN (` + boundRoles(spaceScope) + `)
+	UNION
+	SELECT rp.permission
+	FROM role_permissions rp
+	JOIN roles r ON r.id = rp.role_id
+	WHERE ` + rolesOfTenant + ` AND rp.permission NOT LIKE 'doc.%'
+	  AND r.name = ` + tenantDefaultRole
 
 // UserPermissions returns the tenant-level permissions of a user. See
-// SpacePermissions and Access for the permissions in a space.
+// Access for the permissions in a space.
 func (s *Store) UserPermissions(ctx context.Context, tenantID, userID int64) (rbac.Set, error) {
 	var perms []string
 	err := s.pool.QueryRow(ctx,
@@ -90,21 +105,6 @@ func (s *Store) UserPermissions(ctx context.Context, tenantID, userID int64) (rb
 		return nil, notFound(err)
 	}
 	return rbac.NewSet(perms...), nil
-}
-
-// SpacePermissions returns the permissions of a user at the top level of a
-// space. Folders can have different permissions. See Access.
-func (s *Store) SpacePermissions(ctx context.Context, tenantID, spaceID, userID int64) (rbac.Set, error) {
-	var def, bound []string
-	err := s.pool.QueryRow(ctx, `
-		SELECT ARRAY(`+spaceDefaultQuery+`), ARRAY(`+spaceBoundQuery+`)
-		FROM users u, spaces sp
-		WHERE u.tenant_id = $1 AND u.id = $2 AND sp.tenant_id = $1 AND sp.id = $3`,
-		tenantID, userID, spaceID).Scan(&def, &bound)
-	if err != nil {
-		return nil, notFound(err)
-	}
-	return rbac.NewSet(append(def, bound...)...), nil
 }
 
 // AllSpacePermissions returns the permissions of a user at the top level
@@ -168,7 +168,7 @@ func (s *Store) ReadableSpaces(ctx context.Context, tenantID, userID int64) ([]i
 
 // Access contains the data to calculate the permissions of one user for
 // the nodes of one space. It does not read the tree: each node has a
-// cached access path (see migration 0006), and the permissions depend only
+// cached access path (see the table access_paths), and the permissions depend only
 // on that path. Thus the size of the data depends on the number of nodes
 // with own access settings, and not on the size of the space.
 //

@@ -5,7 +5,6 @@ package db
 import (
 	"context"
 	"embed"
-	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -156,10 +155,4 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		slog.Info("applied migration", "name", m.name)
 	}
 	return nil
-}
-
-// IsUniqueViolation reports whether err is a PostgreSQL unique violation.
-func IsUniqueViolation(err error) bool {
-	var pgErr interface{ SQLState() string }
-	return errors.As(err, &pgErr) && pgErr.SQLState() == "23505"
 }
