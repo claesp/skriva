@@ -37,12 +37,21 @@ type treeArgs struct {
 	Nodes []*store.TreeNode
 }
 
+// toolArgs is the argument of the "tool" template: one icon link in the
+// toolbar.
+type toolArgs struct {
+	Href  string
+	Icon  string
+	Label string
+}
+
 var funcs = template.FuncMap{
 	"date":    func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") },
 	"add":     func(a, b int) int { return a + b },
 	"sub":     func(a, b int) int { return a - b },
 	"docpath": docPath,
 	"tree":    func(base string, nodes []*store.TreeNode) treeArgs { return treeArgs{base, nodes} },
+	"tool":    func(href, icon, label string) toolArgs { return toolArgs{href, icon, label} },
 }
 
 func loadTemplates() (*templates, error) {

@@ -5,33 +5,43 @@
   {{template "tree" (tree $.SpacePath .Tree)}}
 </aside>
 <div class="main">
+<div class="topbar">
 <nav class="breadcrumbs" aria-label="Path">
   <a href="{{$.SpacePath}}/">{{$.Space.Name}}</a>
   {{range .Ancestors}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{end}}
 </nav>
+{{$id := .Node.PublicID}}
+<nav class="toolbar" aria-label="Tools">
+  {{if $.Can "doc.edit"}}<span class="group">
+    {{if .Node.IsFolder}}{{template "tool" (tool (print $.SpacePath "/edit/" $id) "edit" "Rename")}}
+    {{else}}{{template "tool" (tool (print $.SpacePath "/edit/" $id) "edit" "Edit")}}{{end}}
+  </span>{{end}}
+  {{if $.Can "doc.create"}}<span class="group">
+    {{template "tool" (tool (print $.SpacePath "/new?kind=document&parent=" $id) "new-document" "New document")}}
+    {{if .Node.IsFolder}}{{template "tool" (tool (print $.SpacePath "/new?kind=folder&parent=" $id) "new-folder" "New folder")}}{{end}}
+  </span>{{end}}
+  {{if not .Node.IsFolder}}<span class="group">
+    {{template "tool" (tool (print $.SpacePath "/history/" $id) "history" "History")}}
+    {{template "tool" (tool (print $.SpacePath "/raw/" $id) "source" "Source")}}
+  </span>{{end}}
+  {{if or ($.Can "doc.edit") ($.Can "doc.delete")}}<span class="group">
+    {{if $.Can "doc.edit"}}{{template "tool" (tool (print $.SpacePath "/move/" $id) "move" "Move")}}{{end}}
+    {{if $.Can "doc.delete"}}{{template "tool" (tool (print $.SpacePath "/delete/" $id) "delete" "Delete")}}{{end}}
+  </span>{{end}}
+  {{if $.Can "tenant.manage"}}<span class="group">
+    {{template "tool" (tool (print $.SpacePath "/access/" $id) "access" "Access")}}
+  </span>{{end}}
+</nav>
+</div>
 <div class="pagehead">
-  <h1>{{if .Node.IsFolder}}<span class="icon" aria-hidden="true">▸</span> {{end}}{{.Node.Title}}</h1>
-  <nav class="actions" aria-label="Item">
-    {{if $.Can "doc.edit"}}<a href="{{$.SpacePath}}/edit/{{.Node.PublicID}}">{{if .Node.IsFolder}}Rename{{else}}Edit{{end}}</a>{{end}}
-    {{if $.Can "doc.create"}}
-      <a href="{{$.SpacePath}}/new?kind=document&amp;parent={{.Node.PublicID}}">New document</a>
-      {{if .Node.IsFolder}}<a href="{{$.SpacePath}}/new?kind=folder&amp;parent={{.Node.PublicID}}">New folder</a>{{end}}
-    {{end}}
-    {{if $.Can "doc.edit"}}<a href="{{$.SpacePath}}/move/{{.Node.PublicID}}">Move</a>{{end}}
-    {{if not .Node.IsFolder}}
-      <a href="{{$.SpacePath}}/history/{{.Node.PublicID}}">History</a>
-      <a href="{{$.SpacePath}}/raw/{{.Node.PublicID}}">Source</a>
-    {{end}}
-    {{if $.Can "doc.delete"}}<a href="{{$.SpacePath}}/delete/{{.Node.PublicID}}">Delete</a>{{end}}
-    {{if $.Can "tenant.manage"}}<a href="{{$.SpacePath}}/access/{{.Node.PublicID}}">Access</a>{{end}}
-  </nav>
+  <h1>{{if .Node.IsFolder}}{{template "icon" "folder"}}{{end}}{{.Node.Title}}</h1>
 </div>
 {{if not .Node.IsFolder}}<article class="markdown">{{.HTML}}</article>{{end}}
 {{with .Children}}
 <section class="children" aria-label="Contents">
   {{if not $.Data.Node.IsFolder}}<h2>Sub-documents</h2>{{end}}
   <ul class="pages">
-    {{range .}}<li class="{{.Kind}}"><a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a> <small>{{date .UpdatedAt}}</small></li>{{end}}
+    {{range .}}<li class="{{.Kind}}"><a href="{{docpath $.SpacePath .PublicID .Slug}}">{{template "icon" .Kind}}{{.Title}}</a> <small>{{date .UpdatedAt}}</small></li>{{end}}
   </ul>
 </section>
 {{else}}{{if .Node.IsFolder}}<p>This folder is empty.</p>{{end}}

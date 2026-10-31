@@ -109,7 +109,8 @@ also private.
 ### Make a private folder or document
 
 1. Open the folder or the document.
-2. Click **Access**. Only users with `tenant.manage` see this link.
+2. Click **Access** (lock) in the toolbar. Only users with `tenant.manage`
+   see this button.
 3. Set the default role to "None".
 4. Give roles for this item to users or groups.
 

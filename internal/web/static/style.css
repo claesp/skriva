@@ -134,7 +134,6 @@ td form { margin: 0; }
 .results li { margin-bottom: 0.75rem; }
 .results p { margin: 0.2rem 0 0; color: var(--muted); }
 mark { background: var(--mark); color: inherit; }
-ul.pages { padding-left: 1.2rem; }
 .pager { display: flex; gap: 1rem; }
 dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
 dl.facts dt { color: var(--muted); }
@@ -169,17 +168,25 @@ ul.cards { list-style: none; padding: 0; display: grid; grid-template-columns: r
 ul.cards li { padding: 0.75rem 1rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 ul.cards p { margin: 0.25rem 0; color: var(--muted); }
 
-main:has(.with-sidebar) { max-width: 80rem; }
-.with-sidebar { display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: 2rem; }
+/* The tree is at the left edge of the window. The document is in the
+   center. On wide windows an empty third column keeps the document in
+   the center of the window. */
+main:has(.with-sidebar) { max-width: none; padding: 0; }
+.with-sidebar { display: grid; grid-template-columns: 17rem minmax(0, 1fr); }
+.with-sidebar > .main { width: 100%; max-width: 52rem; justify-self: center; padding: 0 1.5rem 3rem; }
 .sidebar {
   position: sticky;
-  top: 1rem;
+  top: 0;
   align-self: start;
-  max-height: calc(100vh - 2rem);
+  height: 100vh;
   overflow: auto;
+  padding: 1rem;
   font-size: 0.925rem;
+  background: var(--panel);
   border-right: 1px solid var(--line);
-  padding-right: 1rem;
+}
+@media (min-width: 90rem) {
+  .with-sidebar { grid-template-columns: 17rem minmax(0, 1fr) 17rem; }
 }
 .breadcrumbs { color: var(--muted); font-size: 0.9rem; margin-top: 0.5rem; }
 
@@ -188,16 +195,62 @@ ul.tree { list-style: none; margin: 0; padding-left: 1rem; }
 ul.tree li { margin: 0.15rem 0; }
 ul.tree a { text-decoration: none; }
 ul.tree a:hover { text-decoration: underline; }
-ul.tree li.folder > a::before,
-ul.tree li.folder > details > summary > a::before { content: "▸ "; color: var(--muted); }
 ul.tree li.current > a,
 ul.tree li.current > details > summary > a { font-weight: 700; color: var(--fg); }
 ul.tree summary { cursor: pointer; }
-ul.pages li.folder > a::before { content: "▸ "; color: var(--muted); }
-.icon { color: var(--muted); }
+ul.pages { list-style: none; padding-left: 0; }
+
+/* Icons. */
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.i {
+  width: 1.1em;
+  height: 1.1em;
+  vertical-align: -0.15em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+ul.tree .i, ul.pages .i { margin-right: 0.35em; color: var(--muted); }
+ul.tree .i-folder, ul.pages .i-folder, h1 .i-folder { color: var(--accent); fill: color-mix(in srgb, var(--accent) 18%, transparent); }
+h1 .i { margin-right: 0.4em; }
+
+/* The toolbar at the top of a document. */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.topbar .breadcrumbs { margin: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.toolbar .group { display: flex; gap: 0.125rem; }
+.toolbar .group + .group { padding-left: 0.25rem; border-left: 1px solid var(--line); }
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 6px;
+  color: var(--fg);
+}
+.tool .i { width: 1.25rem; height: 1.25rem; }
+.tool:hover, .tool:focus-visible { background: var(--panel); color: var(--accent); }
+.tool:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tool.danger:hover, .tool.danger:focus-visible { color: var(--danger); }
 .children { margin-top: 1.5rem; }
 
 @media (max-width: 50rem) {
   .with-sidebar { grid-template-columns: 1fr; }
-  .sidebar { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 1rem; }
+  .sidebar { position: static; height: auto; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .with-sidebar > .main { padding: 0 1rem 3rem; }
 }

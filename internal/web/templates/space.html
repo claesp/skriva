@@ -1,12 +1,17 @@
 {{define "content"}}
+{{if .Can "doc.create"}}
+<div class="topbar">
+  <span></span>
+  <nav class="toolbar" aria-label="Tools">
+    <span class="group">
+      {{template "tool" (tool (print .SpacePath "/new?kind=document") "new-document" "New document")}}
+      {{template "tool" (tool (print .SpacePath "/new?kind=folder") "new-folder" "New folder")}}
+    </span>
+  </nav>
+</div>
+{{end}}
 <div class="pagehead">
   <h1>{{.Space.Name}}</h1>
-  {{if .Can "doc.create"}}
-  <nav class="actions" aria-label="Space">
-    <a href="{{.SpacePath}}/new?kind=document">New document</a>
-    <a href="{{.SpacePath}}/new?kind=folder">New folder</a>
-  </nav>
-  {{end}}
 </div>
 {{with .Space.Description}}<p>{{.}}</p>{{end}}
 {{with .Data}}
