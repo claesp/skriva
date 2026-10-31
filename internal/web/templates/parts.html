@@ -179,3 +179,23 @@
   </tbody>
 </table>
 {{end}}
+
+{{/* The buttons of a folder or a document in the toolbar. The argument
+   is the view. The data has the fields Node and Tab. */}}
+{{define "nodetools"}}
+{{$id := .Data.Node.PublicID}}
+{{if .Can "doc.edit"}}<span class="group">
+  {{template "tool" (tab (print .SpacePath "/edit/" $id) "edit" (or (and .Data.Node.IsFolder "Rename") "Edit") (eq .Data.Tab "edit"))}}
+</span>{{end}}
+{{if not .Data.Node.IsFolder}}<span class="group">
+  {{template "tool" (tool (print .SpacePath "/history/" $id) "history" "History")}}
+  {{template "tool" (tool (print .SpacePath "/raw/" $id) "source" "Source")}}
+</span>{{end}}
+{{if or (.Can "doc.edit") (.Can "doc.delete")}}<span class="group">
+  {{if .Can "doc.edit"}}{{template "tool" (tool (print .SpacePath "/move/" $id) "move" "Move")}}{{end}}
+  {{if .Can "doc.delete"}}{{template "tool" (tool (print .SpacePath "/delete/" $id) "delete" "Delete")}}{{end}}
+</span>{{end}}
+{{if .Can "tenant.manage"}}<span class="group">
+  {{template "tool" (tool (print .SpacePath "/access/" $id) "access" "Access")}}
+</span>{{end}}
+{{end}}

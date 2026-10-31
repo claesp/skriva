@@ -1,47 +1,51 @@
 {{define "content"}}
 {{with .Data}}
-<h1>{{if .IsNew}}New {{.Kind}}{{else if .IsFolder}}Rename folder{{else}}Edit document{{end}}</h1>
-{{with .ParentTitle}}<p>In: <strong>{{.}}</strong></p>{{end}}
+<div class="with-sidebar">
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path">
+    <a href="{{$.SpacePath}}/">{{$.Space.Name}}</a>
+    {{range .Ancestors}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{end}}
+    {{with .Node}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{else}} / New {{.Kind}}{{end}}
+  </nav>
+  <nav class="toolbar" aria-label="Tools">
+    {{if not .IsFolder}}<span class="group">
+      <button type="submit" form="nodeform" name="action" value="preview" class="tool" title="Preview" aria-label="Preview">{{template "icon" "preview"}}</button>
+    </span>{{end}}
+    {{if .Node}}{{template "nodetools" $}}{{end}}
+  </nav>
+</div>
+<aside class="sidebar" aria-label="Contents">
+  {{template "tree" (tree $.SpacePath .Tree)}}
+</aside>
+<div class="main reading">
+<h1 class="vh">{{if .IsNew}}New {{.Kind}}{{else if .IsFolder}}Rename folder{{else}}Edit document{{end}}</h1>
 {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
-<form action="{{.Action}}" method="post" class="stack">
+<form id="nodeform" action="{{.Action}}" method="post" class="stack editor">
   {{template "csrf" $.CSRF}}
   <input type="hidden" name="version" value="{{.Version}}">
   {{if .IsNew}}
   <input type="hidden" name="kind" value="{{.Kind}}">
   <input type="hidden" name="parent" value="{{.ParentID}}">
   {{end}}
-  <label>Title <input name="title" value="{{.Title}}" required maxlength="200" autofocus></label>
+  <label class="title"><span class="vh">Title</span>
+    <input name="title" value="{{.Title}}" required maxlength="200" placeholder="Title" autofocus></label>
   {{if not .IsFolder}}
-  <label>Text (Markdown)
-    <textarea name="body" rows="24" spellcheck="true">{{.Body}}</textarea>
+  <label><span class="vh">Text (Markdown)</span>
+    <textarea name="body" rows="24" spellcheck="true" placeholder="Text (Markdown)">{{.Body}}</textarea>
   </label>
   {{end}}
-  <label>Comment about the change <input name="comment" value="{{.Comment}}" maxlength="500"></label>
+  <label>Comment <input name="comment" value="{{.Comment}}" maxlength="500"></label>
   <div class="buttons">
-    <a class="button secondary" href="{{.Cancel}}">Cancel</a>
-    {{if not .IsFolder}}<button type="submit" name="action" value="preview" class="secondary">Preview</button>{{end}}
     <button type="submit" name="action" value="save">Save</button>
   </div>
 </form>
-{{if not .IsFolder}}
-<details class="help">
-  <summary>Markdown help</summary>
-  <pre># Heading
-**bold**, *italic*, `code`, ~~strike~~
-[link](https://example.com)
-[[Other document]] or [[Other document#Section]]
-- list item
-- [ ] task
-| column | column |
-|--------|--------|
-| cell   | cell   |</pre>
-</details>
-{{end}}
 {{with .Preview}}
 <section class="preview" aria-label="Preview">
   <h2>Preview</h2>
   <article class="markdown">{{.}}</article>
 </section>
 {{end}}
+</div>
+</div>
 {{end}}
 {{end}}

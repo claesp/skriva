@@ -75,7 +75,8 @@ moves. Only users with access to the tenant can open them.
 1. Open the space, a folder or a document.
 2. Click **New document** or **New folder** in the page header.
 3. Type the title.
-4. For a document, type the text.
+4. For a document, type the text. Click **Preview** (eye) in the toolbar
+   to see the result.
 5. Click **Save**.
 
 The new item is in the folder or the document that you opened. A folder
@@ -88,10 +89,15 @@ document**.
 ## Edit a document
 
 1. Click **Edit** (pencil) in the toolbar.
-2. Change the text.
-3. Click **Preview** to see the result. The preview does not save.
-4. Type a short comment about the change.
+2. Change the title or the text.
+3. Click **Preview** (eye) in the toolbar to see the result below the
+   form. The preview does not save.
+4. Optionally, type a comment about the change in **Comment**.
 5. Click **Save**.
+
+The edit page has the same tree, path and toolbar as the page of the
+document. The **Edit** button has a line below it. To stop without a
+save, click the document in the path or in the tree.
 
 If a different user saved the document after you started, the wiki does
 not save your text. Copy your text. Then reload the page and add your

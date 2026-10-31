@@ -6,24 +6,7 @@
   <a href="{{$.SpacePath}}/">{{$.Space.Name}}</a>
   {{range .Ancestors}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{end}}
 </nav>
-{{$id := .Node.PublicID}}
-<nav class="toolbar" aria-label="Tools">
-  {{if $.Can "doc.edit"}}<span class="group">
-    {{if .Node.IsFolder}}{{template "tool" (tool (print $.SpacePath "/edit/" $id) "edit" "Rename")}}
-    {{else}}{{template "tool" (tool (print $.SpacePath "/edit/" $id) "edit" "Edit")}}{{end}}
-  </span>{{end}}
-  {{if not .Node.IsFolder}}<span class="group">
-    {{template "tool" (tool (print $.SpacePath "/history/" $id) "history" "History")}}
-    {{template "tool" (tool (print $.SpacePath "/raw/" $id) "source" "Source")}}
-  </span>{{end}}
-  {{if or ($.Can "doc.edit") ($.Can "doc.delete")}}<span class="group">
-    {{if $.Can "doc.edit"}}{{template "tool" (tool (print $.SpacePath "/move/" $id) "move" "Move")}}{{end}}
-    {{if $.Can "doc.delete"}}{{template "tool" (tool (print $.SpacePath "/delete/" $id) "delete" "Delete")}}{{end}}
-  </span>{{end}}
-  {{if $.Can "tenant.manage"}}<span class="group">
-    {{template "tool" (tool (print $.SpacePath "/access/" $id) "access" "Access")}}
-  </span>{{end}}
-</nav>
+<nav class="toolbar" aria-label="Tools">{{template "nodetools" $}}</nav>
 </div>
 <aside class="sidebar" aria-label="Contents">
   {{template "tree" (tree $.SpacePath .Tree)}}

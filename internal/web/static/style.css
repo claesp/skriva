@@ -134,6 +134,7 @@ button.danger { background: var(--danger); border-color: var(--danger); color: v
 
 form.stack { display: flex; flex-direction: column; gap: 0.9rem; }
 form.stack label { display: flex; flex-direction: column; gap: 0.25rem; font-weight: 600; }
+form.stack label :is(input, select, textarea) { font-weight: 400; }
 form.stack label.check { flex-direction: row; align-items: baseline; font-weight: 400; }
 form.narrow { max-width: 30rem; }
 fieldset { border: 1px solid var(--line); border-radius: 4px; }
@@ -181,10 +182,19 @@ th.num, td.num { text-align: right; }
 
 .error { color: var(--danger); font-weight: 600; }
 .notice { padding: 0.5rem 0.75rem; background: var(--panel); border-left: 3px solid var(--accent); font-size: var(--ui-size); }
-.preview { margin-top: 2rem; padding: 0 1rem 1rem; border: 1px dashed var(--line); border-radius: 4px; }
-.help { margin-top: 1rem; color: var(--muted); }
-.help pre { overflow-x: auto; padding: 0.75rem; background: var(--panel); border-radius: 4px; }
-.help code { font-family: var(--mono); font-size: 0.9em; }
+.preview { margin-top: 2rem; padding: 0 1.5rem 1rem; border: 1px dashed var(--line); border-radius: 4px; }
+.preview > h2 { font-size: var(--ui-size); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+
+/* The form of a document has the same place and width as the text of
+   the document. The title field looks like the title of a document. */
+form.editor { margin-top: 2rem; }
+form.editor label.title input {
+  padding: 0.25rem 0.5rem;
+  font-family: var(--serif);
+  font-size: clamp(2rem, 1.5rem + 1.6vw, 2.75rem);
+  line-height: 1.15;
+}
+form.editor textarea { min-height: 60vh; padding: 0.75rem; }
 .results li { margin-bottom: 0.75rem; }
 .results p { margin: 0.2rem 0 0; color: var(--muted); }
 mark { background: var(--mark); color: inherit; }
