@@ -37,6 +37,7 @@ as `root` (password `root`).
 - [Access control (RBAC)](docs/access-control.md)
 - [Administration](docs/administration.md)
 - [Page design](docs/design.md)
+- [WYSIWYG editors: research](docs/wysiwyg-editors.md)
 - [Security](docs/security.md)
 - [Development and tests](docs/development.md)
 - [Operation](docs/operation.md)
