@@ -521,6 +521,10 @@ func TestTreeAndDocuments(t *testing.T) {
 	if b := readBody(t, bob.get("/dflt/search?q=podman")); !strings.Contains(b, linux) {
 		t.Fatalf("tenant search:\n%s", b)
 	}
+	// The link to the search in all spaces keeps the search text.
+	if b := readBody(t, bob.get(sp+"/search?q=a%23b%26c")); !strings.Contains(b, "/dflt/search?q=a%23b%26c") {
+		t.Fatalf("link to the search in all spaces:\n%s", b)
+	}
 
 	// Delete the folder with its subtree. Editors cannot delete.
 	wantStatus(t, bob.post(sp+"/delete/"+guides, nil), http.StatusForbidden)

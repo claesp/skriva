@@ -186,8 +186,8 @@ header.
 ## Search
 
 Type words in the search field and push Enter. In a space, the search
-finds documents in that space. Click **Search in all spaces** to search
-in all spaces of the tenant. These forms are possible:
+finds documents in that space. Click **Search in all spaces** (four
+squares) above the results to search in all spaces of the tenant. These forms are possible:
 
 | Search          | Finds |
 |-----------------|-------|

@@ -198,8 +198,15 @@ form.editor label.title input {
   line-height: 1.15;
 }
 form.editor textarea { min-height: 60vh; padding: 0.75rem; }
-.results li { margin-bottom: 0.75rem; }
-.results p { margin: 0.2rem 0 0; color: var(--muted); }
+/* Search results: the title in the serif font of the text, a line with
+   data and a part of the text. */
+ol.results { list-style: none; padding: 0; margin: 0.5rem 0 0; }
+.results li { padding: 0.9rem 0; border-bottom: 1px solid var(--line); }
+.results li:first-child { border-top: 1px solid var(--line); }
+.results a { font-family: var(--serif); font-size: 1.25rem; text-decoration: none; }
+.results a:hover { text-decoration: underline; }
+.results .meta-line { display: block; color: var(--muted); font-size: var(--ui-size); }
+.results p { margin: 0.3rem 0 0; font-family: var(--serif); font-size: 1.0625rem; line-height: 1.55; }
 mark { background: var(--mark); color: inherit; }
 dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
 dl.facts dt { color: var(--muted); }

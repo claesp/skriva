@@ -27,16 +27,24 @@ func (s *Server) tenantRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) handleTenantHome(w http.ResponseWriter, r *http.Request) {
-	ri := reqInfoFrom(r.Context())
-	spaces, err := s.store.Spaces(r.Context(), ri.Tenant.ID)
+	visible, err := s.visibleSpaces(r)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
+	s.render(w, r, http.StatusOK, "tenant", reqInfoFrom(r.Context()).Tenant.Name, visible)
+}
+
+// visibleSpaces returns the spaces of the tenant that the user of the
+// request can read.
+func (s *Server) visibleSpaces(r *http.Request) ([]store.Space, error) {
+	spaces, err := s.store.Spaces(r.Context(), reqInfoFrom(r.Context()).Tenant.ID)
+	if err != nil {
+		return nil, err
+	}
 	readable, err := s.readable(r)
 	if err != nil {
-		s.serverError(w, r, err)
-		return
+		return nil, err
 	}
 	var visible []store.Space
 	for _, sp := range spaces {
@@ -44,7 +52,7 @@ func (s *Server) handleTenantHome(w http.ResponseWriter, r *http.Request) {
 			visible = append(visible, sp)
 		}
 	}
-	s.render(w, r, http.StatusOK, "tenant", ri.Tenant.Name, visible)
+	return visible, nil
 }
 
 // readable returns the IDs of the spaces that the user of the request can
@@ -113,10 +121,26 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The column at the left side shows the tree of the space, or the
+	// spaces of the tenant.
+	var tree []*store.TreeNode
+	var spaces []store.Space
+	var err error
+	if ri.Space != nil {
+		tree, err = s.tree(r, 0, nil)
+	} else {
+		spaces, err = s.visibleSpaces(r)
+	}
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	s.render(w, r, http.StatusOK, "search", "Search", struct {
 		Query   string
 		Results []searchResult
-	}{q, toSearchResults(results)})
+		Tree    []*store.TreeNode
+		Spaces  []store.Space
+	}{q, toSearchResults(results), tree, spaces})
 }
 
 type searchResult struct {

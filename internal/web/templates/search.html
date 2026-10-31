@@ -1,23 +1,44 @@
 {{define "content"}}
-<h1>Search{{if .Space}} in {{.Space.Name}}{{end}}</h1>
-<form action="" method="get" class="stack">
-  <label>Text <input type="search" name="q" value="{{.Data.Query}}" maxlength="200" autofocus></label>
-  <div class="buttons">
-    {{if and .Space .Data.Query}}<a class="button secondary" href="{{.TenantPath}}/search?q={{.Data.Query}}">Search in all spaces</a>{{end}}
-    <button type="submit">Search</button>
-  </div>
-</form>
-{{if .Data.Query}}
-  {{with .Data.Results}}
-  <ol class="results">
-    {{range .}}
-    <li><a href="{{docpath (printf "%s/%s" $.TenantPath .SpaceSlug) .PublicID .Slug}}">{{.Title}}</a>
-      {{if not $.Space}}<small>in {{.SpaceName}}</small>{{end}}
-      <p>{{.SnippetHTML}}</p></li>
-    {{end}}
-  </ol>
+{{with .Data}}
+<div class="with-sidebar">
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path">
+    {{if $.Space}}<a href="{{$.SpacePath}}/">{{$.Space.Name}}</a>{{else}}<a href="{{$.TenantPath}}/">Spaces</a>{{end}} / Search</nav>
+</div>
+<aside class="sidebar" aria-label="{{if $.Space}}Contents{{else}}Spaces{{end}}">
+  {{if $.Space}}
+  {{template "tree" (tree $.SpacePath .Tree)}}
   {{else}}
-  <p>No documents match "{{$.Data.Query}}".</p>
+  <ul class="tree">
+    {{range .Spaces}}<li><a href="{{$.TenantPath}}/{{.Slug}}/">{{template "icon" "space"}}{{.Name}}</a></li>{{end}}
+  </ul>
   {{end}}
+</aside>
+<div class="main reading">
+<div class="pagehead"><h1>Search</h1></div>
+<form action="" method="get" class="stack" role="search">
+  <label>{{if $.Space}}Search in {{$.Space.Name}}{{else}}Search in all spaces{{end}}
+    <input type="search" name="q" value="{{.Query}}" maxlength="200" autofocus></label>
+  <div class="buttons"><button type="submit">Search</button></div>
+</form>
+{{if .Query}}
+<h2>Results</h2>
+{{if $.Space}}{{template "tablebar" (tool (print $.TenantPath "/search?q=" (urlquery .Query)) "space" "Search in all spaces")}}{{end}}
+{{with .Results}}
+<ol class="results">
+  {{range .}}
+  <li>
+    <a href="{{docpath (print $.TenantPath "/" .SpaceSlug) .PublicID .Slug}}">{{.Title}}</a>
+    <span class="meta-line">{{if not $.Space}}{{.SpaceName}} · {{end}}Changed {{date .UpdatedAt}}</span>
+    <p>{{.SnippetHTML}}</p>
+  </li>
+  {{end}}
+</ol>
+{{else}}
+<p>No documents match "{{$.Data.Query}}".</p>
+{{end}}
+{{end}}
+</div>
+</div>
 {{end}}
 {{end}}
