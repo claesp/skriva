@@ -2,27 +2,22 @@
 {{template "nodehead" .}}
 {{with .Data}}
 {{$back := print $.SpacePath "/access/" .Node.PublicID}}
-<div class="sectionbar">
-  <h1>Access to {{.Node.Kind}} "{{.Node.Title}}"</h1>
-  <nav class="toolbar" aria-label="Access">
-    <span class="group">
-      {{template "tool" (tool (print $back "/default-role") "edit" "Change the default role")}}
-      {{template "tool" (tool (print $.TenantPath "/admin/bindings/new?space=" $.Space.Slug "&node=" .Node.PublicID "&return_to=" $back) "new" "New role binding")}}
-    </span>
-  </nav>
-</div>
+<div class="pagehead"><h1>Access</h1></div>
 <p>A user has these permissions for this {{.Node.Kind}} and for all items in it:</p>
 <ul>
   <li>The document permissions of the default role. If this {{.Node.Kind}} uses "Same as the parent", the nearest parent folder or document with its own setting gives the default role. If there is none, the space gives it.</li>
   <li>The permissions of the role bindings for all spaces, for this space and for the parents.</li>
   <li>The document permissions of the role bindings for this {{.Node.Kind}}.</li>
 </ul>
-<dl class="facts">
-  <dt>Default role</dt><dd>{{.DefaultRoleText}}</dd>
-</dl>
-<h2>Role bindings for this {{.Node.Kind}}</h2>
+{{template "defaultroletable" (defaultrole .DefaultRoleText (print $back "/default-role"))}}
+<h2>Role bindings</h2>
+<div class="tablebar">
+  <nav class="toolbar" aria-label="Role bindings"><span class="group">
+    {{template "tool" (tool (print $.TenantPath "/admin/bindings/new?space=" $.Space.Slug "&node=" .Node.PublicID "&return_to=" $back) "new" "New role binding")}}
+  </span></nav>
+</div>
 {{template "bindingtable" .Table}}
-<p><small>Bindings for this {{.Node.Kind}} give only document permissions (<code>doc.*</code>). The access to the space is in Administration › Spaces.</small></p>
+<p><small>Bindings for this {{.Node.Kind}} give only document permissions (<code>doc.*</code>).</small></p>
 {{end}}
 {{template "nodefoot"}}
 {{end}}

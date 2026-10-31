@@ -182,9 +182,10 @@ th.num, td.num { text-align: right; }
 
 .error { color: var(--danger); font-weight: 600; }
 .notice { padding: 0.5rem 0.75rem; background: var(--panel); border-left: 3px solid var(--accent); font-size: var(--ui-size); }
-/* A heading with a small toolbar for the actions of the section. */
-.sectionbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; margin: 2.5rem 0 1.5rem; }
-.reading .sectionbar h1 { margin: 0; }
+/* A toolbar for the actions of the table below it. */
+.tablebar { display: flex; justify-content: flex-end; }
+.tablebar + table { margin-top: 0.25rem; }
+table.settings th { width: 12rem; color: var(--muted); font-weight: 400; }
 .versionnote { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 2rem; }
 
 /* The form of a document has the same place and width as the text of
@@ -211,7 +212,7 @@ ul.cards p { margin: 0.25rem 0; color: var(--muted); }
 /* The reading text. */
 .reading { width: 100%; max-width: calc(var(--measure) + 3rem); margin: 0 auto; }
 main > .reading { max-width: var(--measure); }
-.reading .pagehead h1, .reading > h1, .reading .sectionbar h1 {
+.reading .pagehead h1, .reading > h1 {
   margin: 2.5rem 0 1.5rem;
   font-family: var(--serif);
   font-size: clamp(2rem, 1.5rem + 1.6vw, 2.75rem);

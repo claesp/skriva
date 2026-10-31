@@ -78,6 +78,12 @@ type itemsArgs struct {
 	Nodes any
 }
 
+// defaultRoleArgs is the argument of the "defaultroletable" template.
+type defaultRoleArgs struct {
+	Text    string
+	EditURL string
+}
+
 var funcs = template.FuncMap{
 	"date":    func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") },
 	"add":     func(a, b int) int { return a + b },
@@ -94,6 +100,7 @@ var funcs = template.FuncMap{
 	"head":  func(title, newURL, newLabel string) headArgs { return headArgs{title, newURL, newLabel} },
 	"crumb": func(parentURL, parentLabel, title string) crumbArgs { return crumbArgs{parentURL, parentLabel, title} },
 	"items": func(base string, nodes any) itemsArgs { return itemsArgs{base, nodes} },
+	"defaultrole": func(text, editURL string) defaultRoleArgs { return defaultRoleArgs{text, editURL} },
 	// ntool is a button in the toolbar of a node. The button of the
 	// current tab is marked and opens closeURL. Thus a second click ends
 	// the mode, for example the editor.

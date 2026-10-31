@@ -97,10 +97,6 @@
       {{if .Can "tenant.manage"}}{{template "tool" (tab (print $s "/access") "access" "Access" (eq .Data.Tab "access"))}}{{end}}
     </span>
     <span class="group">
-      {{if eq .Data.Tab "access"}}
-        {{template "tool" (tool (print $s "/default-role") "edit" "Change the default role")}}
-        {{template "tool" (tool (print .TenantPath "/admin/bindings/new?space=" .Data.Space.Slug "&return_to=" $s "/access") "new" "New role binding")}}
-      {{end}}
       {{template "tool" (tool (print .TenantPath "/" .Data.Space.Slug "/") "open" "Open the space")}}
       {{if .Can "space.manage"}}{{template "tool" (tool (print $s "/delete") "delete" "Delete")}}{{end}}
     </span>
@@ -235,4 +231,19 @@
 {{if .Can "tenant.manage"}}<span class="group">
   {{template "tool" (ntool $t "access" (print .SpacePath "/access/" $id) $c "access" "Access")}}
 </span>{{end}}
+{{end}}
+
+{{/* A table with one row: the default role of a space or a node, with a
+   button that opens the form for the default role. The argument is a
+   defaultRoleArgs. */}}
+{{define "defaultroletable"}}
+<table class="settings">
+  <tbody>
+    <tr>
+      <th scope="row">Default role</th>
+      <td>{{.Text}}</td>
+      <td class="actions">{{template "tool" (tool .EditURL "edit" "Change the default role")}}</td>
+    </tr>
+  </tbody>
+</table>
 {{end}}
