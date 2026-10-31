@@ -1,5 +1,6 @@
 {{define "content"}}
 {{with .Data}}
+<div class="reading">
 <div class="topbar">
   <nav class="breadcrumbs" aria-label="Path"><a href="{{$.SpacePath}}/">{{$.Space.Name}}</a> / <a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">{{.Node.Title}}</a> / <a href="{{$.SpacePath}}/history/{{.Node.PublicID}}">History</a> / Version {{.Revision.Version}}</nav>
   <nav class="toolbar" aria-label="Tools">
@@ -12,5 +13,6 @@
 <p class="notice">This is version {{.Revision.Version}} from {{date .Revision.CreatedAt}}{{with .Revision.Author}} by {{.}}{{end}}.</p>
 <h1>{{.Revision.Title}}</h1>
 <article class="markdown">{{.HTML}}</article>
+</div>
 {{end}}
 {{end}}

@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="{{.StyleURL}}">
 </head>
 <body>
+<a class="skip" href="#content">Skip to the content</a>
 {{template "icons"}}
 <header class="site">
 {{if .System}}
@@ -41,7 +42,7 @@
   <a class="brand" href="/">Skriva</a>
 {{end}}
 </header>
-<main>
+<main id="content">
 {{if .Menu}}
 <div class="with-sidebar">
 <aside class="sidebar" aria-label="Administration">{{template "menu" .}}</aside>

@@ -36,6 +36,7 @@ as `root` (password `root`).
 - [Configuration](docs/configuration.md)
 - [Access control (RBAC)](docs/access-control.md)
 - [Administration](docs/administration.md)
+- [Page design](docs/design.md)
 - [Security](docs/security.md)
 - [Development and tests](docs/development.md)
 - [Operation](docs/operation.md)

@@ -1,23 +1,47 @@
+/* The style sheet has two parts:
+   - The reading text (.markdown and .reading). The document is the main
+     item of the page. The rules come from long-form typography: a serif
+     font, 18 to 21 px text, line height 1.6 and a line length of
+     approximately 60 to 75 characters (WCAG 1.4.8 permits a maximum of
+     80). The design follows Tufte CSS.
+   - The interface (header, menus, tree, toolbars, forms). It uses a
+     smaller sans-serif font, thus it stays in the background.
+   All sizes use rem or em. Thus the text size that the user sets in the
+   browser applies. */
+
 :root {
-  --fg: #1d2129;
-  --muted: #5d6573;
-  --bg: #ffffff;
-  --panel: #f5f6f8;
-  --line: #dde1e6;
+  --fg: #111111;
+  --muted: #5c5f66;
+  --bg: #fffff8;
+  --panel: #f4f3ea;
+  --line: #e2e0d4;
   --accent: #1f5fbf;
   --accent-fg: #ffffff;
   --danger: #b3261e;
   --mark: #fff1a8;
+
+  --serif: Charter, "Bitstream Charter", "Sitka Text", Cambria, "Iowan Old Style",
+    Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* The reading text is 18 px on small screens and 21 px on large
+     screens (at the default browser size of 16 px). */
+  --read-size: clamp(1.125rem, 1rem + 0.4vw, 1.3125rem);
+  /* The line length of the reading text. */
+  --measure: 40rem;
+  /* The size of the interface text: menus, tree, toolbars and notes. */
+  --ui-size: 0.875rem;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --fg: #e4e6ea;
-    --muted: #a0a7b3;
-    --bg: #15171b;
-    --panel: #1f2228;
-    --line: #343842;
+    --fg: #dddddd;
+    --muted: #a3a3a3;
+    --bg: #151515;
+    --panel: #1e1e1e;
+    --line: #333333;
     --accent: #7aa7f0;
     --accent-fg: #0d1117;
     --danger: #f28b82;
@@ -27,30 +51,42 @@
 
 * { box-sizing: border-box; }
 
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 body {
   margin: 0;
-  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--sans);
+  font-size: 100%;
+  line-height: 1.5;
   color: var(--fg);
   background: var(--bg);
 }
 
 a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* The link to the content is visible only when it has the focus. */
+.skip { position: absolute; left: 0.5rem; top: -3rem; z-index: 2; padding: 0.5rem 1rem; background: var(--bg); }
+.skip:focus { top: 0.5rem; }
+
+/* Page header. */
 header.site {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 1.25rem;
-  padding: 0.6rem 1rem;
+  padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--line);
-  background: var(--panel);
+  font-size: var(--ui-size);
 }
-header.site .brand { font-weight: 700; font-size: 1.15rem; text-decoration: none; color: var(--fg); }
+header.site .brand { font-weight: 700; font-size: 1rem; text-decoration: none; color: var(--fg); }
+header.site .brand.space { font-weight: 600; }
+header.site .crumb { color: var(--muted); }
 header.site nav { display: flex; gap: 1rem; flex-wrap: wrap; }
-header.site nav a { text-decoration: none; }
-header.site nav a:hover { text-decoration: underline; }
+header.site nav a { color: var(--muted); text-decoration: none; }
+header.site nav a:hover { color: var(--accent); text-decoration: underline; }
 header.site .search { margin-left: auto; }
-header.site .search input { width: 14rem; max-width: 100%; }
+header.site .search input { width: 14rem; max-width: 100%; padding: 0.3rem 0.5rem; }
 header.site .user { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); }
 
 main { max-width: 60rem; margin: 0 auto; padding: 1rem 1rem 3rem; }
@@ -58,6 +94,7 @@ main { max-width: 60rem; margin: 0 auto; padding: 1rem 1rem 3rem; }
 h1, h2, h3 { line-height: 1.25; }
 h1 a { color: inherit; }
 
+/* Forms. */
 input, textarea, select, button {
   font: inherit;
   color: inherit;
@@ -70,9 +107,9 @@ input:not([type=checkbox]), textarea, select {
 }
 textarea {
   width: 100%;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-family: var(--mono);
+  font-size: 0.9375rem;
+  line-height: 1.6;
   resize: vertical;
 }
 
@@ -98,77 +135,140 @@ fieldset { border: 1px solid var(--line); border-radius: 4px; }
    last button. */
 .buttons { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.75rem; margin-top: 0.5rem; }
 
+/* Tables of the interface. */
 table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
 th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--muted); font-weight: 600; }
 td form { margin: 0; }
+th.actions, td.actions { width: 1%; white-space: nowrap; text-align: right; }
+td.actions { padding-top: 0.1rem; padding-bottom: 0.1rem; vertical-align: middle; }
 
 .pagehead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; }
 .pagehead h1 { margin-bottom: 0.25rem; }
-th.actions, td.actions { width: 1%; white-space: nowrap; text-align: right; }
-td.actions { padding-top: 0.1rem; padding-bottom: 0.1rem; vertical-align: middle; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.meta, small { color: var(--muted); font-size: 0.875rem; }
-.meta { margin-top: 2rem; border-top: 1px solid var(--line); padding-top: 0.5rem; }
+.meta, small { color: var(--muted); font-size: var(--ui-size); }
+.meta { margin-top: 3rem; border-top: 1px solid var(--line); padding-top: 0.5rem; }
 
-.tabs { display: flex; gap: 1.25rem; border-bottom: 1px solid var(--line); padding-bottom: 0.5rem; }
 .tag {
   display: inline-block;
   padding: 0 0.4rem;
   border: 1px solid var(--line);
   border-radius: 3px;
+  font-family: var(--sans);
   font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 400;
   color: var(--muted);
+  vertical-align: middle;
 }
 .tag.danger { color: var(--danger); border-color: var(--danger); }
 
 .error { color: var(--danger); font-weight: 600; }
-.notice { padding: 0.5rem 0.75rem; background: var(--panel); border-left: 3px solid var(--accent); }
+.notice { padding: 0.5rem 0.75rem; background: var(--panel); border-left: 3px solid var(--accent); font-size: var(--ui-size); }
 .preview { margin-top: 2rem; padding: 0 1rem 1rem; border: 1px dashed var(--line); border-radius: 4px; }
 .help { margin-top: 1rem; color: var(--muted); }
+.help pre { overflow-x: auto; padding: 0.75rem; background: var(--panel); border-radius: 4px; }
+.help code { font-family: var(--mono); font-size: 0.9em; }
 .results li { margin-bottom: 0.75rem; }
 .results p { margin: 0.2rem 0 0; color: var(--muted); }
 mark { background: var(--mark); color: inherit; }
-.pager { display: flex; gap: 1rem; }
 dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
 dl.facts dt { color: var(--muted); }
 dl.facts dd { margin: 0; }
-
-.markdown { overflow-wrap: anywhere; }
-.markdown img { max-width: 100%; }
-.markdown pre, .help pre {
-  overflow-x: auto;
-  padding: 0.75rem;
-  background: var(--panel);
-  border-radius: 4px;
-}
-.markdown code, .help code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.9em;
-}
-.markdown :not(pre) > code { padding: 0.1rem 0.3rem; background: var(--panel); border-radius: 3px; }
-.markdown blockquote { margin-left: 0; padding-left: 1rem; border-left: 3px solid var(--line); color: var(--muted); }
-.markdown li > input[type=checkbox] { margin-right: 0.4rem; }
-
-@media (max-width: 40rem) {
-  header.site .search { margin-left: 0; width: 100%; }
-  header.site .search input { width: 100%; }
-}
-
-/* Spaces, tree and breadcrumbs. */
-header.site .brand.space { font-weight: 600; }
-header.site .crumb { color: var(--muted); }
 
 ul.cards { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 1rem; }
 ul.cards li { padding: 0.75rem 1rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 ul.cards p { margin: 0.25rem 0; color: var(--muted); }
 
-/* The tree is at the left edge of the window. The document is in the
-   center. On wide windows an empty third column keeps the document in
-   the center of the window. */
+/* The reading text. */
+.reading { width: 100%; max-width: calc(var(--measure) + 3rem); margin: 0 auto; }
+main > .reading { max-width: var(--measure); }
+.reading .pagehead h1, .reading > h1 {
+  margin: 2.5rem 0 1.5rem;
+  font-family: var(--serif);
+  font-size: clamp(2rem, 1.5rem + 1.6vw, 2.75rem);
+  font-weight: 400;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.markdown {
+  max-width: var(--measure);
+  font-family: var(--serif);
+  font-size: var(--read-size);
+  line-height: 1.6;
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+  text-rendering: optimizeLegibility;
+  overflow-wrap: break-word;
+}
+.markdown > :first-child { margin-top: 0; }
+.markdown p, .markdown ul, .markdown ol, .markdown dl, .markdown blockquote,
+.markdown pre, .markdown table, .markdown figure { margin: 0 0 1.25em; }
+.markdown p, .markdown li { text-wrap: pretty; }
+
+/* Headings use the normal weight. The second and third levels are
+   italic. The anchor of a heading stays visible below the sticky
+   toolbar. */
+.markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 {
+  font-weight: 400;
+  line-height: 1.2;
+  text-wrap: balance;
+  scroll-margin-top: 4.5rem;
+}
+.markdown h1 { font-size: 1.85em; margin: 1.6em 0 0.6em; }
+.markdown h2 { font-size: 1.45em; font-style: italic; margin: 1.6em 0 0.5em; }
+.markdown h3 { font-size: 1.2em; font-style: italic; margin: 1.5em 0 0.4em; }
+.markdown h4, .markdown h5, .markdown h6 { font-size: 1em; font-weight: 700; margin: 1.4em 0 0.3em; }
+
+/* Links have the color of the text and a thin underline. Thus they do
+   not interrupt the reading, but the underline identifies them. */
+.markdown a {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-thickness: 0.06em;
+  text-underline-offset: 0.15em;
+  text-decoration-color: color-mix(in srgb, var(--accent) 75%, transparent);
+}
+.markdown a:hover { color: var(--accent); text-decoration-thickness: 0.1em; }
+
+.markdown ul, .markdown ol { padding-left: 1.4em; }
+.markdown li + li, .markdown li > ul, .markdown li > ol { margin-top: 0.35em; }
+.markdown li > ul, .markdown li > ol { margin-bottom: 0; }
+.markdown li > input[type=checkbox] { margin-right: 0.4em; }
+
+.markdown blockquote { margin-left: 0; padding-left: 1.2em; border-left: 2px solid var(--line); font-style: italic; }
+.markdown hr { margin: 2.5em 0; border: 0; border-top: 1px solid var(--line); }
+.markdown img { max-width: 100%; height: auto; }
+.markdown sup, .markdown sub { line-height: 0; }
+
+.markdown code { font-family: var(--mono); font-size: 0.82em; }
+.markdown :not(pre) > code { padding: 0.1em 0.3em; background: var(--panel); border-radius: 3px; }
+.markdown pre {
+  overflow-x: auto;
+  padding: 0.9em 1em;
+  background: var(--panel);
+  border-radius: 4px;
+  line-height: 1.5;
+  tab-size: 4;
+}
+.markdown pre code { font-size: 0.82em; }
+
+/* Tables in the text use the sans-serif font, as in Tufte CSS. */
+.markdown table { width: auto; max-width: 100%; font-family: var(--sans); font-size: 0.8em; line-height: 1.45; }
+.markdown th { color: var(--fg); border-bottom: 1px solid var(--muted); }
+.markdown td, .markdown th { overflow-wrap: anywhere; }
+
+.markdown .footnotes { margin-top: 3em; font-size: 0.85em; }
+.markdown .footnotes hr { margin: 0 0 1em; }
+
+/* Layout with a column at the left side: the tree of a space or the
+   administration menu. The text is in the center. On wide windows an
+   empty third column keeps the text in the center of the window. */
 main:has(.with-sidebar) { max-width: none; padding: 0; }
-.with-sidebar { display: grid; grid-template-columns: 17rem minmax(0, 1fr); }
-.with-sidebar > .main { width: 100%; max-width: 52rem; justify-self: center; padding: 0 1.5rem 3rem; }
+.with-sidebar { display: grid; grid-template-columns: 16rem minmax(0, 1fr); }
+.with-sidebar > .main { width: 100%; max-width: 52rem; justify-self: center; padding: 0 1.5rem 4rem; }
+.with-sidebar > .main.reading { max-width: calc(var(--measure) + 3rem); }
 .sidebar {
   position: sticky;
   top: 0;
@@ -176,24 +276,28 @@ main:has(.with-sidebar) { max-width: none; padding: 0; }
   height: 100vh;
   overflow: auto;
   padding: 1rem;
-  font-size: 0.925rem;
-  background: var(--panel);
+  font-size: var(--ui-size);
+  line-height: 1.4;
   border-right: 1px solid var(--line);
 }
 @media (min-width: 90rem) {
-  .with-sidebar { grid-template-columns: 17rem minmax(0, 1fr) 17rem; }
+  .with-sidebar { grid-template-columns: 16rem minmax(0, 1fr) 16rem; }
 }
-.breadcrumbs { color: var(--muted); font-size: 0.9rem; margin-top: 0.5rem; }
+.breadcrumbs { color: var(--muted); font-size: var(--ui-size); margin-top: 0.5rem; }
+.breadcrumbs a { color: var(--muted); }
+.breadcrumbs a:hover { color: var(--accent); }
 
 ul.tree { list-style: none; margin: 0; padding-left: 1rem; }
 .sidebar > ul.tree, .tree-root > ul.tree { padding-left: 0; }
-ul.tree li { margin: 0.15rem 0; }
-ul.tree a { text-decoration: none; }
-ul.tree a:hover { text-decoration: underline; }
+ul.tree li { margin: 0.2rem 0; }
+ul.tree a { color: var(--fg); text-decoration: none; }
+ul.tree a:hover { color: var(--accent); text-decoration: underline; }
 ul.tree li.current > a,
-ul.tree li.current > details > summary > a { font-weight: 700; color: var(--fg); }
+ul.tree li.current > details > summary > a { font-weight: 700; }
 ul.tree summary { cursor: pointer; }
+ul.tree summary::marker { color: var(--muted); }
 ul.pages { list-style: none; padding-left: 0; }
+ul.pages li { margin: 0.3rem 0; }
 
 /* Icons. */
 .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
@@ -209,9 +313,9 @@ ul.pages { list-style: none; padding-left: 0; }
 }
 ul.tree .i, ul.pages .i { margin-right: 0.35em; color: var(--muted); }
 ul.tree .i-folder, ul.pages .i-folder, h1 .i-folder { color: var(--accent); fill: color-mix(in srgb, var(--accent) 18%, transparent); }
-h1 .i { margin-right: 0.4em; }
+h1 .i { margin-right: 0.4em; width: 0.9em; height: 0.9em; }
 
-/* The toolbar at the top of a document. */
+/* The bar at the top of a page: the path and the toolbar. */
 .topbar {
   position: sticky;
   top: 0;
@@ -221,7 +325,7 @@ h1 .i { margin-right: 0.4em; }
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem 1rem;
-  padding: 0.5rem 0;
+  padding: 0.4rem 0;
   border-bottom: 1px solid var(--line);
   background: var(--bg);
 }
@@ -236,26 +340,22 @@ h1 .i { margin-right: 0.4em; }
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 6px;
-  color: var(--fg);
+  color: var(--muted);
 }
-.tool .i { width: 1.25rem; height: 1.25rem; }
+.tool .i { width: 1.2rem; height: 1.2rem; }
 .tool:hover, .tool:focus-visible { background: var(--panel); color: var(--accent); }
-.tool:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tool:focus-visible { outline-offset: 1px; }
 .tool.danger:hover, .tool.danger:focus-visible { color: var(--danger); }
-.children { margin-top: 1.5rem; }
-
-@media (max-width: 50rem) {
-  .with-sidebar { grid-template-columns: 1fr; }
-  .sidebar { position: static; height: auto; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
-  .with-sidebar > .main { padding: 0 1rem 3rem; }
-}
+.tool.current { background: var(--panel); color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
 
 /* An icon button that sends a form, in a toolbar or in a table row. */
 .toolform { display: inline-flex; margin: 0; }
-button.tool { padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer; }
+button.tool { padding: 0; border: 0; background: none; cursor: pointer; }
 td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
-.tool.current { background: var(--panel); color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
-header.site .tool { color: var(--muted); }
+
+/* The sub-documents and the data below a document. */
+.children { margin-top: 2.5rem; font-size: 0.9375rem; }
+.children h2 { font-size: var(--ui-size); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 
 /* The administration menu at the left side. */
 .menu ul { list-style: none; margin: 0; padding: 0; }
@@ -264,12 +364,35 @@ header.site .tool { color: var(--muted); }
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.4rem 0.6rem;
+  padding: 0.35rem 0.6rem;
   border-radius: 6px;
   color: var(--fg);
   text-decoration: none;
 }
-.menu a .i { width: 1.2rem; height: 1.2rem; color: var(--muted); }
-.menu a:hover { background: var(--bg); color: var(--accent); }
-.menu a[aria-current] { background: var(--bg); color: var(--accent); font-weight: 600; }
+.menu a .i { width: 1.1rem; height: 1.1rem; color: var(--muted); }
+.menu a:hover { background: var(--panel); color: var(--accent); }
+.menu a[aria-current] { background: var(--panel); color: var(--accent); font-weight: 600; }
 .menu a[aria-current] .i { color: var(--accent); }
+
+@media (max-width: 50rem) {
+  .with-sidebar { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { position: static; height: auto; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .with-sidebar > .main { padding: 0 1rem 3rem; }
+}
+
+@media (max-width: 40rem) {
+  header.site .search { margin-left: 0; width: 100%; }
+  header.site .search input { width: 100%; }
+}
+
+/* A printed document shows only the text. */
+@media print {
+  header.site, .sidebar, .toolbar, .skip, .children, .notice { display: none; }
+  main, .with-sidebar > .main, .reading { max-width: none; padding: 0; }
+  .with-sidebar { display: block; }
+  .topbar { position: static; border: 0; }
+  body { background: #fff; color: #000; }
+  .markdown { max-width: none; font-size: 11pt; }
+  .markdown a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.85em; }
+  .markdown pre, .markdown :not(pre) > code { background: none; border: 1px solid #ccc; }
+}
