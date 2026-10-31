@@ -167,7 +167,9 @@ func (s *Server) handleSpaceHome(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	// Send the browser to the canonical URL if the slug is missing or
-	// old. The slug changes when the title changes.
+	// old. The slug changes when the title changes. The case of the
+	// letters has no effect, but the redirect gives the slug in lower
+	// case.
 	if r.PathValue("slug") != n.Slug && n.Slug != "" {
 		http.Redirect(w, r, docPath(base(r), n.PublicID, n.Slug), http.StatusFound)
 		return
@@ -643,8 +645,8 @@ func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store
 // match sends the browser to the node. More matches show a list. No match
 // shows a page with a link to make the document.
 func (s *Server) handleWikiLink(w http.ResponseWriter, r *http.Request) {
-	slug := r.PathValue("slug")
-	if !markdown.ValidSlug(slug) {
+	slug := markdown.NormalizeSlug(r.PathValue("slug"))
+	if slug == "" {
 		s.notFound(w, r)
 		return
 	}

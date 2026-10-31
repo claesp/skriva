@@ -5,12 +5,14 @@ import (
 	"bytes"
 	"html/template"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
 
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"go.abhg.dev/goldmark/wikilink"
@@ -59,13 +61,37 @@ func (r *Renderer) engine(wikiPrefix string) goldmark.Markdown {
 // wikiPrefix + Slugify(title).
 func (r *Renderer) Render(src, wikiPrefix string) (template.HTML, error) {
 	var buf bytes.Buffer
-	if err := r.engine(wikiPrefix).Convert([]byte(src), &buf); err != nil {
+	ctx := parser.NewContext(parser.WithIDs(&headingIDs{used: map[string]bool{}}))
+	if err := r.engine(wikiPrefix).Convert([]byte(src), &buf, parser.WithContext(ctx)); err != nil {
 		return "", err
 	}
 	// The policy removes all unsafe content. Thus the conversion to
 	// template.HTML is safe.
 	return template.HTML(r.policy.SanitizeBytes(buf.Bytes())), nil // #nosec G203 -- sanitized.
 }
+
+// headingIDs makes the IDs of headings with Slugify. Thus the fragment
+// of a wiki link [[Title#Heading]] is equal to the ID of the heading. The
+// case of the letters and the diacritics have no effect.
+type headingIDs struct{ used map[string]bool }
+
+func (h *headingIDs) Generate(value []byte, kind ast.NodeKind) []byte {
+	id := Slugify(string(value))
+	if id == "" {
+		id = "heading"
+		if kind != ast.KindHeading {
+			id = "id"
+		}
+	}
+	unique := id
+	for i := 1; h.used[unique]; i++ {
+		unique = id + "-" + strconv.Itoa(i)
+	}
+	h.used[unique] = true
+	return []byte(unique)
+}
+
+func (h *headingIDs) Put(value []byte) { h.used[string(value)] = true }
 
 type resolver struct{ prefix string }
 
@@ -117,6 +143,24 @@ func Slugify(title string) string {
 }
 
 var slugRE = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// NormalizeSlug converts s from a URL to a slug. It ignores the case of
+// the letters, thus "Getting-Started" becomes "getting-started". The
+// result is empty if s cannot be a slug.
+func NormalizeSlug(s string) string {
+	// Change only A-Z. strings.ToLower changes also some non-ASCII
+	// letters to ASCII letters, for example the Kelvin sign to "k".
+	s = strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + 'a' - 'A'
+		}
+		return r
+	}, s)
+	if !ValidSlug(s) {
+		return ""
+	}
+	return s
+}
 
 // ValidSlug reports whether s is a valid slug.
 func ValidSlug(s string) bool {

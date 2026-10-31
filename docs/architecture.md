@@ -73,6 +73,18 @@ These rules apply to the tree:
   makes the URL easier to read. When the title changes, the old URL
   goes to the new URL.
 
+The slug algorithm:
+
+1. Remove the diacritics. "Översikt" becomes "Oversikt".
+2. Change the letters `A-Z` to lower case.
+3. Replace each sequence of other characters with one `-`.
+4. Remove `-` at the start and at the end. Keep a maximum of 100
+   characters.
+
+A slug in a URL is case insensitive. For a wiki link, the server changes
+the slug to lower case before it finds the item. For a document URL, the
+server sends the browser to the URL with the slug in lower case.
+
 The default installation has the tenant `dflt` ("Default") with the
 space `default0` ("Default").
 
@@ -166,7 +178,10 @@ extensions:
 - Wiki links: `[[Title]]` and `[[Title#Section]]`. A wiki link points to
   `/{tenant}/{space}/w/{slug}`. That page finds the item with the slug in
   the same space.
-- Automatic heading IDs.
+- Automatic heading IDs. The IDs use the slug algorithm. Thus
+  `[[Title#Install & Run]]` and `[[Title#install & run]]` both go to the
+  heading "Install & Run". If two headings have the same ID, the second
+  ID gets `-1`, the third ID gets `-2`, and so on.
 
 The server does not permit raw HTML in Markdown. After the conversion,
 [bluemonday](https://github.com/microcosm-cc/bluemonday) removes all

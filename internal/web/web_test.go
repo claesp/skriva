@@ -451,6 +451,17 @@ func TestTreeAndDocuments(t *testing.T) {
 	if loc := resp.Header.Get("Location"); !strings.Contains(loc, cfg) {
 		t.Fatalf("wiki link redirects to %q", loc)
 	}
+	// The case of the letters in a slug has no effect.
+	resp = bob.get(sp + "/w/CONFIGURE")
+	wantStatus(t, resp, http.StatusSeeOther)
+	if loc := resp.Header.Get("Location"); loc != sp+"/d/"+cfg+"/configure" {
+		t.Fatalf("wiki link in upper case redirects to %q", loc)
+	}
+	resp = bob.get(sp + "/d/" + cfg + "/Configure")
+	wantStatus(t, resp, http.StatusFound)
+	if loc := resp.Header.Get("Location"); loc != sp+"/d/"+cfg+"/configure" {
+		t.Fatalf("slug in mixed case redirects to %q", loc)
+	}
 
 	// Rename changes the slug. The old link redirects.
 	wantStatus(t, bob.save(cfg, "Configuration", "x", 1), http.StatusSeeOther)

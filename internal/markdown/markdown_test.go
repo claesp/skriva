@@ -41,6 +41,47 @@ func TestValidSlug(t *testing.T) {
 	}
 }
 
+func TestNormalizeSlug(t *testing.T) {
+	tests := map[string]string{
+		"getting-started":                    "getting-started",
+		"Getting-Started":                    "getting-started",
+		"TEST":                               "test",
+		"A1-B2":                              "a1-b2",
+		"\u212Aey":                           "",
+		"a b":                                "",
+		"-a":                                 "",
+		"../x":                               "",
+		"":                                   "",
+		strings.Repeat("A", MaxSlugLength+1): "",
+	}
+	for in, want := range tests {
+		if got := NormalizeSlug(in); got != want {
+			t.Errorf("NormalizeSlug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestRenderHeadingIDsUseSlugify(t *testing.T) {
+	src := "# Översikt\n\n## Install & Run\n\n## INSTALL & RUN\n\n## !!!\n\n[[Doc#install & run]] [[Doc#OVERSIKT]]\n"
+	out, err := New().Render(src, "/w/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		`<h1 id="oversikt">`,
+		`<h2 id="install-run">`,
+		`<h2 id="install-run-1">`,
+		`<h2 id="heading">`,
+		`href="/w/doc#install-run"`,
+		`href="/w/doc#oversikt"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("output does not contain %q:\n%s", want, s)
+		}
+	}
+}
+
 func TestRenderBasic(t *testing.T) {
 	r := New()
 	out, err := r.Render("# Title\n\nSome *text* and [[Other Page]] and [[Page#Part Two]].\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n", "/wiki/")

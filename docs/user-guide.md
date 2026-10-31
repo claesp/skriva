@@ -131,6 +131,10 @@ change.
 | `> text`                      | A quotation. |
 | `![text](https://...)`        | An image. |
 
+Wiki links are case insensitive. `[[Install]]`, `[[install]]` and
+`[[INSTALL]]` go to the same document. This is also true for the heading
+in `[[Title#Heading]]`.
+
 If more than one document in the space has the title of a wiki link, the
 wiki shows a list. Then select the correct document.
 
