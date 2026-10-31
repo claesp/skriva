@@ -1,65 +1,20 @@
 {{define "content"}}
-<h1>Administration</h1>
-{{template "adminnav" .}}
+{{template "grouphead" .}}
 {{with .Data}}
-<h2>Group {{.Group.Name}} <span class="tag">{{.Group.Source}}</span></h2>
-{{with .Group.Description}}<p>{{.}}</p>{{end}}
-
-<h3>Members</h3>
-{{with .Members}}
+{{if ne .Group.Source "local"}}<p>The identity provider controls the members of this group.</p>{{end}}
 <table>
+  <thead><tr><th>User name</th><th>Name</th>{{if eq .Group.Source "local"}}<th class="actions"><span class="vh">Actions</span></th>{{end}}</tr></thead>
   <tbody>
-  {{range .}}
-  <tr><td><a href="{{$.TenantPath}}/admin/users/{{.ID}}">{{.Username}}</a></td><td>{{.DisplayName}}</td>
-    <td>{{if eq $.Data.Group.Source "local"}}
-      <form method="post" action="{{$.TenantPath}}/admin/groups/{{$.Data.Group.ID}}/members/{{.ID}}/remove">
-        {{template "csrf" $.CSRF}}<button type="submit" class="link">Remove</button>
-      </form>{{end}}</td></tr>
+  {{range .Members}}
+  <tr>
+    <td><a href="{{$.TenantPath}}/admin/users/{{.ID}}">{{.Username}}</a></td>
+    <td>{{.DisplayName}}</td>
+    {{if eq $.Data.Group.Source "local"}}<td class="actions">{{template "post" (post (print $.TenantPath "/admin/groups/" $.Data.Group.ID "/members/" .ID "/remove") "remove" "Remove" $.CSRF "")}}</td>{{end}}
+  </tr>
+  {{else}}
+  <tr><td colspan="3">The group has no members.</td></tr>
   {{end}}
   </tbody>
 </table>
-{{else}}<p>The group has no members.</p>{{end}}
-{{if eq .Group.Source "local"}}
-<form method="post" action="{{$.TenantPath}}/admin/groups/{{.Group.ID}}/members" class="inline">
-  {{template "csrf" $.CSRF}}
-  <label>User <select name="user_id">{{range .Users}}<option value="{{.ID}}">{{.Username}}</option>{{end}}</select></label>
-  <button type="submit">Add member</button>
-</form>
-{{else}}
-<p>The identity provider controls the members of this group.</p>
-{{end}}
-
-<h3>Role bindings</h3>
-{{with .Bindings}}
-<table>
-  <tbody>
-  {{range .}}
-  <tr><td>{{.RoleName}}</td><td>{{template "scope" .}}</td><td>
-    <form method="post" action="{{$.TenantPath}}/admin/bindings/{{.ID}}/delete">
-      {{template "csrf" $.CSRF}}
-      <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/groups/{{$.Data.Group.ID}}">
-      <button type="submit" class="link">Remove</button>
-    </form>
-  </td></tr>
-  {{end}}
-  </tbody>
-</table>
-{{else}}<p>The group has no role bindings.</p>{{end}}
-<form method="post" action="{{$.TenantPath}}/admin/bindings" class="inline">
-  {{template "csrf" $.CSRF}}
-  <input type="hidden" name="subject" value="group:{{.Group.ID}}">
-  <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/groups/{{.Group.ID}}">
-  <label>Role <select name="role">{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
-  {{template "spaceselect" .Spaces}}
-  <button type="submit">Give role</button>
-</form>
-
-{{if eq .Group.Source "local"}}
-<h3>Delete group</h3>
-<form method="post" action="{{$.TenantPath}}/admin/groups/{{.Group.ID}}/delete">
-  {{template "csrf" $.CSRF}}
-  <button type="submit" class="danger">Delete group</button>
-</form>
-{{end}}
 {{end}}
 {{end}}

@@ -1,0 +1,19 @@
+{{define "content"}}
+{{template "userhead" .}}
+{{with .Data}}
+<p>These permissions come from direct role bindings, group role bindings{{with $.Tenant.DefaultRole}} and the default role "{{.}}"{{end}}. Folders and documents can have other permissions.</p>
+<h2>In the tenant</h2>
+{{with .Permissions}}
+<ul>{{range .}}<li><code>{{.}}</code>: {{.Description}}</li>{{end}}</ul>
+{{else}}<p>The user has no tenant permissions.</p>{{end}}
+<h2>At the top level of each space</h2>
+<table>
+  <thead><tr><th>Space</th><th>Permissions</th></tr></thead>
+  <tbody>
+  {{range .SpacePermissions}}
+  <tr><td>{{.Space.Name}}</td><td>{{range .Permissions}}<code>{{.}}</code> {{else}}(none){{end}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}
+{{end}}

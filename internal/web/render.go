@@ -37,12 +37,38 @@ type treeArgs struct {
 	Nodes []*store.TreeNode
 }
 
-// toolArgs is the argument of the "tool" template: one icon link in the
-// toolbar.
+// toolArgs is the argument of the "tool" and "tab" templates: one icon
+// link in a toolbar or a menu. Current marks the link to the current page.
 type toolArgs struct {
-	Href  string
-	Icon  string
-	Label string
+	Href    string
+	Icon    string
+	Label   string
+	Current bool
+}
+
+// postArgs is the argument of the "post" template: an icon button that
+// sends a form with only a CSRF token and an optional return address.
+type postArgs struct {
+	Action   string
+	Icon     string
+	Label    string
+	CSRF     string
+	ReturnTo string
+}
+
+// headArgs is the argument of the "listhead" template. An empty NewURL
+// shows no button.
+type headArgs struct {
+	Title    string
+	NewURL   string
+	NewLabel string
+}
+
+// crumbArgs is the argument of the "formhead" template.
+type crumbArgs struct {
+	ParentURL   string
+	ParentLabel string
+	Title       string
 }
 
 var funcs = template.FuncMap{
@@ -51,11 +77,21 @@ var funcs = template.FuncMap{
 	"sub":     func(a, b int) int { return a - b },
 	"docpath": docPath,
 	"tree":    func(base string, nodes []*store.TreeNode) treeArgs { return treeArgs{base, nodes} },
-	"tool":    func(href, icon, label string) toolArgs { return toolArgs{href, icon, label} },
+	"tool":    func(href, icon, label string) toolArgs { return toolArgs{Href: href, Icon: icon, Label: label} },
+	"tab": func(href, icon, label string, current bool) toolArgs {
+		return toolArgs{Href: href, Icon: icon, Label: label, Current: current}
+	},
+	"post": func(action, icon, label, csrf, returnTo string) postArgs {
+		return postArgs{action, icon, label, csrf, returnTo}
+	},
+	"head":  func(title, newURL, newLabel string) headArgs { return headArgs{title, newURL, newLabel} },
+	"crumb": func(parentURL, parentLabel, title string) crumbArgs { return crumbArgs{parentURL, parentLabel, title} },
 }
 
 func loadTemplates() (*templates, error) {
-	base, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html")
+	// parts.html contains templates that more than one page uses.
+	base, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS,
+		"templates/layout.html", "templates/parts.html")
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +102,7 @@ func loadTemplates() (*templates, error) {
 	t := &templates{pages: map[string]*template.Template{}}
 	for _, f := range files {
 		name := path.Base(f)
-		if name == "layout.html" {
+		if name == "layout.html" || name == "parts.html" {
 			continue
 		}
 		clone, err := base.Clone()
@@ -97,7 +133,12 @@ type view struct {
 	StyleURL string
 	// System is true on the system administration pages.
 	System bool
-	Data   any
+	// Menu is "admin" or "system" on the administration pages. The
+	// layout then shows the administration menu at the left side.
+	Menu string
+	// Section is the menu item of the page, for example "groups".
+	Section string
+	Data    any
 }
 
 // TenantPath returns the URL path of the tenant, for example "/dflt".
@@ -132,18 +173,26 @@ func (v *view) CSRF() string {
 
 var bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 
-// render runs the template name and writes the result. It runs the
-// template into a buffer first. Thus a template error gives a clean
-// error page and not a half page.
+// render runs the template name and writes the result.
 func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name, title string, data any) {
-	t, ok := s.tmpl.pages[name]
-	if !ok {
-		s.log.Error("no template", "template", name)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
+	s.write(w, r, status, name, s.newView(r, title, data))
+}
+
+// renderAdmin runs the template name of an administration page. section
+// is the menu item that the menu marks as current.
+func (s *Server) renderAdmin(w http.ResponseWriter, r *http.Request, status int, section, name, title string, data any) {
+	v := s.newView(r, title, data)
+	v.Menu = "admin"
+	if v.System {
+		v.Menu = "system"
 	}
+	v.Section = section
+	s.write(w, r, status, name, v)
+}
+
+func (s *Server) newView(r *http.Request, title string, data any) *view {
 	ri := reqInfoFrom(r.Context())
-	v := &view{
+	return &view{
 		Title:    title,
 		Tenant:   ri.Tenant,
 		Space:    ri.Space,
@@ -152,7 +201,17 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name
 		System:   strings.HasPrefix(r.URL.Path, "/admin/"),
 		Data:     data,
 	}
+}
 
+// write runs the template name into a buffer first. Thus a template error
+// gives a clean error page and not a half page.
+func (s *Server) write(w http.ResponseWriter, r *http.Request, status int, name string, v *view) {
+	t, ok := s.tmpl.pages[name]
+	if !ok {
+		s.log.Error("no template", "template", name)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufPool.Put(buf)

@@ -1,31 +1,22 @@
 {{define "content"}}
-<h1>Administration</h1>
-{{template "adminnav" .}}
-<h2>Spaces</h2>
+{{template "listhead" (head "Spaces" (print .TenantPath "/admin/spaces/new") "New space")}}
 <table>
-  <thead><tr><th>Name</th><th>Code</th><th>Items</th><th>Description</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Code</th><th>Items</th><th>Description</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr>
-    <td><a href="{{$.TenantPath}}/{{.Slug}}/">{{.Name}}</a></td>
+    <td><a href="{{$.TenantPath}}/admin/spaces/{{.Slug}}">{{.Name}}</a></td>
     <td><code>{{.Slug}}</code></td>
     <td>{{.Nodes}}</td>
     <td>{{.Description}}</td>
-    <td><a href="{{$.TenantPath}}/admin/spaces/{{.Slug}}">Change</a>
-      {{if $.Can "tenant.manage"}} · <a href="{{$.TenantPath}}/admin/spaces/{{.Slug}}/access">Access</a>{{end}}</td>
+    <td class="actions">
+      {{if $.Can "tenant.manage"}}{{template "tool" (tool (print $.TenantPath "/admin/spaces/" .Slug "/access") "access" "Access")}}{{end}}
+      {{template "tool" (tool (print $.TenantPath "/" .Slug "/") "open" "Open the space")}}
+    </td>
   </tr>
   {{else}}
   <tr><td colspan="5">There are no spaces.</td></tr>
   {{end}}
   </tbody>
 </table>
-<h3>New space</h3>
-<form method="post" action="{{.TenantPath}}/admin/spaces" class="stack narrow">
-  {{template "csrf" .CSRF}}
-  <label>Name <input name="name" required maxlength="200"></label>
-  <label>Code (exactly 8 characters: a-z, 0-9). The code is part of the URLs. You cannot change it later.
-    <input name="slug" required minlength="8" maxlength="8" pattern="[a-z0-9]{8}"></label>
-  <label>Description <input name="description" maxlength="500"></label>
-  <div class="buttons"><button type="submit">Create space</button></div>
-</form>
 {{end}}

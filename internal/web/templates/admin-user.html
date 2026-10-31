@@ -1,8 +1,6 @@
 {{define "content"}}
-<h1>Administration</h1>
-{{template "adminnav" .}}
+{{template "userhead" .}}
 {{with .Data}}
-<h2>User {{.User.Username}}</h2>
 <dl class="facts">
   <dt>Name</dt><dd>{{.User.DisplayName}}</dd>
   <dt>E-mail</dt><dd>{{.User.Email}}</dd>
@@ -11,59 +9,9 @@
   <dt>First sign-in</dt><dd>{{date .User.CreatedAt}}</dd>
   <dt>Status</dt><dd>{{if .User.Disabled}}Disabled{{else}}Active{{end}}</dd>
 </dl>
-{{if not .IsSelf}}
-<form method="post" action="{{$.TenantPath}}/admin/users/{{.User.ID}}/{{if .User.Disabled}}enable{{else}}disable{{end}}">
-  {{template "csrf" $.CSRF}}
-  {{if .User.Disabled}}<button type="submit">Enable user</button>
-  {{else}}<button type="submit" class="danger">Disable user</button>{{end}}
-</form>
-{{end}}
-
-<h3>Groups</h3>
+<h2>Groups</h2>
 {{with .Groups}}
 <ul>{{range .}}<li><a href="{{$.TenantPath}}/admin/groups/{{.ID}}">{{.Name}}</a> <span class="tag">{{.Source}}</span></li>{{end}}</ul>
 {{else}}<p>The user is not a member of a group.</p>{{end}}
-
-<h3>Direct role bindings</h3>
-{{with .Bindings}}
-<table>
-  <tbody>
-  {{range .}}
-  <tr><td>{{.RoleName}}</td><td>{{template "scope" .}}</td><td>
-    <form method="post" action="{{$.TenantPath}}/admin/bindings/{{.ID}}/delete">
-      {{template "csrf" $.CSRF}}
-      <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/users/{{$.Data.User.ID}}">
-      <button type="submit" class="link">Remove</button>
-    </form>
-  </td></tr>
-  {{end}}
-  </tbody>
-</table>
-{{else}}<p>The user has no direct role bindings.</p>{{end}}
-<form method="post" action="{{$.TenantPath}}/admin/bindings" class="inline">
-  {{template "csrf" $.CSRF}}
-  <input type="hidden" name="subject" value="user:{{.User.ID}}">
-  <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/users/{{.User.ID}}">
-  <label>Role <select name="role">{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
-  {{template "spaceselect" .Spaces}}
-  <button type="submit">Give role</button>
-</form>
-
-<h3>Effective permissions</h3>
-<p>These permissions come from direct role bindings, group role bindings{{with $.Tenant.DefaultRole}} and the default role "{{.}}"{{end}}.</p>
-<h4>In the tenant</h4>
-{{with .Permissions}}
-<ul>{{range .}}<li><code>{{.}}</code>: {{.Description}}</li>{{end}}</ul>
-{{else}}<p>The user has no tenant permissions.</p>{{end}}
-<h4>In each space</h4>
-<table>
-  <thead><tr><th>Space</th><th>Permissions</th></tr></thead>
-  <tbody>
-  {{range .SpacePermissions}}
-  <tr><td><a href="{{$.TenantPath}}/admin/spaces/{{.Space.Slug}}/access">{{.Space.Name}}</a></td>
-    <td>{{range .Permissions}}<code>{{.}}</code> {{else}}(none){{end}}</td></tr>
-  {{end}}
-  </tbody>
-</table>
 {{end}}
 {{end}}

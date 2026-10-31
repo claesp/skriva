@@ -1,65 +1,16 @@
 {{define "content"}}
-<h1>Administration</h1>
-{{template "adminnav" .}}
+{{template "spacehead" .}}
 {{with .Data}}
-<h2>Access to space {{.Space.Name}} <code>{{.Space.Slug}}</code></h2>
 <p>A user has these permissions in the space:</p>
 <ul>
   <li>The document permissions of the default role of the space.</li>
   <li>The permissions of the role bindings for all spaces.</li>
   <li>The document permissions of the role bindings for this space.</li>
 </ul>
-
-<h3>Default role</h3>
-<form method="post" action="{{$.TenantPath}}/admin/spaces/{{.Space.Slug}}/access" class="inline">
-  {{template "csrf" $.CSRF}}
-  <label>Default role of all signed-in users in this space
-    <select name="default_role">
-      <option value="-"{{if eq .DefaultRole "-"}} selected{{end}}>Same as the tenant{{with $.Tenant.DefaultRole}} ({{.}}){{else}} (none){{end}}</option>
-      <option value=""{{if eq .DefaultRole ""}} selected{{end}}>None. Only users with a role binding have access.</option>
-      {{range .Roles}}<option value="{{.Name}}"{{if eq .Name $.Data.DefaultRole}} selected{{end}}>{{.Name}}</option>{{end}}
-    </select>
-  </label>
-  <button type="submit">Save</button>
-</form>
-
-<h3>Role bindings for this space</h3>
-{{with .Bindings}}
-<table>
-  <thead><tr><th>Role</th><th>Given to</th><th></th></tr></thead>
-  <tbody>
-  {{range .}}
-  <tr>
-    <td>{{.RoleName}}</td>
-    <td>{{if .GroupID}}Group <a href="{{$.TenantPath}}/admin/groups/{{.GroupID}}">{{.GroupName}}</a> <span class="tag">{{.GroupSource}}</span>
-        {{else}}User <a href="{{$.TenantPath}}/admin/users/{{.UserID}}">{{.UserName}}</a>{{end}}</td>
-    <td><form method="post" action="{{$.TenantPath}}/admin/bindings/{{.ID}}/delete">
-      {{template "csrf" $.CSRF}}
-      <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/spaces/{{$.Data.Space.Slug}}/access">
-      <button type="submit" class="link">Remove</button>
-    </form></td>
-  </tr>
-  {{end}}
-  </tbody>
-</table>
-{{else}}<p>The space has no role bindings of its own.</p>{{end}}
-<form method="post" action="{{$.TenantPath}}/admin/bindings" class="inline">
-  {{template "csrf" $.CSRF}}
-  <input type="hidden" name="space" value="{{.Space.Slug}}">
-  <input type="hidden" name="return_to" value="{{$.TenantPath}}/admin/spaces/{{.Space.Slug}}/access">
-  <label>Role <select name="role">{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
-  <label>Give to
-    <select name="subject">
-      <optgroup label="Groups">
-        {{range .Groups}}<option value="group:{{.ID}}">{{.Name}} ({{.Source}})</option>{{end}}
-      </optgroup>
-      <optgroup label="Users">
-        {{range .Users}}<option value="user:{{.ID}}">{{.Username}}</option>{{end}}
-      </optgroup>
-    </select>
-  </label>
-  <button type="submit">Give role</button>
-</form>
-<p><small>Role bindings for all spaces are on the page <a href="{{$.TenantPath}}/admin/bindings">Role bindings</a>.</small></p>
+<dl class="facts">
+  <dt>Default role</dt><dd>{{.DefaultRoleText}}</dd>
+</dl>
+<h2>Role bindings for this space</h2>
+{{template "bindingtable" .Table}}
 {{end}}
 {{end}}

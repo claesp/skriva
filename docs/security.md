@@ -127,8 +127,12 @@ The server sends these headers with each response:
 
 ## Destructive actions
 
-The deletion of a tenant or a space removes much data. The user must
-type the code of the tenant or the space to confirm.
+A GET request never changes data. Each deletion of a tenant, a space, a
+group, a role, a folder or a document opens a page that asks the user to
+confirm. The deletion of a tenant or a space removes much data. The user
+must also type the code of the tenant or the space to confirm. Only the
+removal of a role binding or a group member, and the change of the
+status of a user, are one-click actions. These actions are easy to undo.
 
 ## Open redirects
 

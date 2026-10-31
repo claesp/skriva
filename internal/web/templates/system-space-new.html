@@ -1,0 +1,11 @@
+{{define "content"}}
+{{template "formhead" (crumb (print "/admin/tenants/" .Data "/spaces") .Data "New space")}}
+<form method="post" action="/admin/tenants/{{.Data}}/spaces" class="stack narrow">
+  {{template "csrf" .CSRF}}
+  <label>Name <input name="name" required maxlength="200" autofocus></label>
+  <label>Code (exactly 8 characters: a-z, 0-9). The code is part of the URLs. You cannot change it later.
+    <input name="slug" required minlength="8" maxlength="8" pattern="[a-z0-9]{8}"></label>
+  <label>Description <input name="description" maxlength="500"></label>
+  {{template "savebuttons" (print "/admin/tenants/" .Data "/spaces")}}
+</form>
+{{end}}

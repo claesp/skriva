@@ -5,14 +5,16 @@
 {{if .Descendants}}This also deletes <strong>{{.Descendants}}</strong> items in it.{{end}}
 You cannot undo this.</p>
 {{if .Permitted}}
-<form action="{{$.SpacePath}}/delete/{{.Node.PublicID}}" method="post" class="buttons">
+<form action="{{$.SpacePath}}/delete/{{.Node.PublicID}}" method="post">
   {{template "csrf" $.CSRF}}
-  <button type="submit" class="danger">Delete</button>
-  <a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Cancel</a>
+  <div class="buttons">
+    <a class="button secondary" href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Cancel</a>
+    <button type="submit" class="danger">Delete</button>
+  </div>
 </form>
 {{else}}
 <p class="error" role="alert">You cannot delete this item. It contains items that you do not have permission to delete.</p>
-<p><a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Go back</a></p>
+<div class="buttons"><a class="button secondary" href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Cancel</a></div>
 {{end}}
 {{end}}
 {{end}}

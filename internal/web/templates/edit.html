@@ -18,9 +18,9 @@
   {{end}}
   <label>Comment about the change <input name="comment" value="{{.Comment}}" maxlength="500"></label>
   <div class="buttons">
-    <button type="submit" name="action" value="save">Save</button>
+    <a class="button secondary" href="{{.Cancel}}">Cancel</a>
     {{if not .IsFolder}}<button type="submit" name="action" value="preview" class="secondary">Preview</button>{{end}}
-    <a href="{{$.SpacePath}}/">Cancel</a>
+    <button type="submit" name="action" value="save">Save</button>
   </div>
 </form>
 {{if not .IsFolder}}

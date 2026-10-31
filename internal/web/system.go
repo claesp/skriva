@@ -30,7 +30,10 @@ func (s *Server) systemRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /admin/tenants", s.requireSystem(s.handleTenantCreate))
 	mux.Handle("GET /admin/tenants/{code}", s.requireSystem(s.handleTenantForm))
 	mux.Handle("POST /admin/tenants/{code}", s.requireSystem(s.handleTenantUpdate))
+	mux.Handle("GET /admin/tenants/{code}/delete", s.requireSystem(s.handleTenantDeleteForm))
 	mux.Handle("POST /admin/tenants/{code}/delete", s.requireSystem(s.handleTenantDelete))
+	mux.Handle("GET /admin/tenants/{code}/spaces", s.requireSystem(s.handleTenantSpaces))
+	mux.Handle("GET /admin/tenants/{code}/spaces/new", s.requireSystem(s.handleTenantSpaceNew))
 	mux.Handle("POST /admin/tenants/{code}/spaces", s.requireSystem(s.handleTenantSpaceCreate))
 }
 
@@ -40,7 +43,7 @@ func (s *Server) handleTenants(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "system-tenants", "Tenants", tenants)
+	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-tenants", "Tenants", tenants)
 }
 
 // tenantForm is the data for the tenant settings form.
@@ -56,12 +59,13 @@ type tenantForm struct {
 	RedirectURI string
 	LogoutURI   string
 	Roles       []store.Role
-	Spaces      []store.Space
 	Error       string
+	// Tab is the current tab of the tenant pages.
+	Tab string
 }
 
 func (s *Server) newTenantForm(r *http.Request, t *store.Tenant) (*tenantForm, error) {
-	f := &tenantForm{IsNew: t == nil}
+	f := &tenantForm{IsNew: t == nil, Tab: "settings"}
 	var tenantID int64
 	if t == nil {
 		f.TenantSettings = store.TenantSettings{
@@ -74,11 +78,6 @@ func (s *Server) newTenantForm(r *http.Request, t *store.Tenant) (*tenantForm, e
 		f.Code = t.Code
 		f.TenantSettings = t.TenantSettings
 		f.HasSecret = t.HasClientSecret
-		spaces, err := s.store.Spaces(r.Context(), t.ID)
-		if err != nil {
-			return nil, err
-		}
-		f.Spaces = spaces
 	}
 	f.Scopes = strings.Join(f.OIDCScopes, " ")
 	f.SessionTTL = f.TenantSettings.SessionTTL.String()
@@ -174,7 +173,7 @@ func (s *Server) renderTenantForm(w http.ResponseWriter, r *http.Request, status
 	if !f.IsNew {
 		title = "Tenant " + f.Code
 	}
-	s.render(w, r, status, "system-tenant", title, f)
+	s.renderAdmin(w, r, status, "tenants", "system-tenant", title, f)
 }
 
 func (s *Server) handleTenantNewForm(w http.ResponseWriter, r *http.Request) {
@@ -283,6 +282,23 @@ func (s *Server) handleTenantUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/tenants/"+t.Code, http.StatusSeeOther)
 }
 
+func (s *Server) handleTenantDeleteForm(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.loadTenant(w, r)
+	if !ok {
+		return
+	}
+	if t.IsDefault {
+		s.badRequest(w, r, "You cannot delete the default tenant.")
+		return
+	}
+	p := "/admin/tenants/" + t.Code
+	s.renderAdmin(w, r, http.StatusOK, "tenants", "confirm-delete", "Delete tenant", confirmDelete{
+		Heading: "Delete tenant " + t.Name,
+		Message: "Do you want to delete the tenant? This deletes all users, groups, roles, spaces and documents of the tenant.",
+		Action:  p + "/delete", Code: t.Code, Cancel: p, Parent: t.Code, CSRF: csrfOf(r),
+	})
+}
+
 // handleTenantDelete removes a tenant. The user must type the tenant code
 // to confirm, because the action removes all data of the tenant.
 func (s *Server) handleTenantDelete(w http.ResponseWriter, r *http.Request) {
@@ -306,6 +322,32 @@ func (s *Server) handleTenantDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
 }
 
+func (s *Server) handleTenantSpaces(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.loadTenant(w, r)
+	if !ok {
+		return
+	}
+	spaces, err := s.store.Spaces(r.Context(), t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-tenant-spaces", "Spaces of "+t.Code, struct {
+		Code      string
+		IsDefault bool
+		Tab       string
+		Spaces    []store.Space
+	}{t.Code, t.IsDefault, "spaces", spaces})
+}
+
+func (s *Server) handleTenantSpaceNew(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.loadTenant(w, r)
+	if !ok {
+		return
+	}
+	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-space-new", "New space", t.Code)
+}
+
 func (s *Server) handleTenantSpaceCreate(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.loadTenant(w, r)
 	if !ok {
@@ -321,5 +363,5 @@ func (s *Server) handleTenantSpaceCreate(w http.ResponseWriter, r *http.Request)
 	}
 	s.log.Info("space created", "tenant", t.Code, "space", slug,
 		"user_id", reqInfoFrom(r.Context()).Session.User.ID)
-	http.Redirect(w, r, "/admin/tenants/"+t.Code, http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/tenants/"+t.Code+"/spaces", http.StatusSeeOther)
 }

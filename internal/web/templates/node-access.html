@@ -1,66 +1,27 @@
 {{define "content"}}
 {{with .Data}}
+{{$back := print $.SpacePath "/access/" .Node.PublicID}}
+<div class="topbar">
+  <nav class="breadcrumbs" aria-label="Path"><a href="{{$.SpacePath}}/">{{$.Space.Name}}</a> / <a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">{{.Node.Title}}</a> / Access</nav>
+  <nav class="toolbar" aria-label="Tools">
+    <span class="group">
+      {{template "tool" (tool (print $back "/default-role") "edit" "Change the default role")}}
+      {{template "tool" (tool (print $.TenantPath "/admin/bindings/new?space=" $.Space.Slug "&node=" .Node.PublicID "&return_to=" $back) "new" "New role binding")}}
+    </span>
+  </nav>
+</div>
 <h1>Access to {{.Node.Kind}} "{{.Node.Title}}"</h1>
-<p><a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Go to the {{.Node.Kind}}</a></p>
 <p>A user has these permissions for this {{.Node.Kind}} and for all items in it:</p>
 <ul>
   <li>The document permissions of the default role. If this {{.Node.Kind}} uses "Same as the parent", the nearest parent folder or document with its own setting gives the default role. If there is none, the space gives it.</li>
   <li>The permissions of the role bindings for all spaces, for this space and for the parents.</li>
   <li>The document permissions of the role bindings for this {{.Node.Kind}}.</li>
 </ul>
-
-<h2>Default role</h2>
-<form method="post" action="{{$.SpacePath}}/access/{{.Node.PublicID}}" class="inline">
-  {{template "csrf" $.CSRF}}
-  <label>Default role of all signed-in users in this {{.Node.Kind}}
-    <select name="default_role">
-      <option value="-"{{if eq .DefaultRole "-"}} selected{{end}}>Same as the parent (folder, document or space)</option>
-      <option value=""{{if eq .DefaultRole ""}} selected{{end}}>None. Only users with a role binding have access.</option>
-      {{range .Roles}}<option value="{{.Name}}"{{if eq .Name $.Data.DefaultRole}} selected{{end}}>{{.Name}}</option>{{end}}
-    </select>
-  </label>
-  <button type="submit">Save</button>
-</form>
-
+<dl class="facts">
+  <dt>Default role</dt><dd>{{.DefaultRoleText}}</dd>
+</dl>
 <h2>Role bindings for this {{.Node.Kind}}</h2>
-{{with .Bindings}}
-<table>
-  <thead><tr><th>Role</th><th>Given to</th><th></th></tr></thead>
-  <tbody>
-  {{range .}}
-  <tr>
-    <td>{{.RoleName}}</td>
-    <td>{{if .GroupID}}Group <a href="{{$.TenantPath}}/admin/groups/{{.GroupID}}">{{.GroupName}}</a> <span class="tag">{{.GroupSource}}</span>
-        {{else}}User <a href="{{$.TenantPath}}/admin/users/{{.UserID}}">{{.UserName}}</a>{{end}}</td>
-    <td><form method="post" action="{{$.TenantPath}}/admin/bindings/{{.ID}}/delete">
-      {{template "csrf" $.CSRF}}
-      <input type="hidden" name="return_to" value="{{$.SpacePath}}/access/{{$.Data.Node.PublicID}}">
-      <button type="submit" class="link">Remove</button>
-    </form></td>
-  </tr>
-  {{end}}
-  </tbody>
-</table>
-{{else}}<p>This {{.Node.Kind}} has no role bindings of its own.</p>{{end}}
-<form method="post" action="{{$.TenantPath}}/admin/bindings" class="inline">
-  {{template "csrf" $.CSRF}}
-  <input type="hidden" name="space" value="{{$.Space.Slug}}">
-  <input type="hidden" name="node" value="{{.Node.PublicID}}">
-  <input type="hidden" name="return_to" value="{{$.SpacePath}}/access/{{.Node.PublicID}}">
-  <label>Role <select name="role">{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
-  <label>Give to
-    <select name="subject">
-      <optgroup label="Groups">
-        {{range .Groups}}<option value="group:{{.ID}}">{{.Name}} ({{.Source}})</option>{{end}}
-      </optgroup>
-      <optgroup label="Users">
-        {{range .Users}}<option value="user:{{.ID}}">{{.Username}}</option>{{end}}
-      </optgroup>
-    </select>
-  </label>
-  <button type="submit">Give role</button>
-</form>
-<p><small>Bindings for this {{.Node.Kind}} give only document permissions (<code>doc.*</code>). The access to the space is on the page
-  <a href="{{$.TenantPath}}/admin/spaces/{{$.Space.Slug}}/access">Administration › Spaces › Access</a>.</small></p>
+{{template "bindingtable" .Table}}
+<p><small>Bindings for this {{.Node.Kind}} give only document permissions (<code>doc.*</code>). The access to the space is in Administration › Spaces.</small></p>
 {{end}}
 {{end}}

@@ -1,7 +1,5 @@
 {{define "content"}}
-<h1>Administration</h1>
-{{template "adminnav" .}}
-<h2>Users</h2>
+{{template "listhead" (head "Users" "" "")}}
 <p>Users appear here after their first sign-in.</p>
 <table>
   <thead><tr><th>User name</th><th>Name</th><th>E-mail</th><th>Last sign-in</th><th>Status</th></tr></thead>

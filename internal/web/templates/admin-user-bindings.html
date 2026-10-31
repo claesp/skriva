@@ -1,0 +1,7 @@
+{{define "content"}}
+{{template "userhead" .}}
+{{with .Data}}
+<p>These are the direct role bindings of the user. The user also has the role bindings of the groups.</p>
+{{template "bindingtable" .Table}}
+{{end}}
+{{end}}

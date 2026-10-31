@@ -1,0 +1,15 @@
+{{define "content"}}
+{{template "formhead" (crumb (print .TenantPath "/admin/roles") "Roles" "New role")}}
+<form method="post" action="{{.TenantPath}}/admin/roles" class="stack narrow">
+  {{template "csrf" .CSRF}}
+  <label>Name (a-z, 0-9, "-") <input name="name" required maxlength="63" pattern="[a-z][a-z0-9\-]{0,62}" autofocus></label>
+  <label>Description <input name="description" maxlength="500"></label>
+  <fieldset>
+    <legend>Permissions</legend>
+    {{range .Data}}
+    <label class="check"><input type="checkbox" name="permission" value="{{.}}"> <code>{{.}}</code>: {{.Description}}</label>
+    {{end}}
+  </fieldset>
+  {{template "savebuttons" (print .TenantPath "/admin/roles")}}
+</form>
+{{end}}

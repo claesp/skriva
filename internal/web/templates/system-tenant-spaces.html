@@ -1,0 +1,14 @@
+{{define "content"}}
+{{template "tenanthead" .}}
+<table>
+  <thead><tr><th>Name</th><th>Code</th><th>Items</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <tbody>
+  {{range .Data.Spaces}}
+  <tr><td>{{.Name}}</td><td><code>{{.Slug}}</code></td><td>{{.Nodes}}</td>
+    <td class="actions">{{template "tool" (tool (print "/" $.Data.Code "/" .Slug "/") "open" "Open the space")}}</td></tr>
+  {{else}}
+  <tr><td colspan="4">There are no spaces.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}

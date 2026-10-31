@@ -1,8 +1,10 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -13,41 +15,56 @@ import (
 
 var roleNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
-// adminRoutes adds the tenant administration routes.
+// adminRoutes adds the tenant administration routes. Each page has one
+// function: a list, the data of one item, or one form. A GET request to a
+// "new", "delete" or "default-role" path shows the form. The POST request
+// does the action.
 func (s *Server) adminRoutes(mux *http.ServeMux) {
 	p := "/{tenant}/admin"
 	m := rbac.TenantManage
 	mux.Handle("GET "+p+"/{$}", s.require(m, s.handleAdminHome))
 	mux.Handle("GET "+p+"/users", s.require(m, s.handleAdminUsers))
 	mux.Handle("GET "+p+"/users/{id}", s.require(m, s.handleAdminUser))
+	mux.Handle("GET "+p+"/users/{id}/bindings", s.require(m, s.handleAdminUserBindings))
+	mux.Handle("GET "+p+"/users/{id}/permissions", s.require(m, s.handleAdminUserPermissions))
 	mux.Handle("POST "+p+"/users/{id}/disable", s.require(m, s.handleAdminUserDisable(true)))
 	mux.Handle("POST "+p+"/users/{id}/enable", s.require(m, s.handleAdminUserDisable(false)))
 
 	mux.Handle("GET "+p+"/groups", s.require(m, s.handleAdminGroups))
+	mux.Handle("GET "+p+"/groups/new", s.require(m, s.handleAdminGroupNew))
 	mux.Handle("POST "+p+"/groups", s.require(m, s.handleAdminGroupCreate))
 	mux.Handle("GET "+p+"/groups/{id}", s.require(m, s.handleAdminGroup))
+	mux.Handle("GET "+p+"/groups/{id}/bindings", s.require(m, s.handleAdminGroupBindings))
+	mux.Handle("GET "+p+"/groups/{id}/delete", s.require(m, s.handleAdminGroupDeleteForm))
 	mux.Handle("POST "+p+"/groups/{id}/delete", s.require(m, s.handleAdminGroupDelete))
+	mux.Handle("GET "+p+"/groups/{id}/members/new", s.require(m, s.handleAdminMemberNew))
 	mux.Handle("POST "+p+"/groups/{id}/members", s.require(m, s.handleAdminMemberAdd))
 	mux.Handle("POST "+p+"/groups/{id}/members/{user}/remove", s.require(m, s.handleAdminMemberRemove))
 
 	mux.Handle("GET "+p+"/roles", s.require(m, s.handleAdminRoles))
+	mux.Handle("GET "+p+"/roles/new", s.require(m, s.handleAdminRoleNew))
 	mux.Handle("POST "+p+"/roles", s.require(m, s.handleAdminRoleCreate))
+	mux.Handle("GET "+p+"/roles/{id}/delete", s.require(m, s.handleAdminRoleDeleteForm))
 	mux.Handle("POST "+p+"/roles/{id}/delete", s.require(m, s.handleAdminRoleDelete))
 
 	mux.Handle("GET "+p+"/bindings", s.require(m, s.handleAdminBindings))
+	mux.Handle("GET "+p+"/bindings/new", s.require(m, s.handleAdminBindingNew))
 	mux.Handle("POST "+p+"/bindings", s.require(m, s.handleAdminBindingCreate))
 	mux.Handle("POST "+p+"/bindings/{id}/delete", s.require(m, s.handleAdminBindingDelete))
 
 	sm := rbac.SpaceManage
 	mux.Handle("GET "+p+"/spaces", s.require(sm, s.handleAdminSpaces))
+	mux.Handle("GET "+p+"/spaces/new", s.require(sm, s.handleAdminSpaceNew))
 	mux.Handle("POST "+p+"/spaces", s.require(sm, s.handleAdminSpaceCreate))
 	mux.Handle("GET "+p+"/spaces/{slug}", s.require(sm, s.handleAdminSpace))
 	mux.Handle("POST "+p+"/spaces/{slug}", s.require(sm, s.handleAdminSpaceUpdate))
+	mux.Handle("GET "+p+"/spaces/{slug}/delete", s.require(sm, s.handleAdminSpaceDeleteForm))
 	mux.Handle("POST "+p+"/spaces/{slug}/delete", s.require(sm, s.handleAdminSpaceDelete))
 	// The access of a space is part of the access control of the tenant.
 	// Thus it needs tenant.manage, not space.manage.
 	mux.Handle("GET "+p+"/spaces/{slug}/access", s.require(m, s.handleAdminSpaceAccess))
-	mux.Handle("POST "+p+"/spaces/{slug}/access", s.require(m, s.handleAdminSpaceDefaultRole))
+	mux.Handle("GET "+p+"/spaces/{slug}/default-role", s.require(m, s.handleAdminSpaceDefaultRoleForm))
+	mux.Handle("POST "+p+"/spaces/{slug}/default-role", s.require(m, s.handleAdminSpaceDefaultRole))
 }
 
 func pathID(r *http.Request, name string) (int64, bool) {
@@ -66,6 +83,62 @@ func tenantOf(r *http.Request) *store.Tenant { return reqInfoFrom(r.Context()).T
 // adminPath returns the URL path of the tenant administration.
 func adminPath(r *http.Request) string { return tenantPath(tenantOf(r)) + "/admin" }
 
+// csrfOf returns the CSRF token of the session of the request.
+func csrfOf(r *http.Request) string { return reqInfoFrom(r.Context()).Session.CSRFToken }
+
+// bindingTable is the argument of the "bindingtable" template.
+type bindingTable struct {
+	Bindings []store.Binding
+	// Admin is the URL path of the tenant administration.
+	Admin string
+	CSRF  string
+	// ReturnTo is the page that the browser shows after a removal.
+	ReturnTo    string
+	ShowSubject bool
+	ShowScope   bool
+}
+
+// bindings returns the role bindings of the tenant for which keep returns
+// true, in a table for the "bindingtable" template.
+func (s *Server) bindings(r *http.Request, keep func(b store.Binding) bool, returnTo string, subject, scope bool) (bindingTable, error) {
+	all, err := s.store.Bindings(r.Context(), tenantOf(r).ID)
+	if err != nil {
+		return bindingTable{}, err
+	}
+	t := bindingTable{Admin: adminPath(r), CSRF: csrfOf(r), ReturnTo: returnTo, ShowSubject: subject, ShowScope: scope}
+	for _, b := range all {
+		if keep(b) {
+			t.Bindings = append(t.Bindings, b)
+		}
+	}
+	return t, nil
+}
+
+// confirmDelete is the data of the page that asks the user to confirm a
+// deletion. Code is the text that the user must type, or "".
+type confirmDelete struct {
+	Heading string
+	// Parent is the name of the page of Cancel.
+	Parent  string
+	Message string
+	Action  string
+	Code    string
+	Cancel  string
+	CSRF    string
+}
+
+// defaultRoleText describes the default role of a space or a node. A nil
+// role uses the default role of the parent.
+func defaultRoleText(role *string, parent string) string {
+	switch {
+	case role == nil:
+		return "Same as the " + parent
+	case *role == "":
+		return "None. Only users with a role binding have access."
+	}
+	return *role
+}
+
 func (s *Server) handleAdminHome(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, adminPath(r)+"/users", http.StatusSeeOther)
 }
@@ -76,44 +149,78 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "admin-users", "Users", users)
+	s.renderAdmin(w, r, http.StatusOK, "users", "admin-users", "Users", users)
 }
 
-func (s *Server) handleAdminUser(w http.ResponseWriter, r *http.Request) {
+// userHead is the data of the head of the user pages.
+type userHead struct {
+	User   *store.User
+	IsSelf bool
+	Tab    string
+}
+
+// loadUser loads the user from the {id} path value.
+func (s *Server) loadUser(w http.ResponseWriter, r *http.Request, tab string) (userHead, bool) {
 	id, ok := pathID(r, "id")
 	if !ok {
 		s.notFound(w, r)
+		return userHead{}, false
+	}
+	user, err := s.store.User(r.Context(), tenantOf(r).ID, id)
+	if err != nil {
+		s.storeResult(w, r, err)
+		return userHead{}, false
+	}
+	return userHead{user, id == reqInfoFrom(r.Context()).Session.User.ID, tab}, true
+}
+
+func (s *Server) handleAdminUser(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.loadUser(w, r, "details")
+	if !ok {
+		return
+	}
+	groups, err := s.store.UserGroups(r.Context(), tenantOf(r).ID, h.User.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.renderAdmin(w, r, http.StatusOK, "users", "admin-user", h.User.Name(), struct {
+		userHead
+		Groups []store.Group
+	}{h, groups})
+}
+
+func (s *Server) handleAdminUserBindings(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.loadUser(w, r, "bindings")
+	if !ok {
+		return
+	}
+	table, err := s.bindings(r, func(b store.Binding) bool { return b.UserID == h.User.ID },
+		r.URL.Path, false, true)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.renderAdmin(w, r, http.StatusOK, "users", "admin-user-bindings", h.User.Name(), struct {
+		userHead
+		Table bindingTable
+	}{h, table})
+}
+
+// spacePermissions is one row of the per-space permission table.
+type spacePermissions struct {
+	Space       store.Space
+	Permissions []rbac.Permission
+}
+
+func (s *Server) handleAdminUserPermissions(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.loadUser(w, r, "permissions")
+	if !ok {
 		return
 	}
 	ctx := r.Context()
 	t := tenantOf(r)
-	user, err := s.store.User(ctx, t.ID, id)
-	if err != nil {
-		s.storeResult(w, r, err)
-		return
-	}
-	groups, err := s.store.UserGroups(ctx, t.ID, id)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	perms, err := s.store.UserPermissions(ctx, t.ID, id)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	bindings, err := s.store.Bindings(ctx, t.ID)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	var own []store.Binding
-	for _, b := range bindings {
-		if b.UserID == id {
-			own = append(own, b)
-		}
-	}
-	roles, err := s.store.Roles(ctx, t.ID)
+	perms, err := s.store.UserPermissions(ctx, t.ID, h.User.ID)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -123,7 +230,7 @@ func (s *Server) handleAdminUser(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	all, err := s.store.AllSpacePermissions(ctx, t.ID, id)
+	all, err := s.store.AllSpacePermissions(ctx, t.ID, h.User.ID)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -132,16 +239,11 @@ func (s *Server) handleAdminUser(w http.ResponseWriter, r *http.Request) {
 	for i, sp := range spaces {
 		spacePerms[i] = spacePermissions{Space: sp, Permissions: all[sp.ID].List()}
 	}
-	s.render(w, r, http.StatusOK, "admin-user", user.Name(), struct {
-		User             *store.User
-		Groups           []store.Group
+	s.renderAdmin(w, r, http.StatusOK, "users", "admin-user-permissions", h.User.Name(), struct {
+		userHead
 		Permissions      []rbac.Permission
 		SpacePermissions []spacePermissions
-		Bindings         []store.Binding
-		Roles            []store.Role
-		Spaces           []store.Space
-		IsSelf           bool
-	}{user, groups, perms.List(), spacePerms, own, roles, spaces, id == reqInfoFrom(ctx).Session.User.ID})
+	}{h, perms.List(), spacePerms})
 }
 
 func (s *Server) handleAdminUserDisable(disabled bool) http.HandlerFunc {
@@ -171,7 +273,11 @@ func (s *Server) handleAdminGroups(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "admin-groups", "Groups", groups)
+	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-groups", "Groups", groups)
+}
+
+func (s *Server) handleAdminGroupNew(w http.ResponseWriter, r *http.Request) {
+	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group-new", "New local group", nil)
 }
 
 func (s *Server) handleAdminGroupCreate(w http.ResponseWriter, r *http.Request) {
@@ -188,60 +294,75 @@ func (s *Server) handleAdminGroupCreate(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, adminPath(r)+"/groups/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
-func (s *Server) handleAdminGroup(w http.ResponseWriter, r *http.Request) {
+// groupHead is the data of the head of the group pages.
+type groupHead struct {
+	Group *store.Group
+	Tab   string
+}
+
+// loadGroup loads the group from the {id} path value.
+func (s *Server) loadGroup(w http.ResponseWriter, r *http.Request, tab string) (groupHead, bool) {
 	id, ok := pathID(r, "id")
 	if !ok {
 		s.notFound(w, r)
-		return
+		return groupHead{}, false
 	}
-	ctx := r.Context()
-	t := tenantOf(r)
-	group, err := s.store.Group(ctx, t.ID, id)
+	group, err := s.store.Group(r.Context(), tenantOf(r).ID, id)
 	if err != nil {
 		s.storeResult(w, r, err)
+		return groupHead{}, false
+	}
+	return groupHead{group, tab}, true
+}
+
+func (s *Server) handleAdminGroup(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.loadGroup(w, r, "members")
+	if !ok {
 		return
 	}
-	members, err := s.store.GroupMembers(ctx, t.ID, id)
+	members, err := s.store.GroupMembers(r.Context(), tenantOf(r).ID, h.Group.ID)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	var users []*store.User
-	if group.Source == store.GroupLocal {
-		if users, err = s.store.Users(ctx, t.ID); err != nil {
-			s.serverError(w, r, err)
-			return
-		}
+	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group", "Group "+h.Group.Name, struct {
+		groupHead
+		Members []*store.User
+	}{h, members})
+}
+
+func (s *Server) handleAdminGroupBindings(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.loadGroup(w, r, "bindings")
+	if !ok {
+		return
 	}
-	bindings, err := s.store.Bindings(ctx, t.ID)
+	table, err := s.bindings(r, func(b store.Binding) bool { return b.GroupID == h.Group.ID },
+		r.URL.Path, false, true)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	var own []store.Binding
-	for _, b := range bindings {
-		if b.GroupID == id {
-			own = append(own, b)
-		}
-	}
-	roles, err := s.store.Roles(ctx, t.ID)
-	if err != nil {
-		s.serverError(w, r, err)
+	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group-bindings", "Group "+h.Group.Name, struct {
+		groupHead
+		Table bindingTable
+	}{h, table})
+}
+
+func (s *Server) handleAdminGroupDeleteForm(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.loadGroup(w, r, "")
+	if !ok {
 		return
 	}
-	spaces, err := s.store.Spaces(ctx, t.ID)
-	if err != nil {
-		s.serverError(w, r, err)
+	if h.Group.Source != store.GroupLocal {
+		s.badRequest(w, r, "The identity provider controls this group. You cannot delete it.")
 		return
 	}
-	s.render(w, r, http.StatusOK, "admin-group", "Group "+group.Name, struct {
-		Group    *store.Group
-		Members  []*store.User
-		Users    []*store.User
-		Bindings []store.Binding
-		Roles    []store.Role
-		Spaces   []store.Space
-	}{group, members, users, own, roles, spaces})
+	g := adminPath(r) + "/groups/" + strconv.FormatInt(h.Group.ID, 10)
+	s.renderAdmin(w, r, http.StatusOK, "groups", "confirm-delete", "Delete group", confirmDelete{
+		Heading: "Delete group " + h.Group.Name,
+		Message: "Do you want to delete the group and its role bindings? The members lose the roles of the group.",
+		Action:  g + "/delete", Cancel: g, Parent: h.Group.Name, CSRF: csrfOf(r),
+	})
 }
 
 func (s *Server) handleAdminGroupDelete(w http.ResponseWriter, r *http.Request) {
@@ -254,6 +375,38 @@ func (s *Server) handleAdminGroupDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	http.Redirect(w, r, adminPath(r)+"/groups", http.StatusSeeOther)
+}
+
+// handleAdminMemberNew shows the form to add a user to a local group. The
+// list contains only users that are not members.
+func (s *Server) handleAdminMemberNew(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.loadGroup(w, r, "")
+	if !ok {
+		return
+	}
+	if h.Group.Source != store.GroupLocal {
+		s.badRequest(w, r, "The identity provider controls the members of this group.")
+		return
+	}
+	ctx := r.Context()
+	t := tenantOf(r)
+	members, err := s.store.GroupMembers(ctx, t.ID, h.Group.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	users, err := s.store.Users(ctx, t.ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	users = slices.DeleteFunc(users, func(u *store.User) bool {
+		return slices.ContainsFunc(members, func(m *store.User) bool { return m.ID == u.ID })
+	})
+	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group-member-new", "New member", struct {
+		Group *store.Group
+		Users []*store.User
+	}{h.Group, users})
 }
 
 func (s *Server) handleAdminMemberAdd(w http.ResponseWriter, r *http.Request) {
@@ -288,10 +441,11 @@ func (s *Server) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "admin-roles", "Roles", struct {
-		Roles       []store.Role
-		Permissions []rbac.Permission
-	}{roles, rbac.All})
+	s.renderAdmin(w, r, http.StatusOK, "roles", "admin-roles", "Roles", roles)
+}
+
+func (s *Server) handleAdminRoleNew(w http.ResponseWriter, r *http.Request) {
+	s.renderAdmin(w, r, http.StatusOK, "roles", "admin-role-new", "New role", rbac.All)
 }
 
 func (s *Server) handleAdminRoleCreate(w http.ResponseWriter, r *http.Request) {
@@ -318,6 +472,32 @@ func (s *Server) handleAdminRoleCreate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, adminPath(r)+"/roles", http.StatusSeeOther)
 }
 
+// handleAdminRoleDeleteForm asks the user to confirm the deletion of a
+// custom role. A built-in role does not have this page.
+func (s *Server) handleAdminRoleDeleteForm(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r, "id")
+	if !ok {
+		s.notFound(w, r)
+		return
+	}
+	roles, err := s.store.Roles(r.Context(), tenantOf(r).ID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	i := slices.IndexFunc(roles, func(role store.Role) bool { return role.ID == id && !role.Builtin })
+	if i < 0 {
+		s.notFound(w, r)
+		return
+	}
+	rp := adminPath(r) + "/roles"
+	s.renderAdmin(w, r, http.StatusOK, "roles", "confirm-delete", "Delete role", confirmDelete{
+		Heading: "Delete role " + roles[i].Name,
+		Message: "Do you want to delete the role and its role bindings? The users and groups lose the permissions of the role.",
+		Action:  rp + "/" + strconv.FormatInt(id, 10) + "/delete", Cancel: rp, Parent: "Roles", CSRF: csrfOf(r),
+	})
+}
+
 func (s *Server) handleAdminRoleDelete(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r, "id")
 	if !ok {
@@ -331,40 +511,103 @@ func (s *Server) handleAdminRoleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminBindings(w http.ResponseWriter, r *http.Request) {
+	table, err := s.bindings(r, func(store.Binding) bool { return true }, r.URL.Path, true, true)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.renderAdmin(w, r, http.StatusOK, "bindings", "admin-bindings", "Role bindings", table)
+}
+
+// bindingForm is the data of the form for a new role binding. The query
+// of the URL can set the subject ("user:ID" or "group:ID"), the space and
+// the node. The form then does not show these fields.
+type bindingForm struct {
+	Roles        []store.Role
+	Groups       []store.Group
+	Users        []*store.User
+	Spaces       []store.Space
+	Subject      string
+	SubjectLabel string
+	Space        *store.Space
+	Node         *store.Node
+	ReturnTo     string
+}
+
+func (s *Server) handleAdminBindingNew(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	t := tenantOf(r)
-	bindings, err := s.store.Bindings(ctx, t.ID)
-	if err != nil {
+	q := r.URL.Query()
+	f := bindingForm{ReturnTo: safeReturnTo(q.Get("return_to"), adminPath(r))}
+	var err error
+	if f.Roles, err = s.store.Roles(ctx, t.ID); err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	roles, err := s.store.Roles(ctx, t.ID)
-	if err != nil {
+	if subject := q.Get("subject"); subject != "" {
+		if f.Subject, f.SubjectLabel, err = s.subjectLabel(ctx, t.ID, subject); err != nil {
+			s.storeResult(w, r, err)
+			return
+		}
+	} else {
+		if f.Groups, err = s.store.Groups(ctx, t.ID); err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		if f.Users, err = s.store.Users(ctx, t.ID); err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+	}
+	if slug := q.Get("space"); slug != "" {
+		if !spaceSlugRE.MatchString(slug) {
+			s.notFound(w, r)
+			return
+		}
+		if f.Space, err = s.store.Space(ctx, t.ID, slug); err != nil {
+			s.storeResult(w, r, err)
+			return
+		}
+		if pub := q.Get("node"); pub != "" {
+			if !store.ValidPublicID(pub) {
+				s.notFound(w, r)
+				return
+			}
+			if f.Node, err = s.store.Node(ctx, f.Space.ID, pub); err != nil {
+				s.storeResult(w, r, err)
+				return
+			}
+		}
+	} else if f.Spaces, err = s.store.Spaces(ctx, t.ID); err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	groups, err := s.store.Groups(ctx, t.ID)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
+	s.renderAdmin(w, r, http.StatusOK, "bindings", "admin-binding-new", "New role binding", f)
+}
+
+// subjectLabel checks a subject of the form "user:ID" or "group:ID". It
+// returns the subject and a text for the form.
+func (s *Server) subjectLabel(ctx context.Context, tenantID int64, subject string) (string, string, error) {
+	kind, idText, _ := strings.Cut(subject, ":")
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if err != nil || id <= 0 {
+		return "", "", store.ErrNotFound
 	}
-	users, err := s.store.Users(ctx, t.ID)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
+	switch kind {
+	case "user":
+		u, err := s.store.User(ctx, tenantID, id)
+		if err != nil {
+			return "", "", err
+		}
+		return subject, "User " + u.Username, nil
+	case "group":
+		g, err := s.store.Group(ctx, tenantID, id)
+		if err != nil {
+			return "", "", err
+		}
+		return subject, "Group " + g.Name, nil
 	}
-	spaces, err := s.store.Spaces(ctx, t.ID)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	s.render(w, r, http.StatusOK, "admin-bindings", "Role bindings", struct {
-		Bindings []store.Binding
-		Roles    []store.Role
-		Groups   []store.Group
-		Users    []*store.User
-		Spaces   []store.Space
-	}{bindings, roles, groups, users, spaces})
+	return "", "", store.ErrNotFound
 }
 
 // handleAdminBindingCreate gives a role to a user or a group. The form
@@ -379,8 +622,8 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	// An empty "space" field gives a binding for all spaces. The "node"
-	// field (the public ID of a folder in the space) gives a binding for
-	// one folder.
+	// field (the public ID of a folder or a document in the space) gives a
+	// binding for one item.
 	var scope store.Scope
 	if slug := r.PostFormValue("space"); slug != "" {
 		if !spaceSlugRE.MatchString(slug) {
@@ -395,7 +638,7 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 		scope.SpaceID = sp.ID
 		if pub := r.PostFormValue("node"); pub != "" {
 			if !store.ValidPublicID(pub) {
-				s.badRequest(w, r, "The folder is not valid.")
+				s.badRequest(w, r, "The item is not valid.")
 				return
 			}
 			n, err := s.store.Node(r.Context(), sp.ID, pub)
@@ -461,7 +704,11 @@ func (s *Server) handleAdminSpaces(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "admin-spaces", "Spaces", spaces)
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-spaces", "Spaces", spaces)
+}
+
+func (s *Server) handleAdminSpaceNew(w http.ResponseWriter, r *http.Request) {
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-new", "New space", nil)
 }
 
 func (s *Server) handleAdminSpaceCreate(w http.ResponseWriter, r *http.Request) {
@@ -476,16 +723,31 @@ func (s *Server) handleAdminSpaceCreate(w http.ResponseWriter, r *http.Request) 
 	}
 	s.log.Info("space created", "tenant", t.Code, "space", slug,
 		"user_id", reqInfoFrom(r.Context()).Session.User.ID)
-	http.Redirect(w, r, tenantPath(t)+"/"+slug+"/", http.StatusSeeOther)
+	http.Redirect(w, r, adminPath(r)+"/spaces/"+slug, http.StatusSeeOther)
 }
 
-func (s *Server) handleAdminSpace(w http.ResponseWriter, r *http.Request) {
+// spaceHead is the data of the head of the space pages.
+type spaceHead struct {
+	Space *store.Space
+	Tab   string
+}
+
+// loadSpace loads the space from the {slug} path value.
+func (s *Server) loadSpace(w http.ResponseWriter, r *http.Request, tab string) (spaceHead, bool) {
 	sp, err := s.store.Space(r.Context(), tenantOf(r).ID, r.PathValue("slug"))
 	if err != nil {
 		s.storeResult(w, r, err)
+		return spaceHead{}, false
+	}
+	return spaceHead{sp, tab}, true
+}
+
+func (s *Server) handleAdminSpace(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.loadSpace(w, r, "settings")
+	if !ok {
 		return
 	}
-	s.render(w, r, http.StatusOK, "admin-space", "Space "+sp.Name, sp)
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space", "Space "+h.Space.Name, h)
 }
 
 func (s *Server) handleAdminSpaceUpdate(w http.ResponseWriter, r *http.Request) {
@@ -499,6 +761,19 @@ func (s *Server) handleAdminSpaceUpdate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	http.Redirect(w, r, adminPath(r)+"/spaces", http.StatusSeeOther)
+}
+
+func (s *Server) handleAdminSpaceDeleteForm(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.loadSpace(w, r, "")
+	if !ok {
+		return
+	}
+	sp := adminPath(r) + "/spaces/" + h.Space.Slug
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "confirm-delete", "Delete space", confirmDelete{
+		Heading: "Delete space " + h.Space.Name,
+		Message: "Do you want to delete the space? This deletes all folders and documents in it.",
+		Action:  sp + "/delete", Code: h.Space.Slug, Cancel: sp, Parent: h.Space.Name, CSRF: csrfOf(r),
+	})
 }
 
 // handleAdminSpaceDelete removes a space. The user must type the space
@@ -518,61 +793,50 @@ func (s *Server) handleAdminSpaceDelete(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, adminPath(r)+"/spaces", http.StatusSeeOther)
 }
 
-// spacePermissions is one row of the per-space permission table.
-type spacePermissions struct {
-	Space       store.Space
-	Permissions []rbac.Permission
-}
-
 // handleAdminSpaceAccess shows the default role and the role bindings of a
 // space.
 func (s *Server) handleAdminSpaceAccess(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	t := tenantOf(r)
-	sp, err := s.store.Space(ctx, t.ID, r.PathValue("slug"))
-	if err != nil {
-		s.storeResult(w, r, err)
+	h, ok := s.loadSpace(w, r, "access")
+	if !ok {
 		return
 	}
-	bindings, err := s.store.Bindings(ctx, t.ID)
+	table, err := s.bindings(r, func(b store.Binding) bool { return b.SpaceID == h.Space.ID && b.NodeID == 0 },
+		r.URL.Path, true, false)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	var own []store.Binding
-	for _, b := range bindings {
-		if b.SpaceID == sp.ID {
-			own = append(own, b)
-		}
+	parent := "tenant"
+	if role := tenantOf(r).DefaultRole; role != "" {
+		parent += " (" + role + ")"
 	}
-	roles, err := s.store.Roles(ctx, t.ID)
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-access", "Access to "+h.Space.Name, struct {
+		spaceHead
+		DefaultRoleText string
+		Table           bindingTable
+	}{h, defaultRoleText(h.Space.DefaultRole, parent), table})
+}
+
+func (s *Server) handleAdminSpaceDefaultRoleForm(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.loadSpace(w, r, "")
+	if !ok {
+		return
+	}
+	roles, err := s.store.Roles(r.Context(), tenantOf(r).ID)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	groups, err := s.store.Groups(ctx, t.ID)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	users, err := s.store.Users(ctx, t.ID)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	// The default role select uses "-" for "same as the tenant".
+	// The select uses "-" for "same as the tenant".
 	defaultRole := "-"
-	if sp.DefaultRole != nil {
-		defaultRole = *sp.DefaultRole
+	if h.Space.DefaultRole != nil {
+		defaultRole = *h.Space.DefaultRole
 	}
-	s.render(w, r, http.StatusOK, "admin-space-access", "Access to "+sp.Name, struct {
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-default-role", "Default role", struct {
 		Space       *store.Space
 		DefaultRole string
-		Bindings    []store.Binding
 		Roles       []store.Role
-		Groups      []store.Group
-		Users       []*store.User
-	}{sp, defaultRole, own, roles, groups, users})
+	}{h.Space, defaultRole, roles})
 }
 
 // handleAdminSpaceDefaultRole sets the default role of a space. The value
@@ -580,12 +844,8 @@ func (s *Server) handleAdminSpaceAccess(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleAdminSpaceDefaultRole(w http.ResponseWriter, r *http.Request) {
 	t := tenantOf(r)
 	slug := r.PathValue("slug")
-	var role *string
-	switch v := r.PostFormValue("default_role"); {
-	case v == "-":
-	case v == "" || roleNameRE.MatchString(v):
-		role = &v
-	default:
+	role, ok := defaultRoleValue(r)
+	if !ok {
 		s.badRequest(w, r, "The role is not valid.")
 		return
 	}
@@ -595,4 +855,17 @@ func (s *Server) handleAdminSpaceDefaultRole(w http.ResponseWriter, r *http.Requ
 	s.log.Info("space default role changed", "tenant", t.Code, "space", slug,
 		"user_id", reqInfoFrom(r.Context()).Session.User.ID)
 	http.Redirect(w, r, adminPath(r)+"/spaces/"+slug+"/access", http.StatusSeeOther)
+}
+
+// defaultRoleValue reads the field default_role of a form. The value "-"
+// gives nil: the space or the node uses the default role of its parent.
+// The value "" means no default role.
+func defaultRoleValue(r *http.Request) (*string, bool) {
+	switch v := r.PostFormValue("default_role"); {
+	case v == "-":
+		return nil, true
+	case v == "" || roleNameRE.MatchString(v):
+		return &v, true
+	}
+	return nil, false
 }

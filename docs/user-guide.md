@@ -71,7 +71,7 @@ The new item is in the folder or the document that you opened. A folder
 cannot be in a document.
 
 You can also make a document from a wiki link. Write `[[Title of new
-document]]` in a document. Click the link. Then click **Make this
+document]]` in a document. Click the link. Then click **New
 document**.
 
 ## Edit a document
@@ -92,7 +92,7 @@ To change the name of a folder, click **Rename** (pencil).
 
 1. Click **Move** (folder with arrow) in the toolbar.
 2. Select the new place. "(Top of the space)" is the top level.
-3. Click **Move**.
+3. Click **Save**.
 
 The list does not show the item itself and the items in it. For a
 folder, the list shows only folders.
@@ -108,7 +108,7 @@ You cannot undo this.
 ## Restore an old version
 
 1. Click **History** (clock) in the toolbar.
-2. Click **Restore** in the row of the version.
+2. Click **Restore** (arrow in a circle) in the row of the version.
 3. Click **Save**.
 
 The wiki saves the old text as a new version. The history does not
@@ -148,6 +148,11 @@ make a table, use `|` between the columns:
 ```
 
 The wiki does not permit HTML in documents.
+
+## Sign out
+
+Click **Sign out** (arrow out of a door) at the right side of the page
+header.
 
 ## Search
 

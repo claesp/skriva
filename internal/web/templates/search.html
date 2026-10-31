@@ -1,9 +1,11 @@
 {{define "content"}}
 <h1>Search{{if .Space}} in {{.Space.Name}}{{end}}</h1>
-<form action="" method="get" class="inline">
+<form action="" method="get" class="stack">
   <label>Text <input type="search" name="q" value="{{.Data.Query}}" maxlength="200" autofocus></label>
-  <button type="submit">Search</button>
-  {{if and .Space .Data.Query}}<a href="{{.TenantPath}}/search?q={{.Data.Query}}">Search in all spaces</a>{{end}}
+  <div class="buttons">
+    {{if and .Space .Data.Query}}<a class="button secondary" href="{{.TenantPath}}/search?q={{.Data.Query}}">Search in all spaces</a>{{end}}
+    <button type="submit">Search</button>
+  </div>
 </form>
 {{if .Data.Query}}
   {{with .Data.Results}}

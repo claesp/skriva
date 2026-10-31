@@ -17,6 +17,6 @@
 {{with .Data}}
 <nav class="tree-root" aria-label="Contents">{{template "tree" (tree $.SpacePath .)}}</nav>
 {{else}}
-<p>This space is empty.{{if .Can "doc.create"}} <a href="{{.SpacePath}}/new?kind=document&amp;title=Home">Make the first document</a>.{{end}}</p>
+<p>This space is empty.{{if .Can "doc.create"}} Use the toolbar to make the first document.{{end}}</p>
 {{end}}
 {{end}}

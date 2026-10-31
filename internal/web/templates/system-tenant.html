@@ -1,6 +1,6 @@
 {{define "content"}}
 {{with .Data}}
-<h1>{{if .IsNew}}New tenant{{else}}Tenant <code>{{.Code}}</code>{{if .IsDefault}} <span class="tag">default</span>{{end}}{{end}}</h1>
+{{if .IsNew}}{{template "formhead" (crumb "/admin/" "Tenants" "New tenant")}}{{else}}{{template "tenanthead" $}}{{end}}
 {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
 <form method="post" action="/admin/tenants{{if not .IsNew}}/{{.Code}}{{end}}" class="stack narrow">
   {{template "csrf" $.CSRF}}
@@ -45,37 +45,7 @@
     <label>Maximum document size in KiB (1 to 1024) <input name="max_doc_kib" value="{{.MaxDocKiB}}" type="number" min="1" max="1024" required></label>
   </fieldset>
 
-  <div class="buttons">
-    <button type="submit">{{if .IsNew}}Create tenant{{else}}Save{{end}}</button>
-    <a href="/admin/">Cancel</a>
-  </div>
+  {{template "savebuttons" "/admin/"}}
 </form>
-
-{{if not .IsNew}}
-<h2>Spaces</h2>
-<table>
-  <thead><tr><th>Name</th><th>Code</th><th>Items</th></tr></thead>
-  <tbody>
-  {{range .Spaces}}<tr><td><a href="/{{$.Data.Code}}/{{.Slug}}/">{{.Name}}</a></td><td><code>{{.Slug}}</code></td><td>{{.Nodes}}</td></tr>
-  {{else}}<tr><td colspan="3">There are no spaces.</td></tr>{{end}}
-  </tbody>
-</table>
-<form method="post" action="/admin/tenants/{{.Code}}/spaces" class="inline">
-  {{template "csrf" $.CSRF}}
-  <label>Name <input name="name" required maxlength="200"></label>
-  <label>Code (8 characters) <input name="slug" required minlength="8" maxlength="8" pattern="[a-z0-9]{8}"></label>
-  <button type="submit">Create space</button>
-</form>
-
-{{if not .IsDefault}}
-<h2>Delete tenant</h2>
-<p>This deletes all users, groups, roles, spaces and documents of the tenant. You cannot undo this.</p>
-<form method="post" action="/admin/tenants/{{.Code}}/delete" class="inline">
-  {{template "csrf" $.CSRF}}
-  <label>Type <code>{{.Code}}</code> to confirm <input name="confirm" required autocomplete="off"></label>
-  <button type="submit" class="danger">Delete tenant</button>
-</form>
-{{end}}
-{{end}}
 {{end}}
 {{end}}

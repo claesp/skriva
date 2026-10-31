@@ -43,7 +43,8 @@ func (s *Server) spaceRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/history/{id}/{version}", s.node(rbac.DocRead, s.handleRevision))
 	mux.Handle("GET "+p+"/raw/{id}", s.node(rbac.DocRead, s.handleRaw))
 	mux.Handle("GET "+p+"/access/{id}", s.node(rbac.TenantManage, s.handleNodeAccess))
-	mux.Handle("POST "+p+"/access/{id}", s.node(rbac.TenantManage, s.handleNodeDefaultRole))
+	mux.Handle("GET "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRoleForm))
+	mux.Handle("POST "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRole))
 	mux.Handle("GET "+p+"/w/{slug}", s.require("", s.handleWikiLink))
 	mux.Handle("GET "+p+"/recent", s.require("", s.handleRecent))
 	mux.Handle("GET "+p+"/search", s.require("", s.handleSearch))
@@ -212,8 +213,10 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request, n *store.Node
 
 // nodeForm is the data for the form that makes or edits a node.
 type nodeForm struct {
-	// Action is the URL of the form.
+	// Action is the URL of the form. Cancel is the page that the Cancel
+	// button opens.
 	Action      string
+	Cancel      string
 	IsNew       bool
 	Kind        string
 	ParentID    string
@@ -256,6 +259,7 @@ func (s *Server) handleNewForm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) checkParent(w http.ResponseWriter, r *http.Request, f *nodeForm) bool {
 	ri := reqInfoFrom(r.Context())
 	perms := ri.Access.Root()
+	f.Cancel = base(r) + "/"
 	if f.ParentID != "" {
 		if !store.ValidPublicID(f.ParentID) {
 			s.badRequest(w, r, "The parent is not valid.")
@@ -275,6 +279,7 @@ func (s *Server) checkParent(w http.ResponseWriter, r *http.Request, f *nodeForm
 			return false
 		}
 		f.ParentTitle = p.Title
+		f.Cancel = docPath(base(r), p.PublicID, p.Slug)
 		perms = ri.Access.For(p.AccessPathID)
 	}
 	if !perms.Has(rbac.DocCreate) {
@@ -365,7 +370,7 @@ func formStatus(msg string) int {
 
 func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	f := nodeForm{
-		Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind,
+		Action: base(r) + "/edit/" + n.PublicID, Cancel: docPath(base(r), n.PublicID, n.Slug), Kind: n.Kind,
 		Title: n.Title, Body: n.Body, Version: n.Version,
 	}
 	// "from" loads the text of an old revision. The user can then save
@@ -392,7 +397,8 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Nod
 		s.badRequest(w, r, "The form is not valid.")
 		return
 	}
-	f := nodeForm{Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind, Version: version}
+	f := nodeForm{Action: base(r) + "/edit/" + n.PublicID, Cancel: docPath(base(r), n.PublicID, n.Slug),
+		Kind: n.Kind, Version: version}
 	readNodeForm(r, &f)
 	msg, err := s.validateForm(r, &f)
 	if err != nil {
@@ -688,59 +694,42 @@ func (s *Server) handleRecent(w http.ResponseWriter, r *http.Request) {
 // handleNodeAccess shows the default role and the role bindings of a
 // folder or a document.
 func (s *Server) handleNodeAccess(w http.ResponseWriter, r *http.Request, n *store.Node) {
-	ctx := r.Context()
-	t := tenantOf(r)
-	bindings, err := s.store.Bindings(ctx, t.ID)
+	table, err := s.bindings(r, func(b store.Binding) bool { return b.NodeID == n.ID }, r.URL.Path, true, false)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	var own []store.Binding
-	for _, b := range bindings {
-		if b.NodeID == n.ID {
-			own = append(own, b)
-		}
-	}
-	roles, err := s.store.Roles(ctx, t.ID)
+	s.render(w, r, http.StatusOK, "node-access", "Access to "+n.Title, struct {
+		Node            *store.Node
+		DefaultRoleText string
+		Table           bindingTable
+	}{n, defaultRoleText(n.DefaultRole, "parent"), table})
+}
+
+func (s *Server) handleNodeDefaultRoleForm(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	roles, err := s.store.Roles(r.Context(), tenantOf(r).ID)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	groups, err := s.store.Groups(ctx, t.ID)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	users, err := s.store.Users(ctx, t.ID)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	// The default role select uses "-" for "same as the parent".
+	// The select uses "-" for "same as the parent".
 	defaultRole := "-"
 	if n.DefaultRole != nil {
 		defaultRole = *n.DefaultRole
 	}
-	s.render(w, r, http.StatusOK, "node-access", "Access to "+n.Title, struct {
+	s.render(w, r, http.StatusOK, "node-default-role", "Default role", struct {
 		Node        *store.Node
 		DefaultRole string
-		Bindings    []store.Binding
 		Roles       []store.Role
-		Groups      []store.Group
-		Users       []*store.User
-	}{n, defaultRole, own, roles, groups, users})
+	}{n, defaultRole, roles})
 }
 
 // handleNodeDefaultRole sets the default role of a folder or a document.
 // The value "-" means "same as the parent", and "" means no default role.
 func (s *Server) handleNodeDefaultRole(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	ri := reqInfoFrom(r.Context())
-	var role *string
-	switch v := r.PostFormValue("default_role"); {
-	case v == "-":
-	case v == "" || roleNameRE.MatchString(v):
-		role = &v
-	default:
+	role, ok := defaultRoleValue(r)
+	if !ok {
 		s.badRequest(w, r, "The role is not valid.")
 		return
 	}

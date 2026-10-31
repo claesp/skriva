@@ -78,9 +78,12 @@ The default role of a space gives only space permissions.
 ### Make a private space
 
 1. Open "Administration > Spaces".
-2. Click **Access** in the row of the space.
-3. Set the default role to "None".
-4. Give roles for this space to users or groups.
+2. Click **Access** (lock) in the row of the space.
+3. Click **Change the default role** (pencil). Select "None". Click
+   **Save**.
+4. Click **New role binding** (+) for each user or group that must
+   have access. Select the role and the user or the group. Click
+   **Save**.
 
 Users with a role binding for all spaces also have access to a private
 space. For example, a member of the admin group has access to all
@@ -111,8 +114,10 @@ also private.
 1. Open the folder or the document.
 2. Click **Access** (lock) in the toolbar. Only users with `tenant.manage`
    see this button.
-3. Set the default role to "None".
-4. Give roles for this item to users or groups.
+3. Click **Change the default role** (pencil). Select "None". Click
+   **Save**.
+4. Click **New role binding** (+) for each user or group that must
+   have access. Click **Save**.
 
 ### Bindings at a higher level
 

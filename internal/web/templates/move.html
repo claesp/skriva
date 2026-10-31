@@ -10,10 +10,7 @@
     </select>
   </label>
   {{if .Node.IsFolder}}<p><small>A folder can be only in a folder.</small></p>{{end}}
-  <div class="buttons">
-    <button type="submit">Move</button>
-    <a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Cancel</a>
-  </div>
+  {{template "savebuttons" (docpath $.SpacePath .Node.PublicID .Node.Slug)}}
 </form>
 {{end}}
 {{end}}

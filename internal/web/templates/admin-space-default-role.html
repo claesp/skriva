@@ -1,0 +1,17 @@
+{{define "content"}}
+{{with .Data}}
+{{$back := print $.TenantPath "/admin/spaces/" .Space.Slug "/access"}}
+{{template "formhead" (crumb $back .Space.Name "Default role")}}
+<form method="post" action="{{$.TenantPath}}/admin/spaces/{{.Space.Slug}}/default-role" class="stack narrow">
+  {{template "csrf" $.CSRF}}
+  <label>Default role of all signed-in users in this space
+    <select name="default_role" autofocus>
+      <option value="-"{{if eq .DefaultRole "-"}} selected{{end}}>Same as the tenant{{with $.Tenant.DefaultRole}} ({{.}}){{else}} (none){{end}}</option>
+      <option value=""{{if eq .DefaultRole ""}} selected{{end}}>None. Only users with a role binding have access.</option>
+      {{range .Roles}}<option value="{{.Name}}"{{if eq .Name $.Data.DefaultRole}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
+  </label>
+  {{template "savebuttons" $back}}
+</form>
+{{end}}
+{{end}}

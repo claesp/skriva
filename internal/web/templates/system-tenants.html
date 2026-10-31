@@ -1,10 +1,7 @@
 {{define "content"}}
-<div class="pagehead">
-  <h1>Tenants</h1>
-  <nav class="actions"><a class="button" href="/admin/tenants/new">New tenant</a></nav>
-</div>
+{{template "listhead" (head "Tenants" "/admin/tenants/new" "New tenant")}}
 <table>
-  <thead><tr><th>Code</th><th>Name</th><th>Identity provider</th><th>Status</th><th></th></tr></thead>
+  <thead><tr><th>Code</th><th>Name</th><th>Identity provider</th><th>Status</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr>
@@ -12,7 +9,7 @@
     <td>{{.Name}}{{if .IsDefault}} <span class="tag">default</span>{{end}}</td>
     <td>{{if .OIDCConfigured}}<code>{{.OIDCIssuer}}</code>{{else}}<span class="tag danger">Not set</span>{{end}}</td>
     <td>{{if .Disabled}}<span class="tag danger">Disabled</span>{{else}}Active{{end}}</td>
-    <td><a href="/{{.Code}}/">Open</a></td>
+    <td class="actions">{{template "tool" (tool (print "/" .Code "/") "open" "Open the tenant")}}</td>
   </tr>
   {{end}}
   </tbody>

@@ -630,6 +630,84 @@ func TestTenantAdmin(t *testing.T) {
 	wantStatus(t, carol.get("/dflt/"), http.StatusSeeOther)
 }
 
+// TestAdminPages opens each page of the tenant administration. Each form
+// has its own page.
+func TestAdminPages(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	carol := e.login("carol")
+	users, _ := e.st.Users(ctx, e.dft.ID)
+	var carolID int64
+	for _, u := range users {
+		if u.Username == "carol" {
+			carolID = u.ID
+		}
+	}
+	carolPath := "/dflt/admin/users/" + strconv.FormatInt(carolID, 10)
+	resp := alice.post("/dflt/admin/groups", url.Values{"name": {"Team"}})
+	wantStatus(t, resp, http.StatusSeeOther)
+	groupPath := resp.Header.Get("Location")
+	groupID := groupPath[strings.LastIndex(groupPath, "/")+1:]
+	wantStatus(t, alice.post("/dflt/admin/roles", url.Values{"name": {"reader"}, "permission": {"doc.read"}}), http.StatusSeeOther)
+	roles, _ := e.st.Roles(ctx, e.dft.ID)
+	var readerID, viewerID int64
+	for _, r := range roles {
+		switch r.Name {
+		case "reader":
+			readerID = r.ID
+		case "viewer":
+			viewerID = r.ID
+		}
+	}
+
+	pages := []string{
+		"/dflt/admin/users", carolPath, carolPath + "/bindings", carolPath + "/permissions",
+		"/dflt/admin/groups", "/dflt/admin/groups/new", groupPath, groupPath + "/bindings",
+		groupPath + "/members/new", groupPath + "/delete",
+		"/dflt/admin/roles", "/dflt/admin/roles/new", "/dflt/admin/roles/" + strconv.FormatInt(readerID, 10) + "/delete",
+		"/dflt/admin/bindings", "/dflt/admin/bindings/new",
+		"/dflt/admin/bindings/new?subject=group:" + groupID + "&space=default0",
+		"/dflt/admin/spaces", "/dflt/admin/spaces/new", "/dflt/admin/spaces/default0",
+		"/dflt/admin/spaces/default0/access", "/dflt/admin/spaces/default0/default-role",
+		"/dflt/admin/spaces/default0/delete",
+	}
+	for _, p := range pages {
+		wantStatus(t, alice.get(p), http.StatusOK)
+		wantStatus(t, carol.get(p), http.StatusForbidden)
+	}
+
+	// The form for a binding of a group shows the group and the space as
+	// fixed values.
+	b := readBody(t, alice.get("/dflt/admin/bindings/new?subject=group:"+groupID+"&space=default0"))
+	if !strings.Contains(b, "Group Team") || !strings.Contains(b, `name="space" value="default0"`) || strings.Contains(b, `<select name="subject"`) {
+		t.Fatalf("binding form with fixed values:\n%s", b)
+	}
+	wantStatus(t, alice.get("/dflt/admin/bindings/new?subject=group:999999"), http.StatusNotFound)
+	wantStatus(t, alice.get("/dflt/admin/bindings/new?space=nothere0"), http.StatusNotFound)
+	// A built-in role has no delete page.
+	wantStatus(t, alice.get("/dflt/admin/roles/"+strconv.FormatInt(viewerID, 10)+"/delete"), http.StatusNotFound)
+
+	// The list of new members does not show members.
+	wantStatus(t, alice.post(groupPath+"/members", url.Values{"user_id": {strconv.FormatInt(carolID, 10)}}), http.StatusSeeOther)
+	if b := readBody(t, alice.get(groupPath+"/members/new")); strings.Contains(b, ">carol") {
+		t.Fatalf("member form shows a member:\n%s", b)
+	}
+	// The members page has a remove button for each member.
+	if b := readBody(t, alice.get(groupPath)); !strings.Contains(b, "/members/"+strconv.FormatInt(carolID, 10)+"/remove") {
+		t.Fatalf("members page has no remove button:\n%s", b)
+	}
+	// An OIDC group has no member form and no delete page.
+	groups, _ := e.st.Groups(ctx, e.dft.ID)
+	for _, g := range groups {
+		if g.Source == "oidc" {
+			p := "/dflt/admin/groups/" + strconv.FormatInt(g.ID, 10)
+			wantStatus(t, alice.get(p+"/members/new"), http.StatusBadRequest)
+			wantStatus(t, alice.get(p+"/delete"), http.StatusBadRequest)
+			break
+		}
+	}
+}
+
 func TestSystemAdmin(t *testing.T) {
 	e := newEnv(t)
 
@@ -695,6 +773,14 @@ func TestSystemAdmin(t *testing.T) {
 
 	// A space for the new tenant.
 	wantStatus(t, root.post("/admin/tenants/acme/spaces", url.Values{"name": {"Docs"}, "slug": {"acmedocs"}}), http.StatusSeeOther)
+	if b := readBody(t, root.get("/admin/tenants/acme/spaces")); !strings.Contains(b, "acmedocs") {
+		t.Fatalf("spaces page of the tenant:\n%s", b)
+	}
+	for _, p := range []string{"/admin/tenants/new", "/admin/tenants/acme/spaces/new", "/admin/tenants/acme/delete"} {
+		wantStatus(t, root.get(p), http.StatusOK)
+	}
+	// The default tenant has no delete page.
+	wantStatus(t, root.get("/admin/tenants/dflt/delete"), http.StatusBadRequest)
 
 	// Users of the new tenant. The admin group of the tenant has the
 	// admin role.
@@ -754,9 +840,9 @@ func TestSpacePermissions(t *testing.T) {
 	// Make a private space with a document.
 	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Secret"}, "slug": {"secret00"}}), http.StatusSeeOther)
 	wantStatus(t, alice.get("/dflt/admin/spaces/secret00/access"), http.StatusOK)
-	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/access", url.Values{"default_role": {"bad role"}}), http.StatusBadRequest)
-	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/access", url.Values{"default_role": {"nothere"}}), http.StatusBadRequest)
-	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/access", url.Values{"default_role": {""}}), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/default-role", url.Values{"default_role": {"bad role"}}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/default-role", url.Values{"default_role": {"nothere"}}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/default-role", url.Values{"default_role": {""}}), http.StatusSeeOther)
 	resp := alice.post("/dflt/secret00/new", url.Values{"kind": {"document"}, "title": {"Plans"}, "body": {"walrus"}, "action": {"save"}})
 	wantStatus(t, resp, http.StatusSeeOther)
 	doc := resp.Header.Get("Location")
@@ -811,7 +897,7 @@ func TestSpacePermissions(t *testing.T) {
 		t.Fatalf("tenant page of carol after the binding:\n%s", b)
 	}
 	// The user page shows the permissions per space.
-	if b := readBody(t, alice.get("/dflt/admin/users/"+strconv.FormatInt(carolID, 10))); !strings.Contains(b, "<code>doc.edit</code>") {
+	if b := readBody(t, alice.get("/dflt/admin/users/"+strconv.FormatInt(carolID, 10)+"/permissions")); !strings.Contains(b, "<code>doc.edit</code>") {
 		t.Fatalf("user page does not show the space permissions:\n%s", b)
 	}
 
@@ -827,7 +913,7 @@ func TestSpacePermissions(t *testing.T) {
 	}
 
 	// "Same as the tenant" gives the tenant default role back.
-	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/access", url.Values{"default_role": {"-"}}), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/default-role", url.Values{"default_role": {"-"}}), http.StatusSeeOther)
 	sp2, _ := e.st.Space(ctx, e.dft.ID, "secret00")
 	if sp2.DefaultRole != nil {
 		t.Fatalf("default role = %q", *sp2.DefaultRole)
@@ -856,7 +942,7 @@ func TestFolderPermissions(t *testing.T) {
 	wantStatus(t, carol.get(sp+"/access/"+hr), http.StatusForbidden)
 	wantStatus(t, bob.get(sp+"/access/"+hr), http.StatusForbidden)
 	wantStatus(t, alice.get(sp+"/access/"+salaries), http.StatusOK)
-	wantStatus(t, alice.post(sp+"/access/"+hr, url.Values{"default_role": {""}}), http.StatusSeeOther)
+	wantStatus(t, alice.post(sp+"/access/"+hr+"/default-role", url.Values{"default_role": {""}}), http.StatusSeeOther)
 	wantStatus(t, alice.get(sp+"/access/"+hr), http.StatusOK)
 
 	for _, p := range []string{"/d/" + hr, "/d/" + salaries, "/history/" + salaries, "/raw/" + salaries, "/edit/" + salaries} {
@@ -932,8 +1018,8 @@ func TestFolderPermissions(t *testing.T) {
 	// maintainer, and the inner folder gets no default role. Dave has only
 	// default roles. Thus dave cannot delete HR, because he cannot delete
 	// the inner folder.
-	wantStatus(t, alice.post(sp+"/access/"+hr, url.Values{"default_role": {"maintainer"}}), http.StatusSeeOther)
-	wantStatus(t, alice.post(sp+"/access/"+inner, url.Values{"default_role": {""}}), http.StatusSeeOther)
+	wantStatus(t, alice.post(sp+"/access/"+hr+"/default-role", url.Values{"default_role": {"maintainer"}}), http.StatusSeeOther)
+	wantStatus(t, alice.post(sp+"/access/"+inner+"/default-role", url.Values{"default_role": {""}}), http.StatusSeeOther)
 	dave := e.login("dave")
 	if b := readBody(t, dave.get(sp+"/delete/"+hr)); !strings.Contains(b, "You cannot delete this item") {
 		t.Fatalf("delete form of dave:\n%s", b)
@@ -963,12 +1049,12 @@ func TestDocumentPermissions(t *testing.T) {
 
 	// The default is "Same as the parent": carol can read the document.
 	wantStatus(t, carol.get(sp+"/d/"+plan+"/plan"), http.StatusOK)
-	if b := readBody(t, alice.get(sp+"/access/"+plan)); !strings.Contains(b, `value="-" selected`) {
+	if b := readBody(t, alice.get(sp+"/access/"+plan+"/default-role")); !strings.Contains(b, `value="-" selected`) {
 		t.Fatalf("access page of a document does not show the default:\n%s", b)
 	}
 
 	// A private document. Its sub-documents inherit the setting.
-	wantStatus(t, alice.post(sp+"/access/"+plan, url.Values{"default_role": {""}}), http.StatusSeeOther)
+	wantStatus(t, alice.post(sp+"/access/"+plan+"/default-role", url.Values{"default_role": {""}}), http.StatusSeeOther)
 	wantStatus(t, carol.get(sp+"/d/"+plan+"/plan"), http.StatusNotFound)
 	wantStatus(t, carol.get(sp+"/d/"+detail+"/detail"), http.StatusNotFound)
 	wantStatus(t, carol.get(sp+"/d/"+other+"/other"), http.StatusOK)
@@ -988,7 +1074,7 @@ func TestDocumentPermissions(t *testing.T) {
 	wantStatus(t, dave.get(sp+"/d/"+plan+"/plan"), http.StatusNotFound)
 
 	// "Same as the parent" gives the access of the folder back.
-	wantStatus(t, alice.post(sp+"/access/"+plan, url.Values{"default_role": {"-"}}), http.StatusSeeOther)
+	wantStatus(t, alice.post(sp+"/access/"+plan+"/default-role", url.Values{"default_role": {"-"}}), http.StatusSeeOther)
 	wantStatus(t, dave.get(sp+"/d/"+detail+"/detail"), http.StatusOK)
 }
 

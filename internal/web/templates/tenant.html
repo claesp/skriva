@@ -1,4 +1,10 @@
 {{define "content"}}
+{{if .Can "space.manage"}}
+<div class="topbar">
+  <span></span>
+  <nav class="toolbar" aria-label="Tools"><span class="group">{{template "tool" (tool (print .TenantPath "/admin/spaces") "settings" "Manage spaces")}}</span></nav>
+</div>
+{{end}}
 <h1>Spaces</h1>
 {{with .Data}}
 <ul class="cards">
@@ -13,5 +19,4 @@
 {{else}}
 <p>This tenant has no spaces.</p>
 {{end}}
-{{if .Can "space.manage"}}<p><a class="button" href="{{.TenantPath}}/admin/spaces">Manage spaces</a></p>{{end}}
 {{end}}

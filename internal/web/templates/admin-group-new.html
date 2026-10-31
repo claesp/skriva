@@ -1,0 +1,9 @@
+{{define "content"}}
+{{template "formhead" (crumb (print .TenantPath "/admin/groups") "Groups" "New local group")}}
+<form method="post" action="{{.TenantPath}}/admin/groups" class="stack narrow">
+  {{template "csrf" .CSRF}}
+  <label>Name <input name="name" required maxlength="200" autofocus></label>
+  <label>Description <input name="description" maxlength="500"></label>
+  {{template "savebuttons" (print .TenantPath "/admin/groups")}}
+</form>
+{{end}}
