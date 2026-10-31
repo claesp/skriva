@@ -763,6 +763,10 @@ func TestAdminPages(t *testing.T) {
 	if b := readBody(t, alice.get(groupPath)); !strings.Contains(b, "/members/"+strconv.FormatInt(carolID, 10)+"/remove") {
 		t.Fatalf("members page has no remove button:\n%s", b)
 	}
+	// The list of groups shows the source as text.
+	if b := readBody(t, alice.get("/dflt/admin/groups")); !strings.Contains(b, "<td>OpenID Connect</td>") || !strings.Contains(b, "<td>Local</td>") {
+		t.Fatalf("groups page does not show the source as text:\n%s", b)
+	}
 	// An OIDC group has no member form and no delete page.
 	groups, _ := e.st.Groups(ctx, e.dft.ID)
 	for _, g := range groups {

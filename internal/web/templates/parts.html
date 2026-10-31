@@ -5,7 +5,7 @@
 {{define "subjectselect"}}<label>Give to
     <select name="subject" required>
       <optgroup label="Groups">
-        {{range .Groups}}<option value="group:{{.ID}}">{{.Name}} ({{.Source}})</option>{{end}}
+        {{range .Groups}}<option value="group:{{.ID}}">{{.Name}} ({{source .Source}})</option>{{end}}
       </optgroup>
       <optgroup label="Users">
         {{range .Users}}<option value="user:{{.ID}}">{{.Username}}</option>{{end}}
@@ -22,7 +22,7 @@
   {{range .Bindings}}
   <tr>
     <td>{{.RoleName}}</td>
-    {{if $.ShowSubject}}<td>{{if .GroupID}}Group <a href="{{$.Admin}}/groups/{{.GroupID}}">{{.GroupName}}</a> <span class="tag">{{.GroupSource}}</span>{{else}}User <a href="{{$.Admin}}/users/{{.UserID}}">{{.UserName}}</a>{{end}}</td>{{end}}
+    {{if $.ShowSubject}}<td>{{if .GroupID}}Group <a href="{{$.Admin}}/groups/{{.GroupID}}">{{.GroupName}}</a> ({{source .GroupSource}}){{else}}User <a href="{{$.Admin}}/users/{{.UserID}}">{{.UserName}}</a>{{end}}</td>{{end}}
     {{if $.ShowScope}}<td>{{template "scope" .}}</td>{{end}}
     <td class="actions">{{template "post" (post (print $.Admin "/bindings/" .ID "/delete") "remove" "Remove" $.CSRF $.ReturnTo)}}</td>
   </tr>

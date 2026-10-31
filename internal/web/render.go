@@ -110,6 +110,7 @@ var funcs = template.FuncMap{
 		return crumbArgs{rootURL, rootLabel, parentURL, parentLabel, title, icon}
 	},
 	"items":       func(base string, nodes any) itemsArgs { return itemsArgs{base, nodes} },
+	"source":      groupSource,
 	"defaultrole": func(text, editURL string) defaultRoleArgs { return defaultRoleArgs{text, editURL} },
 	// ntool is a button in the toolbar of a node. The button of the
 	// current tab is marked and opens closeURL. Thus a second click ends
@@ -288,4 +289,15 @@ func (s *Server) staticHandler() http.Handler {
 		}
 		files.ServeHTTP(w, r)
 	})
+}
+
+// groupSource gives the text for the source of a group.
+func groupSource(source string) string {
+	switch source {
+	case store.GroupOIDC:
+		return "OpenID Connect"
+	case store.GroupLocal:
+		return "Local"
+	}
+	return source
 }

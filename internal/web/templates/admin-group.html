@@ -6,7 +6,7 @@
 <div class="pagehead"><h1>{{.Group.Name}}</h1></div>
 <table class="settings">
   <tbody>
-    <tr><th scope="row">Source</th><td><span class="tag">{{.Group.Source}}</span>{{if not $local}} The identity provider controls the members.{{end}}</td></tr>
+    <tr><th scope="row">Source</th><td>{{source .Group.Source}}.{{if not $local}} The identity provider controls the members.{{end}}</td></tr>
     <tr><th scope="row">Description</th><td>{{.Group.Description}}</td></tr>
   </tbody>
 </table>

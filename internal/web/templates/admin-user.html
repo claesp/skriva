@@ -20,7 +20,7 @@
   <thead><tr><th>Name</th><th>Source</th></tr></thead>
   <tbody>
   {{range .Groups}}
-  <tr><td><a href="{{$.TenantPath}}/admin/groups/{{.ID}}">{{.Name}}</a></td><td><span class="tag">{{.Source}}</span></td></tr>
+  <tr><td><a href="{{$.TenantPath}}/admin/groups/{{.ID}}">{{.Name}}</a></td><td>{{source .Source}}</td></tr>
   {{else}}
   <tr><td colspan="2">The user is not a member of a group.</td></tr>
   {{end}}
