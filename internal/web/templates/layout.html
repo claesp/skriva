@@ -25,9 +25,14 @@
   {{if .Session}}
   <nav aria-label="Main">
     <a href="{{.TenantPath}}/">Spaces</a>
-    {{if .Space}}<a href="{{.SpacePath}}/recent">Recent changes</a>{{end}}
     {{if or (.Can "tenant.manage") (.Can "space.manage")}}<a href="{{.TenantPath}}/admin/{{if not (.Can "tenant.manage")}}spaces{{end}}">Administration</a>{{end}}
   </nav>
+  {{if and .New .Space (.Can "doc.create")}}
+  <nav class="toolbar new" aria-label="New">
+    {{template "tool" (tool (print .SpacePath "/new" (.New.Query "document")) "new-document" "New document")}}
+    {{if .New.Folder}}{{template "tool" (tool (print .SpacePath "/new" (.New.Query "folder")) "new-folder" "New folder")}}{{end}}
+  </nav>
+  {{end}}
   <form class="search" action="{{if .Space}}{{.SpacePath}}{{else}}{{.TenantPath}}{{end}}/search" method="get" role="search">
     <input type="search" name="q" placeholder="Search{{if .Space}} in {{.Space.Name}}{{end}}" aria-label="Search" maxlength="200">
   </form>
@@ -114,6 +119,7 @@
     <li><a href="{{.TenantPath}}/admin/groups"{{if eq .Section "groups"}} aria-current="page"{{end}}>{{template "icon" "group"}}Groups</a></li>
     <li><a href="{{.TenantPath}}/admin/roles"{{if eq .Section "roles"}} aria-current="page"{{end}}>{{template "icon" "role"}}Roles</a></li>
     <li><a href="{{.TenantPath}}/admin/bindings"{{if eq .Section "bindings"}} aria-current="page"{{end}}>{{template "icon" "binding"}}Role bindings</a></li>
+    <li><a href="{{.TenantPath}}/admin/recent"{{if eq .Section "recent"}} aria-current="page"{{end}}>{{template "icon" "history"}}Recent changes</a></li>
     {{end}}
     {{if .Can "space.manage"}}
     <li><a href="{{.TenantPath}}/admin/spaces"{{if eq .Section "spaces"}} aria-current="page"{{end}}>{{template "icon" "space"}}Spaces</a></li>

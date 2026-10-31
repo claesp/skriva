@@ -433,12 +433,37 @@ func (s *Store) NodesBySlug(ctx context.Context, spaceID int64, slug string) ([]
 		ORDER BY kind = 'folder', created_at, id LIMIT 50`, spaceID, slug)
 }
 
-// RecentNodes returns the documents of a space that changed last.
-func (s *Store) RecentNodes(ctx context.Context, spaceID int64, limit int) ([]NodeSummary, error) {
-	return s.summaries(ctx, `
-		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
-		WHERE space_id = $1 AND kind = 'document'
-		ORDER BY updated_at DESC LIMIT $2`, spaceID, limit)
+// RecentChange is a document in the list of recent changes of a tenant.
+type RecentChange struct {
+	NodeSummary
+	SpaceID   int64
+	SpaceSlug string
+	SpaceName string
+}
+
+// RecentChanges returns the documents of a tenant that changed last. The
+// caller must remove the documents that the user cannot read.
+func (s *Store) RecentChanges(ctx context.Context, tenantID int64, limit int) ([]RecentChange, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id,
+		       sp.id, sp.slug, sp.name
+		FROM nodes n JOIN spaces sp ON sp.id = n.space_id
+		WHERE sp.tenant_id = $1 AND n.kind = 'document'
+		ORDER BY n.updated_at DESC LIMIT $2`, tenantID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RecentChange
+	for rows.Next() {
+		var c RecentChange
+		if err := rows.Scan(&c.ID, &c.PublicID, &c.ParentID, &c.Kind, &c.Title, &c.Slug, &c.UpdatedAt,
+			&c.AccessPathID, &c.SpaceID, &c.SpaceSlug, &c.SpaceName); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) summaries(ctx context.Context, sql string, args ...any) ([]NodeSummary, error) {

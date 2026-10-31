@@ -20,7 +20,7 @@ import (
 var (
 	formActionRE = regexp.MustCompile(`<form[^>]+id="kc-form-login"[^>]+action="([^"]+)"`)
 	csrfRE       = regexp.MustCompile(`name="csrf_token" value="([^"]+)"`)
-	docIDRE      = regexp.MustCompile(`/d/([0-9A-Za-z]{12})(/|$)`)
+	docIDRE      = regexp.MustCompile(`/d/([0-9a-z]{14})(/|$)`)
 )
 
 type browser struct {

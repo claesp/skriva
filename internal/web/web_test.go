@@ -258,7 +258,7 @@ func (c *client) create(kind, parent, title, body string) string {
 	})
 	wantStatus(c.e.t, resp, http.StatusSeeOther)
 	loc := resp.Header.Get("Location")
-	m := regexp.MustCompile(`^` + sp + `/d/([0-9A-Za-z]{12})(/|$)`).FindStringSubmatch(loc)
+	m := regexp.MustCompile(`^` + sp + `/d/([0-9a-z]{14})(/|$)`).FindStringSubmatch(loc)
 	if m == nil {
 		c.e.t.Fatalf("create redirects to %q", loc)
 	}
@@ -517,7 +517,32 @@ func TestTreeAndDocuments(t *testing.T) {
 	wantStatus(t, mary.get(sp+"/d/"+install), http.StatusNotFound)
 	wantStatus(t, mary.get(sp+"/d/"+linux+"/install-on-linux"), http.StatusOK)
 
-	wantStatus(t, bob.get(sp+"/recent"), http.StatusOK)
+	// Recent changes are in the administration. They show only documents
+	// that the user can read.
+	wantStatus(t, bob.get("/dflt/admin/recent"), http.StatusForbidden)
+	alice := e.login("alice")
+	if b := readBody(t, alice.get("/dflt/admin/recent")); !strings.Contains(b, "Install on Linux") {
+		t.Fatalf("recent changes:\n%s", b)
+	}
+
+	// Public IDs are in lower case. An ID in upper case goes to the URL
+	// in lower case.
+	resp = bob.get(sp + "/d/" + strings.ToUpper(linux) + "/Install-On-Linux")
+	wantStatus(t, resp, http.StatusFound)
+	if loc := resp.Header.Get("Location"); loc != sp+"/d/"+linux+"/install-on-linux" {
+		t.Fatalf("redirect to %q", loc)
+	}
+
+	// The page header has the buttons for new items. A document can
+	// contain only documents.
+	b := readBody(t, bob.get(sp+"/d/"+linux+"/install-on-linux"))
+	if !strings.Contains(b, "new?kind=document&amp;parent="+linux) || strings.Contains(b, "kind=folder") {
+		t.Fatalf("header buttons on a document page:\n%s", b)
+	}
+	b = readBody(t, bob.get(sp+"/"))
+	if !strings.Contains(b, `new?kind=document"`) || !strings.Contains(b, `new?kind=folder"`) {
+		t.Fatalf("header buttons on the space page:\n%s", b)
+	}
 }
 
 func TestValidation(t *testing.T) {
@@ -905,7 +930,7 @@ func TestSpacePermissions(t *testing.T) {
 	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
 		"role": {"admin"}, "subject": {subject}, "space": {"secret00"},
 	}), http.StatusSeeOther)
-	wantStatus(t, carol.post("/dflt/secret00/delete/"+doc[strings.Index(doc, "/d/")+3:][:12], nil), http.StatusSeeOther)
+	wantStatus(t, carol.post("/dflt/secret00/delete/"+doc[strings.Index(doc, "/d/")+3:][:store.PublicIDLength], nil), http.StatusSeeOther)
 	wantStatus(t, carol.get("/dflt/admin/users"), http.StatusForbidden)
 	wantStatus(t, carol.get("/dflt/admin/spaces"), http.StatusForbidden)
 	if b := readBody(t, carol.get("/dflt/secret00/")); strings.Contains(b, "Administration") {
@@ -958,15 +983,12 @@ func TestFolderPermissions(t *testing.T) {
 	if b := readBody(t, carol.get("/dflt/search?q=payroll")); strings.Contains(b, "Salaries") {
 		t.Fatalf("tenant search of carol finds the private document:\n%s", b)
 	}
-	if b := readBody(t, carol.get(sp+"/recent")); strings.Contains(b, "Salaries") {
-		t.Fatalf("recent changes of carol show the private document:\n%s", b)
-	}
 	wantStatus(t, carol.get(sp+"/w/salaries"), http.StatusNotFound)
 	wantStatus(t, bob.get(sp+"/d/"+salaries+"/salaries"), http.StatusOK)
 
 	// Give carol the editor role for the folder HR only.
 	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
-		"role": {"editor"}, "subject": {ids["carol"]}, "space": {"default0"}, "node": {"000000000000"},
+		"role": {"editor"}, "subject": {ids["carol"]}, "space": {"default0"}, "node": {"00000000000000"},
 	}), http.StatusNotFound)
 	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
 		"role": {"editor"}, "subject": {ids["carol"]}, "space": {"default0"}, "node": {hr},

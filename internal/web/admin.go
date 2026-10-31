@@ -47,6 +47,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/roles/{id}/delete", s.require(m, s.handleAdminRoleDeleteForm))
 	mux.Handle("POST "+p+"/roles/{id}/delete", s.require(m, s.handleAdminRoleDelete))
 
+	mux.Handle("GET "+p+"/recent", s.require(m, s.handleAdminRecent))
 	mux.Handle("GET "+p+"/bindings", s.require(m, s.handleAdminBindings))
 	mux.Handle("GET "+p+"/bindings/new", s.require(m, s.handleAdminBindingNew))
 	mux.Handle("POST "+p+"/bindings", s.require(m, s.handleAdminBindingCreate))
@@ -508,6 +509,38 @@ func (s *Server) handleAdminRoleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, adminPath(r)+"/roles", http.StatusSeeOther)
+}
+
+// handleAdminRecent shows the documents of the tenant that changed last.
+// It shows only the documents that the user can read.
+func (s *Server) handleAdminRecent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	t := tenantOf(r)
+	userID := reqInfoFrom(ctx).Session.User.ID
+	list, err := s.store.RecentChanges(ctx, t.ID, 200)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	access := map[int64]*store.Access{}
+	var out []store.RecentChange
+	for _, c := range list {
+		acc, ok := access[c.SpaceID]
+		if !ok {
+			if acc, err = s.store.Access(ctx, t.ID, c.SpaceID, userID); err != nil {
+				s.serverError(w, r, err)
+				return
+			}
+			access[c.SpaceID] = acc
+		}
+		if acc.Can(c.AccessPathID, rbac.DocRead) {
+			out = append(out, c)
+			if len(out) == 50 {
+				break
+			}
+		}
+	}
+	s.renderAdmin(w, r, http.StatusOK, "recent", "admin-recent", "Recent changes", out)
 }
 
 func (s *Server) handleAdminBindings(w http.ResponseWriter, r *http.Request) {

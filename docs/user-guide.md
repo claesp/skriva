@@ -10,29 +10,40 @@ sign-in. If you use more than one tenant, sign in to each tenant.
 
 ## Spaces, folders and documents
 
-- The start page of a tenant shows its **spaces**.
+- The start page of a tenant shows its **spaces** in a table, with the
+  number of items and the date of the last change.
 - A space contains **folders** and **documents** in a tree.
 - A folder contains documents and other folders.
 - A document contains text. It can also contain other documents, for
   example a main document with sub-documents.
 
-The page of a document shows the tree of the space at the left side of
-the window. A folder has a folder icon. A document has a page icon. Click
-the small arrow at the left of an item to open or close it in the tree.
-The path to the document is above the title.
+The pages of a space, a folder and a document show the tree of the
+space at the left side of the window. The start page shows the list of
+spaces there. A folder has a folder icon. A document has a page icon.
+Click the small arrow at the left of an item to open or close it in the
+tree. The page of a space and the page of a folder show their items in a
+table.
+
+## Buttons for new items
+
+The page header contains **New document** (page with +) and **New
+folder** (folder with +), at the left of the search field. The new item
+goes into the space, the folder or the document that you have open.
+**New folder** is not available on a document page, because a folder
+cannot be in a document.
 
 ## Toolbar
 
-The toolbar is at the top of the page, at the right of the path. It stays
-at the top when you scroll. Each button is an icon. Put the mouse pointer
-on a button to see its name. The toolbar shows only the buttons for the
-actions that you have permission for.
+The toolbar is below the page header. It covers the full width of the
+page. The path to the item is at the left side and the buttons are at
+the right side. The toolbar stays at the top when you scroll. Each button
+is an icon. Put the mouse pointer on a button to see its name. The
+toolbar shows only the buttons for the actions that you have permission
+for.
 
 | Icon         | Name         | Action |
 |--------------|--------------|--------|
 | Pencil       | Edit         | Change the text of the document. For a folder, the name is **Rename**. |
-| Page with +  | New document | Make a document in this item. |
-| Folder with + | New folder  | Make a folder in this folder. |
 | Clock        | History      | Show the old versions of the document. |
 | `< >`        | Source       | Show the Markdown text of the document. |
 | Folder with arrow | Move    | Move the item to a different place. |
@@ -52,8 +63,8 @@ read, the wiki shows "not found".
 
 Each document has two links:
 
-- The full link, for example `/acme/handbook/d/Hq7mZp2Kx4aB/install`.
-- The short link, for example `/acme/handbook/d/Hq7mZp2Kx4aB`. The
+- The full link, for example `/acme/handbook/d/k3x9p2qa7tm4zb/install`.
+- The short link, for example `/acme/handbook/d/k3x9p2qa7tm4zb`. The
   bottom of the page shows it.
 
 The two links stay valid when the title changes or when the document
@@ -62,7 +73,7 @@ moves. Only users with access to the tenant can open them.
 ## Make a document or a folder
 
 1. Open the space, a folder or a document.
-2. Click **New document** or **New folder** in the toolbar.
+2. Click **New document** or **New folder** in the page header.
 3. Type the title.
 4. For a document, type the text.
 5. Click **Save**.
@@ -148,6 +159,12 @@ make a table, use `|` between the columns:
 ```
 
 The wiki does not permit HTML in documents.
+
+## Recent changes
+
+Administrators with the permission `tenant.manage` see the documents
+that changed last, in all spaces. Open **Administration**, then click
+**Recent changes** in the menu.
 
 ## Sign out
 

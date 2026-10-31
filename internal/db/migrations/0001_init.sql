@@ -118,7 +118,7 @@ CREATE TABLE nodes (
     id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     space_id       bigint      NOT NULL REFERENCES spaces (id) ON DELETE CASCADE,
     -- The public ID is in the URL. It is random, thus nobody can guess it.
-    public_id      text        NOT NULL UNIQUE CHECK (public_id ~ '^[0-9A-Za-z]{12}$'),
+    public_id      text        NOT NULL UNIQUE CHECK (public_id ~ '^[0-9a-z]{14}$'),
     parent_id      bigint,
     kind           text        NOT NULL CHECK (kind IN ('folder', 'document')),
     title          text        NOT NULL CHECK (length(title) BETWEEN 1 AND 200),

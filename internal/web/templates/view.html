@@ -1,11 +1,7 @@
 {{define "content"}}
 {{with .Data}}
 <div class="with-sidebar">
-<aside class="sidebar" aria-label="Contents">
-  {{template "tree" (tree $.SpacePath .Tree)}}
-</aside>
-<div class="main reading">
-<div class="topbar">
+<div class="topbar wide">
 <nav class="breadcrumbs" aria-label="Path">
   <a href="{{$.SpacePath}}/">{{$.Space.Name}}</a>
   {{range .Ancestors}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{end}}
@@ -15,10 +11,6 @@
   {{if $.Can "doc.edit"}}<span class="group">
     {{if .Node.IsFolder}}{{template "tool" (tool (print $.SpacePath "/edit/" $id) "edit" "Rename")}}
     {{else}}{{template "tool" (tool (print $.SpacePath "/edit/" $id) "edit" "Edit")}}{{end}}
-  </span>{{end}}
-  {{if $.Can "doc.create"}}<span class="group">
-    {{template "tool" (tool (print $.SpacePath "/new?kind=document&parent=" $id) "new-document" "New document")}}
-    {{if .Node.IsFolder}}{{template "tool" (tool (print $.SpacePath "/new?kind=folder&parent=" $id) "new-folder" "New folder")}}{{end}}
   </span>{{end}}
   {{if not .Node.IsFolder}}<span class="group">
     {{template "tool" (tool (print $.SpacePath "/history/" $id) "history" "History")}}
@@ -33,22 +25,29 @@
   </span>{{end}}
 </nav>
 </div>
+<aside class="sidebar" aria-label="Contents">
+  {{template "tree" (tree $.SpacePath .Tree)}}
+</aside>
+<div class="main reading">
 <div class="pagehead">
   <h1>{{if .Node.IsFolder}}{{template "icon" "folder"}}{{end}}{{.Node.Title}}</h1>
 </div>
-{{if not .Node.IsFolder}}<article class="markdown">{{.HTML}}</article>{{end}}
+{{if .Node.IsFolder}}
+  {{with .Children}}{{template "itemtable" (items $.SpacePath .)}}{{else}}<p>This folder is empty.</p>{{end}}
+{{else}}
+<article class="markdown">{{.HTML}}</article>
 {{with .Children}}
-<section class="children" aria-label="Contents">
-  {{if not $.Data.Node.IsFolder}}<h2>Sub-documents</h2>{{end}}
+<section class="children" aria-label="Sub-documents">
+  <h2>Sub-documents</h2>
   <ul class="pages">
-    {{range .}}<li class="{{.Kind}}"><a href="{{docpath $.SpacePath .PublicID .Slug}}">{{template "icon" .Kind}}{{.Title}}</a> <small>{{date .UpdatedAt}}</small></li>{{end}}
+    {{range .}}<li class="{{.Kind}}"><a href="{{docpath $.SpacePath .PublicID .Slug}}">{{template "icon" .Kind}}{{.Title}}</a></li>{{end}}
   </ul>
 </section>
-{{else}}{{if .Node.IsFolder}}<p>This folder is empty.</p>{{end}}
+{{end}}
 {{end}}
 <footer class="meta">
-  Version {{.Node.Version}}. Changed {{date .Node.UpdatedAt}}{{with .Node.UpdatedBy}} by {{.}}{{end}}.
-  Short link: <a href="{{$.SpacePath}}/d/{{.Node.PublicID}}"><code>{{$.SpacePath}}/d/{{.Node.PublicID}}</code></a>
+  Version {{.Node.Version}} · Changed {{date .Node.UpdatedAt}}{{with .Node.UpdatedBy}} by {{.}}{{end}} ·
+  Short link: <a href="{{$.SpacePath}}/d/{{.Node.PublicID}}">{{$.SpacePath}}/d/{{.Node.PublicID}}</a>
 </footer>
 </div>
 </div>

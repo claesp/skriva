@@ -1,9 +1,10 @@
 /* The style sheet has two parts:
    - The reading text (.markdown and .reading). The document is the main
      item of the page. The rules come from long-form typography: a serif
-     font, 18 to 21 px text, line height 1.6 and a line length of
-     approximately 60 to 75 characters (WCAG 1.4.8 permits a maximum of
-     80). The design follows Tufte CSS.
+     font, 18 to 22 px text and line height 1.6. The design follows Tufte
+     CSS. The line length is approximately 65 to 75 characters on normal
+     screens. It increases on large screens, thus large screens show more
+     text. See docs/design.md.
    - The interface (header, menus, tree, toolbars, forms). It uses a
      smaller sans-serif font, thus it stays in the background.
    All sizes use rem or em. Thus the text size that the user sets in the
@@ -25,11 +26,14 @@
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
-  /* The reading text is 18 px on small screens and 21 px on large
+  /* The reading text is 18 px on small screens and 22 px on large
      screens (at the default browser size of 16 px). */
-  --read-size: clamp(1.125rem, 1rem + 0.4vw, 1.3125rem);
-  /* The line length of the reading text. */
-  --measure: 40rem;
+  --read-size: clamp(1.125rem, 0.95rem + 0.45vw, 1.375rem);
+  /* The width of the reading text. It increases with the width of the
+     window, from 40rem to 64rem. */
+  --measure: clamp(40rem, 24rem + 28vw, 64rem);
+  /* The height of the bar with the path and the toolbar. */
+  --topbar-h: 3rem;
   /* The size of the interface text: menus, tree, toolbars and notes. */
   --ui-size: 0.875rem;
   color-scheme: light dark;
@@ -85,7 +89,9 @@ header.site .crumb { color: var(--muted); }
 header.site nav { display: flex; gap: 1rem; flex-wrap: wrap; }
 header.site nav a { color: var(--muted); text-decoration: none; }
 header.site nav a:hover { color: var(--accent); text-decoration: underline; }
+header.site .toolbar.new { margin-left: auto; }
 header.site .search { margin-left: auto; }
+header.site .toolbar.new + .search { margin-left: 0; }
 header.site .search input { width: 14rem; max-width: 100%; padding: 0.3rem 0.5rem; }
 header.site .user { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); }
 
@@ -146,8 +152,18 @@ td.actions { padding-top: 0.1rem; padding-bottom: 0.1rem; vertical-align: middle
 .pagehead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; }
 .pagehead h1 { margin-bottom: 0.25rem; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.meta, small { color: var(--muted); font-size: var(--ui-size); }
-.meta { margin-top: 3rem; border-top: 1px solid var(--line); padding-top: 0.5rem; }
+small { color: var(--muted); font-size: var(--ui-size); }
+/* The data below a document is for information. It is small and muted. */
+.meta { margin-top: 3rem; border-top: 1px solid var(--line); padding-top: 0.5rem; color: var(--muted); font-size: 0.75rem; }
+.meta a { color: var(--muted); }
+.lead { color: var(--muted); font-size: 1.0625rem; }
+
+/* Tables of folders, documents and spaces. */
+table.items td a { text-decoration: none; }
+table.items td a:hover { text-decoration: underline; }
+table.items .i { margin-right: 0.4em; color: var(--muted); }
+table.items .i-folder { color: var(--accent); fill: color-mix(in srgb, var(--accent) 18%, transparent); }
+th.num, td.num { text-align: right; }
 
 .tag {
   display: inline-block;
@@ -269,11 +285,15 @@ main:has(.with-sidebar) { max-width: none; padding: 0; }
 .with-sidebar { display: grid; grid-template-columns: 16rem minmax(0, 1fr); }
 .with-sidebar > .main { width: 100%; max-width: 52rem; justify-self: center; padding: 0 1.5rem 4rem; }
 .with-sidebar > .main.reading { max-width: calc(var(--measure) + 3rem); }
+/* A bar with the class "wide" covers all columns. The column at the left
+   side then starts below the bar. */
+.topbar.wide { grid-column: 1 / -1; min-height: var(--topbar-h); padding: 0.375rem 1rem; }
+.with-sidebar:has(> .topbar.wide) { --sidebar-top: var(--topbar-h); }
 .sidebar {
   position: sticky;
-  top: 0;
+  top: var(--sidebar-top, 0px);
   align-self: start;
-  height: 100vh;
+  height: calc(100vh - var(--sidebar-top, 0px));
   overflow: auto;
   padding: 1rem;
   font-size: var(--ui-size);

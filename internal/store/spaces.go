@@ -17,15 +17,19 @@ type Space struct {
 	// default role.
 	DefaultRole *string
 	CreatedAt   time.Time
-	// Nodes is the number of folders and documents. Only Spaces sets it.
-	Nodes int
+	// Nodes is the number of folders and documents. LastChanged is the
+	// time of the last change of a node, or nil for an empty space. Only
+	// Spaces sets these fields.
+	Nodes       int
+	LastChanged *time.Time
 }
 
 // Spaces returns the spaces of a tenant, sorted by name.
 func (s *Store) Spaces(ctx context.Context, tenantID int64) ([]Space, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT sp.id, sp.tenant_id, sp.slug, sp.name, sp.description, sp.default_role, sp.created_at,
-		       (SELECT count(*) FROM nodes n WHERE n.space_id = sp.id)
+		       (SELECT count(*) FROM nodes n WHERE n.space_id = sp.id),
+		       (SELECT max(n.updated_at) FROM nodes n WHERE n.space_id = sp.id)
 		FROM spaces sp WHERE sp.tenant_id = $1
 		ORDER BY lower(sp.name), sp.slug`, tenantID)
 	if err != nil {
@@ -36,7 +40,7 @@ func (s *Store) Spaces(ctx context.Context, tenantID int64) ([]Space, error) {
 	for rows.Next() {
 		var sp Space
 		if err := rows.Scan(&sp.ID, &sp.TenantID, &sp.Slug, &sp.Name, &sp.Description,
-			&sp.DefaultRole, &sp.CreatedAt, &sp.Nodes); err != nil {
+			&sp.DefaultRole, &sp.CreatedAt, &sp.Nodes, &sp.LastChanged); err != nil {
 			return nil, err
 		}
 		out = append(out, sp)

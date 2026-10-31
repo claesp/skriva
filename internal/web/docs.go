@@ -46,7 +46,6 @@ func (s *Server) spaceRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRoleForm))
 	mux.Handle("POST "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRole))
 	mux.Handle("GET "+p+"/w/{slug}", s.require("", s.handleWikiLink))
-	mux.Handle("GET "+p+"/recent", s.require("", s.handleRecent))
 	mux.Handle("GET "+p+"/search", s.require("", s.handleSearch))
 }
 
@@ -70,7 +69,8 @@ func base(r *http.Request) string {
 func (s *Server) node(perm rbac.Permission, h nodeHandler) http.Handler {
 	return s.require("", func(w http.ResponseWriter, r *http.Request) {
 		ri := reqInfoFrom(r.Context())
-		id := r.PathValue("id")
+		// Public IDs are in lower case. An ID in upper case also works.
+		id := strings.ToLower(r.PathValue("id"))
 		if !store.ValidPublicID(id) {
 			s.notFound(w, r)
 			return
@@ -163,15 +163,16 @@ func (s *Server) handleSpaceHome(w http.ResponseWriter, r *http.Request) {
 		s.forbidden(w, r)
 		return
 	}
+	ri.New = &newTarget{Folder: true}
 	s.render(w, r, http.StatusOK, "space", ri.Space.Name, tree)
 }
 
 func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	// Send the browser to the canonical URL if the slug is missing or
 	// old. The slug changes when the title changes. The case of the
-	// letters has no effect, but the redirect gives the slug in lower
-	// case.
-	if r.PathValue("slug") != n.Slug && n.Slug != "" {
+	// letters has no effect, but the redirect gives the ID and the slug
+	// in lower case.
+	if (r.PathValue("slug") != n.Slug && n.Slug != "") || r.PathValue("id") != n.PublicID {
 		http.Redirect(w, r, docPath(base(r), n.PublicID, n.Slug), http.StatusFound)
 		return
 	}
@@ -197,6 +198,8 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Nod
 			return
 		}
 	}
+	ri := reqInfoFrom(r.Context())
+	ri.New = &newTarget{Parent: n.PublicID, Folder: n.IsFolder()}
 	s.render(w, r, http.StatusOK, "view", n.Title, struct {
 		Node      *store.Node
 		HTML      template.HTML
@@ -676,19 +679,6 @@ func (s *Server) handleWikiLink(w http.ResponseWriter, r *http.Request) {
 		CreateURL string
 		Nodes     []store.NodeSummary
 	}{title, base(r) + "/new?title=" + url.QueryEscape(title), nodes})
-}
-
-func (s *Server) handleRecent(w http.ResponseWriter, r *http.Request) {
-	list, err := s.store.RecentNodes(r.Context(), reqInfoFrom(r.Context()).Space.ID, 200)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	list = readableOnly(r, list)
-	if len(list) > 50 {
-		list = list[:50]
-	}
-	s.render(w, r, http.StatusOK, "recent", "Recent changes", list)
 }
 
 // handleNodeAccess shows the default role and the role bindings of a

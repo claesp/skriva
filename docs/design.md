@@ -16,9 +16,9 @@ and these guidelines for long-form text:
 | Item | Value | Reason |
 |------|-------|--------|
 | Font | A serif font that the system has: Charter, Sitka Text, Cambria, Palatino or Georgia. | Tufte CSS uses a serif font for the text. The page does not load fonts from other sites. |
-| Size | 18 px on small screens to 21 px on large screens (1.125rem to 1.3125rem). | Butterick recommends 15 to 25 px on the web. |
+| Size | 18 px on small screens to 22 px on large screens (1.125rem to 1.375rem). | Butterick recommends 15 to 25 px on the web. |
 | Line height | 1.6 | WCAG 1.4.8 recommends at least 1.5. |
-| Line length | 40rem. This is approximately 60 to 70 characters on a large screen, and 40 characters on a telephone. | The guidelines recommend 45 to 75 characters. WCAG 1.4.8 permits a maximum of 80. |
+| Line length | 40rem to 64rem. The width increases with the width of the window. This is approximately 40 characters on a telephone, 75 characters on a 1440 px screen and up to 90 characters on very large screens. | The guidelines recommend 45 to 75 characters, and WCAG 1.4.8 permits a maximum of 80. Large screens use more of the width, by decision of the project. |
 | Paragraph space | 1.25em below each paragraph. | The space between paragraphs must be larger than the space between lines. |
 | Alignment | Left. No justification. | WCAG 1.4.8 does not permit justified text. |
 | Headings | Normal weight. The second and third levels are italic. | As in Tufte CSS. |
@@ -33,6 +33,11 @@ and these guidelines for long-form text:
 - A link "Skip to the content" is the first item of each page. It is
   visible when it has the keyboard focus.
 - A heading that a link opens stays visible below the sticky toolbar.
+- The toolbar of a document covers the full width of the page. The tree
+  starts below it.
+- The data below a document (version, date, short link) is small
+  (0.75rem) and muted. It gives information, but it does not compete with
+  the text.
 - A printed document shows only the text, without the header, the tree
   and the toolbar. The print shows the address of each external link.
 - Each element with the keyboard focus has a visible outline.

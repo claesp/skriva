@@ -48,8 +48,8 @@ This document describes the security controls of Skriva.
 
 ## Document IDs
 
-The ID of a document is a random value with 12 characters from a set of
-62 characters (approximately 71 bits). The server makes it with
+The ID of a document is a random value with 14 characters from a set of
+36 characters, `0-9` and `a-z` (approximately 72 bits). The server makes it with
 `crypto/rand`. Thus nobody can find documents with a list of guessed
 IDs. The ID is not the access control: the server checks the permissions
 at each request.

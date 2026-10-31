@@ -25,6 +25,29 @@ type reqInfo struct {
 	// Access contains the permissions for the nodes of the space. It is
 	// nil outside a space and for anonymous requests.
 	Access *store.Access
+	// New is the place for the "New document" and "New folder" buttons
+	// in the page header. It is nil on pages without these buttons.
+	New *newTarget
+}
+
+// newTarget is the place where the buttons in the page header make new
+// items.
+type newTarget struct {
+	// Parent is the public ID of the parent node, or "" for the top level
+	// of the space.
+	Parent string
+	// Folder is true if the parent can contain a folder.
+	Folder bool
+}
+
+// Query returns the query of the URL of the form for a new item of the
+// given kind.
+func (t *newTarget) Query(kind string) string {
+	q := url.Values{"kind": {kind}}
+	if t.Parent != "" {
+		q.Set("parent", t.Parent)
+	}
+	return "?" + q.Encode()
 }
 
 // setPermissions sets the permissions of the request. It uses a copy of

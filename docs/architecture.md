@@ -66,9 +66,11 @@ These rules apply to the tree:
   example `handbook`.
 - An administrator selects the tenant code and the space code. The codes
   do not change after they are made.
-- The `{id}` is a random value with 12 characters from `0-9`, `A-Z` and
-  `a-z`, for example `Hq7mZp2Kx4aB`. The value has approximately 71 bits
-  of entropy. Thus nobody can guess the ID of a document.
+- The `{id}` is a random value with 14 characters from `0-9` and `a-z`,
+  for example `k3x9p2qa7tm4zb`. The value has approximately 72 bits of
+  entropy. Thus nobody can guess the ID of a document. All parts of the
+  URL are in lower case. The server accepts an ID in upper case and
+  sends the browser to the URL in lower case.
 - The `{slug}` comes from the title, for example `install-on-linux`. It
   makes the URL easier to read. When the title changes, the old URL
   goes to the new URL.

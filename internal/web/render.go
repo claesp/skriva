@@ -71,6 +71,13 @@ type crumbArgs struct {
 	Title       string
 }
 
+// itemsArgs is the argument of the "itemtable" template. Nodes is a slice
+// of store.NodeSummary or of *store.TreeNode.
+type itemsArgs struct {
+	Base  string
+	Nodes any
+}
+
 var funcs = template.FuncMap{
 	"date":    func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") },
 	"add":     func(a, b int) int { return a + b },
@@ -86,6 +93,7 @@ var funcs = template.FuncMap{
 	},
 	"head":  func(title, newURL, newLabel string) headArgs { return headArgs{title, newURL, newLabel} },
 	"crumb": func(parentURL, parentLabel, title string) crumbArgs { return crumbArgs{parentURL, parentLabel, title} },
+	"items": func(base string, nodes any) itemsArgs { return itemsArgs{base, nodes} },
 }
 
 func loadTemplates() (*templates, error) {
@@ -138,7 +146,9 @@ type view struct {
 	Menu string
 	// Section is the menu item of the page, for example "groups".
 	Section string
-	Data    any
+	// New is the place for the buttons for new items in the header.
+	New  *newTarget
+	Data any
 }
 
 // TenantPath returns the URL path of the tenant, for example "/dflt".
@@ -199,6 +209,7 @@ func (s *Server) newView(r *http.Request, title string, data any) *view {
 		Session:  ri.Session,
 		StyleURL: "/static/style.css?v=" + s.tmpl.styleVersion,
 		System:   strings.HasPrefix(r.URL.Path, "/admin/"),
+		New:      ri.New,
 		Data:     data,
 	}
 }

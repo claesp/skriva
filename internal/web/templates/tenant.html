@@ -1,22 +1,37 @@
 {{define "content"}}
-{{if .Can "space.manage"}}
-<div class="topbar">
-  <span></span>
-  <nav class="toolbar" aria-label="Tools"><span class="group">{{template "tool" (tool (print .TenantPath "/admin/spaces") "settings" "Manage spaces")}}</span></nav>
+<div class="with-sidebar">
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path">Spaces</nav>
+  {{if .Can "space.manage"}}<nav class="toolbar" aria-label="Tools"><span class="group">
+    {{template "tool" (tool (print .TenantPath "/admin/spaces") "settings" "Manage spaces")}}
+  </span></nav>{{end}}
 </div>
-{{end}}
-<h1>Spaces</h1>
+<aside class="sidebar" aria-label="Spaces">
+  <ul class="tree">
+    {{range .Data}}<li><a href="{{$.TenantPath}}/{{.Slug}}/">{{template "icon" "space"}}{{.Name}}</a></li>{{end}}
+  </ul>
+</aside>
+<div class="main reading">
+<div class="pagehead">
+  <h1>Spaces</h1>
+</div>
 {{with .Data}}
-<ul class="cards">
+<table class="items">
+  <thead><tr><th>Name</th><th>Description</th><th class="num">Items</th><th>Changed</th></tr></thead>
+  <tbody>
   {{range .}}
-  <li>
-    <a href="{{$.TenantPath}}/{{.Slug}}/"><strong>{{.Name}}</strong></a>
-    {{with .Description}}<p>{{.}}</p>{{end}}
-    <small>{{.Nodes}} items · code <code>{{.Slug}}</code></small>
-  </li>
+  <tr>
+    <td><a href="{{$.TenantPath}}/{{.Slug}}/">{{template "icon" "space"}}{{.Name}}</a></td>
+    <td>{{.Description}}</td>
+    <td class="num">{{.Nodes}}</td>
+    <td>{{with .LastChanged}}{{date .}}{{else}}Never{{end}}</td>
+  </tr>
   {{end}}
-</ul>
+  </tbody>
+</table>
 {{else}}
-<p>This tenant has no spaces.</p>
+<p>This tenant has no spaces that you can read.</p>
 {{end}}
+</div>
+</div>
 {{end}}

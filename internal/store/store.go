@@ -84,22 +84,24 @@ const (
 )
 
 // PublicIDLength is the length of a public node ID.
-const PublicIDLength = 12
+const PublicIDLength = 14
 
-const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+// The public ID uses only lower-case letters and digits. Thus the URLs
+// are always in lower case.
+const base36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 
 // NewPublicID returns a random ID with PublicIDLength characters from
-// [0-9A-Za-z]. The ID has approximately 71 bits of entropy.
+// [0-9a-z]. The ID has approximately 72 bits of entropy.
 func NewPublicID() string {
 	out := make([]byte, 0, PublicIDLength)
 	buf := make([]byte, PublicIDLength*2)
 	for len(out) < PublicIDLength {
 		_, _ = rand.Read(buf) // crypto/rand.Read does not return errors.
 		for _, b := range buf {
-			// Reject values >= 248 (4*62). Thus all characters have the
+			// Reject values >= 252 (7*36). Thus all characters have the
 			// same probability.
-			if b < 248 && len(out) < PublicIDLength {
-				out = append(out, base62[b%62])
+			if b < 252 && len(out) < PublicIDLength {
+				out = append(out, base36[b%36])
 			}
 		}
 	}
@@ -113,7 +115,7 @@ func ValidPublicID(id string) bool {
 	}
 	for i := 0; i < len(id); i++ {
 		c := id[i]
-		if !('0' <= c && c <= '9' || 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z') {
+		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'z') {
 			return false
 		}
 	}
