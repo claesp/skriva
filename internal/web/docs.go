@@ -9,8 +9,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/clpe/skriva/internal/markdown"
+	"github.com/clpe/skriva/internal/doc"
 	"github.com/clpe/skriva/internal/rbac"
+	"github.com/clpe/skriva/internal/slug"
 	"github.com/clpe/skriva/internal/store"
 )
 
@@ -47,6 +48,8 @@ func (s *Server) spaceRoutes(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRole))
 	mux.Handle("GET "+p+"/w/{slug}", s.require("", s.handleWikiLink))
 	mux.Handle("GET "+p+"/search", s.require("", s.handleSearch))
+	mux.Handle("POST "+p+"/files", s.require("", s.handleUpload))
+	mux.Handle("GET "+p+"/files/{id}", s.require("", s.handleFile))
 }
 
 // parseVersion parses a node version. Versions are PostgreSQL integer
@@ -178,11 +181,8 @@ type nodePage struct {
 	Crumb     string
 	Ancestors []store.NodeSummary
 	Tree      []*store.TreeNode
-	// Editor is true on the form of a document. Previewing is true when
-	// the form shows the preview instead of the fields. The toolbar then
-	// has a preview button.
-	Editor     bool
-	Previewing bool
+	// Editor is true on the form of a document.
+	Editor bool
 }
 
 // loadNodePage loads the path and the tree for a page of node n. It also
@@ -224,7 +224,7 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Nod
 	}
 	var html template.HTML
 	if !n.IsFolder() {
-		if html, err = s.md.Render(n.Body, base(r)+"/w/"); err != nil {
+		if html, err = renderBody(r, n.Body); err != nil {
 			s.serverError(w, r, err)
 			return
 		}
@@ -236,9 +236,58 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Nod
 	}{page, html, readableOnly(r, children)})
 }
 
+// links returns the URL prefixes of wiki links and files in the space of
+// the request.
+func links(r *http.Request) doc.Links {
+	b := base(r)
+	return doc.Links{Wiki: b + "/w/", Files: b + "/files/"}
+}
+
+// renderBody converts a saved body to HTML.
+func renderBody(r *http.Request, body string) (template.HTML, error) {
+	d, err := doc.Parse([]byte(body), nil)
+	if err != nil {
+		return "", err
+	}
+	return d.HTML(links(r)), nil
+}
+
+// editorBody converts a saved body to the JSON for the editor. The
+// "file:" sources of images become URLs.
+func editorBody(r *http.Request, body string) (string, error) {
+	d, err := doc.Parse([]byte(body), nil)
+	if err != nil {
+		return "", err
+	}
+	d.MapImages(links(r).Src)
+	return string(d.JSON()), nil
+}
+
+// parseEditorBody reads the JSON from the editor and removes all items
+// that are not permitted. The URLs of files in the space of the request
+// become "file:" sources.
+func (s *Server) parseEditorBody(r *http.Request, body string) (*doc.Node, error) {
+	prefix := links(r).Files
+	site := strings.TrimSuffix(s.opts.BaseURL.String(), "/")
+	return doc.Parse([]byte(body), func(src string) string {
+		src = strings.TrimPrefix(src, site)
+		if id, ok := strings.CutPrefix(src, prefix); ok {
+			return doc.FilePrefix + strings.ToLower(id)
+		}
+		return src
+	})
+}
+
+// handleRaw shows the text in Markdown. Markdown does not have all the
+// formats of a document. See doc.Node.Markdown.
 func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	d, err := doc.Parse([]byte(n.Body), nil)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(n.Body))
+	_, _ = w.Write([]byte(d.Markdown(links(r))))
 }
 
 // nodeForm is the data for the form that makes or edits a node.
@@ -250,16 +299,23 @@ type nodeForm struct {
 	ParentID    string
 	ParentTitle string
 	Title       string
-	Body        string
-	Comment     string
-	Version     int
-	Preview     template.HTML
-	Error       string
+	// Body is the text in the JSON format of the editor. The sources of
+	// uploaded images are URLs.
+	Body    string
+	Comment string
+	Version int
+	Error   string
+	// UploadURL is the address for uploaded images.
+	UploadURL string
+	// EditorURL is the address of the script of the editor.
+	EditorURL string
 	// The Node of nodePage is the node that the form edits, or nil for a
 	// new node. renderNodeForm sets the other fields.
 	nodePage
 	// parent is the parent of a new node, or nil for the top level.
 	parent *store.Node
+	// content is the checked text. validateForm sets it.
+	content store.Content
 }
 
 // IsFolder reports whether the form is for a folder.
@@ -325,36 +381,42 @@ func (s *Server) checkParent(w http.ResponseWriter, r *http.Request, f *nodeForm
 // readNodeForm reads the fields of the node form from the request.
 func readNodeForm(r *http.Request, f *nodeForm) {
 	f.Title = strings.TrimSpace(r.PostFormValue("title"))
-	f.Body = strings.ReplaceAll(r.PostFormValue("body"), "\r\n", "\n")
+	f.Body = r.PostFormValue("body")
 	f.Comment = strings.TrimSpace(r.PostFormValue("comment"))
 	if f.IsFolder() {
 		f.Body = ""
 	}
 }
 
-// validateForm checks the form. It returns an error text, or "". For the
-// preview action, it also renders the preview.
-func (s *Server) validateForm(r *http.Request, f *nodeForm) (string, error) {
+// validateForm checks the form. It returns an error text, or "". It
+// removes the items that are not permitted from the text and sets
+// f.content.
+func (s *Server) validateForm(r *http.Request, f *nodeForm) string {
 	t := reqInfoFrom(r.Context()).Tenant
 	switch {
-	case f.Title == "":
-		return "The title is necessary.", nil
-	case utf8.RuneCountInString(f.Title) > maxTitleLen:
-		return "The title is too long.", nil
 	case !utf8.ValidString(f.Title) || !utf8.ValidString(f.Body) || !utf8.ValidString(f.Comment):
-		return "The text contains characters that are not valid.", nil
+		return "The text contains characters that are not valid."
 	case len(f.Body) > t.MaxDocBytes:
-		return "The text is too long. The maximum is " + strconv.Itoa(t.MaxDocBytes/1024) + " KiB.", nil
+		return "The text is too long. The maximum is " + strconv.Itoa(t.MaxDocBytes/1024) + " KiB."
+	}
+	if !f.IsFolder() {
+		d, err := s.parseEditorBody(r, f.Body)
+		if err != nil {
+			return "The text is not in the correct format."
+		}
+		f.content = store.Content{Body: string(d.JSON()), PlainText: d.PlainText(), Files: d.Files()}
+		d.MapImages(links(r).Src)
+		f.Body = string(d.JSON())
+	}
+	switch {
+	case f.Title == "":
+		return "The title is necessary."
+	case utf8.RuneCountInString(f.Title) > maxTitleLen:
+		return "The title is too long."
 	case utf8.RuneCountInString(f.Comment) > maxCommentLen:
-		return "The comment is too long.", nil
+		return "The comment is too long."
 	}
-	if r.PostFormValue("action") == "preview" && !f.IsFolder() {
-		var err error
-		f.Previewing = true
-		f.Preview, err = s.md.Render(f.Body, base(r)+"/w/")
-		return "", err
-	}
-	return "", nil
+	return ""
 }
 
 func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
@@ -372,26 +434,21 @@ func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
 	if !s.checkParent(w, r, &f) {
 		return
 	}
-	msg, err := s.validateForm(r, &f)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	if msg != "" || f.Previewing || r.PostFormValue("action") == "edit" {
+	if msg := s.validateForm(r, &f); msg != "" {
 		f.Error = msg
-		s.renderNodeForm(w, r, formStatus(msg), "New "+f.Kind, &f)
+		s.renderNodeForm(w, r, http.StatusUnprocessableEntity, "New "+f.Kind, &f)
 		return
 	}
 	ri := reqInfoFrom(r.Context())
-	slug := markdown.Slugify(f.Title)
+	sl := slug.Make(f.Title)
 	id, err := s.store.CreateNode(r.Context(), ri.Space.ID, store.NewNode{
-		ParentPublicID: f.ParentID, Kind: f.Kind, Title: f.Title, Slug: slug,
-		Body: f.Body, Comment: f.Comment, AuthorID: ri.Session.User.ID,
+		ParentPublicID: f.ParentID, Kind: f.Kind, Title: f.Title, Slug: sl,
+		Content: f.content, Comment: f.Comment, AuthorID: ri.Session.User.ID,
 	})
 	if !s.storeResult(w, r, err) {
 		return
 	}
-	http.Redirect(w, r, docPath(base(r), id, slug), http.StatusSeeOther)
+	http.Redirect(w, r, docPath(base(r), id, sl), http.StatusSeeOther)
 }
 
 // renderNodeForm shows the form with the tree of the space and the path
@@ -399,7 +456,6 @@ func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
 // page header use the node, or the parent of a new node.
 func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status int, title string, f *nodeForm) {
 	var err error
-	previewing := f.Previewing
 	switch {
 	case f.Node != nil:
 		f.nodePage, err = s.loadNodePage(r, f.Node, "edit", "")
@@ -425,22 +481,32 @@ func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status i
 		f.Crumb = "New " + f.Kind
 	}
 	f.Editor = !f.IsFolder()
-	f.Previewing = previewing
-	s.render(w, r, status, "edit", title, f)
-}
-
-func formStatus(msg string) int {
-	if msg != "" {
-		return http.StatusUnprocessableEntity
+	if f.Editor {
+		// The upload checks the permission for the node, or for the
+		// parent of a new node.
+		f.UploadURL = base(r) + "/files"
+		switch {
+		case !f.IsNew:
+			f.UploadURL += "?node=" + url.QueryEscape(f.Node.PublicID)
+		case f.ParentID != "":
+			f.UploadURL += "?parent=" + url.QueryEscape(f.ParentID)
+		}
+		f.EditorURL = s.staticURL("editor.js")
+		if f.Body == "" {
+			f.Body = doc.EmptyJSON
+		}
+		// Only the form of a document runs a script: the editor.
+		w.Header().Set("Content-Security-Policy", editorSecurityPolicy)
 	}
-	return http.StatusOK
+	s.render(w, r, status, "edit", title, f)
 }
 
 func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	f := nodeForm{
 		Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind, nodePage: nodePage{Node: n},
-		Title: n.Title, Body: n.Body, Version: n.Version,
+		Title: n.Title, Version: n.Version,
 	}
+	body := n.Body
 	// "from" loads the text of an old revision. The user can then save
 	// it as a new version to restore the node.
 	if from, ok := parseVersion(r.URL.Query().Get("from")); ok && from > 0 && from != n.Version {
@@ -453,8 +519,15 @@ func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request, n *store
 			s.serverError(w, r, err)
 			return
 		}
-		f.Title, f.Body = rev.Title, rev.Body
+		f.Title, body = rev.Title, rev.Body
 		f.Comment = "Restore version " + strconv.Itoa(from)
+	}
+	if !n.IsFolder() {
+		var err error
+		if f.Body, err = editorBody(r, body); err != nil {
+			s.serverError(w, r, err)
+			return
+		}
 	}
 	s.renderNodeForm(w, r, http.StatusOK, "Edit "+n.Title, &f)
 }
@@ -467,29 +540,27 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Nod
 	}
 	f := nodeForm{Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind, nodePage: nodePage{Node: n}, Version: version}
 	readNodeForm(r, &f)
-	msg, err := s.validateForm(r, &f)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	if msg != "" || f.Previewing || r.PostFormValue("action") == "edit" {
+	if msg := s.validateForm(r, &f); msg != "" {
 		f.Error = msg
-		s.renderNodeForm(w, r, formStatus(msg), "Edit "+f.Title, &f)
+		s.renderNodeForm(w, r, http.StatusUnprocessableEntity, "Edit "+f.Title, &f)
 		return
 	}
 	ri := reqInfoFrom(r.Context())
-	slug := markdown.Slugify(f.Title)
-	err = s.store.UpdateNode(r.Context(), ri.Space.ID, n.PublicID, version, f.Title, slug, f.Body, f.Comment, ri.Session.User.ID)
+	sl := slug.Make(f.Title)
+	err := s.store.UpdateNode(r.Context(), ri.Space.ID, n.PublicID, store.NodeUpdate{
+		BaseVersion: version, Title: f.Title, Slug: sl, Content: f.content,
+		Comment: f.Comment, AuthorID: ri.Session.User.ID,
+	})
 	if errors.Is(err, store.ErrConflict) {
 		f.Error = "A different user changed this item after you started to edit it. " +
-			"Copy your text, reload the page and add your changes again."
+			"Copy your text, open the item again and add your changes."
 		s.renderNodeForm(w, r, http.StatusConflict, "Edit "+f.Title, &f)
 		return
 	}
 	if !s.storeResult(w, r, err) {
 		return
 	}
-	http.Redirect(w, r, docPath(base(r), n.PublicID, slug), http.StatusSeeOther)
+	http.Redirect(w, r, docPath(base(r), n.PublicID, sl), http.StatusSeeOther)
 }
 
 // moveTarget is one possible new parent in the move form.
@@ -717,7 +788,7 @@ func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store
 		s.serverError(w, r, err)
 		return
 	}
-	html, err := s.md.Render(rev.Body, base(r)+"/w/")
+	html, err := renderBody(r, rev.Body)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -739,12 +810,12 @@ func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store
 // match sends the browser to the node. More matches show a list. No match
 // shows a page with a link to make the document.
 func (s *Server) handleWikiLink(w http.ResponseWriter, r *http.Request) {
-	slug := markdown.NormalizeSlug(r.PathValue("slug"))
-	if slug == "" {
+	sl := slug.Normalize(r.PathValue("slug"))
+	if sl == "" {
 		s.notFound(w, r)
 		return
 	}
-	nodes, err := s.store.NodesBySlug(r.Context(), reqInfoFrom(r.Context()).Space.ID, slug)
+	nodes, err := s.store.NodesBySlug(r.Context(), reqInfoFrom(r.Context()).Space.ID, sl)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -758,7 +829,7 @@ func (s *Server) handleWikiLink(w http.ResponseWriter, r *http.Request) {
 	if len(nodes) == 0 {
 		status = http.StatusNotFound
 	}
-	title := strings.ReplaceAll(slug, "-", " ")
+	title := strings.ReplaceAll(sl, "-", " ")
 	s.render(w, r, status, "wikilink", "Link: "+title, struct {
 		Title     string
 		CreateURL string

@@ -1,0 +1,209 @@
+package doc
+
+import (
+	"errors"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+var links = Links{Wiki: "/t/s/w/", Files: "/t/s/files/"}
+
+func mustParse(t *testing.T, src string) *Node {
+	t.Helper()
+	n, err := Parse([]byte(src), nil)
+	if err != nil {
+		t.Fatalf("Parse(%s): %v", src, err)
+	}
+	return n
+}
+
+func TestParseRemovesItemsThatAreNotPermitted(t *testing.T) {
+	src := `{"type":"doc","content":[
+		{"type":"paragraph","attrs":{"textAlign":"center","style":"color:red","onclick":"x()"},"content":[
+			{"type":"text","text":"a","marks":[{"type":"bold"},{"type":"textStyle","attrs":{"color":"red"}}]},
+			{"type":"text","text":"b","marks":[{"type":"link","attrs":{"href":"javascript:alert(1)"}}]},
+			{"type":"text","text":"c","marks":[{"type":"link","attrs":{"href":"https://example.com","target":"_blank"}}]}
+		]},
+		{"type":"script","content":[{"type":"text","text":"bad"}]},
+		{"type":"image","attrs":{"src":"data:image/png;base64,AAAA"}},
+		{"type":"image","attrs":{"src":"http://example.com/a.png"}},
+		{"type":"image","attrs":{"src":"file:0123456789abcd","alt":"x","width":5}},
+		{"type":"heading","attrs":{"level":9,"textAlign":"justify"},"content":[{"type":"text","text":"H"}]},
+		{"type":"table","attrs":{"style":"width:1px"},"content":[{"type":"tableRow","content":[
+			{"type":"tableCell","attrs":{"colspan":2,"rowspan":1,"colwidth":[100],"align":"left"}}]}]}
+	]}`
+	got := string(mustParse(t, src).JSON())
+	want := `{"type":"doc","content":[` +
+		`{"type":"paragraph","attrs":{"textAlign":"center"},"content":[` +
+		`{"type":"text","marks":[{"type":"bold"}],"text":"a"},` +
+		`{"type":"text","text":"b"},` +
+		`{"type":"text","marks":[{"type":"link","attrs":{"href":"https://example.com"}}],"text":"c"}]},` +
+		`{"type":"image","attrs":{"alt":"x","src":"file:0123456789abcd"}},` +
+		`{"type":"heading","attrs":{"level":3}},` +
+		`{"type":"table","content":[{"type":"tableRow","content":[{"type":"tableCell","attrs":{"colspan":2}}]}]}]}`
+	// The heading keeps its text.
+	want = strings.Replace(want, `{"type":"heading","attrs":{"level":3}}`,
+		`{"type":"heading","attrs":{"level":3},"content":[{"type":"text","text":"H"}]}`, 1)
+	if got != want {
+		t.Fatalf("Parse:\n got %s\nwant %s", got, want)
+	}
+}
+
+func TestParseRemovesEmptyParagraphsAtTheEnd(t *testing.T) {
+	got := string(mustParse(t, `{"type":"doc","content":[{"type":"paragraph"},{"type":"horizontalRule"},{"type":"paragraph"},{"type":"paragraph"}]}`).JSON())
+	if want := `{"type":"doc","content":[{"type":"paragraph"},{"type":"horizontalRule"}]}`; got != want {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+}
+
+func TestParseErrors(t *testing.T) {
+	for _, src := range []string{`{`, `[]`, `{"type":"paragraph"}`, "{\"type\":\"doc\",\"x\":\"\xff\"}"} {
+		if _, err := Parse([]byte(src), nil); !errors.Is(err, ErrSyntax) {
+			t.Errorf("Parse(%q) = %v, want ErrSyntax", src, err)
+		}
+	}
+	deep := strings.Repeat(`{"type":"blockquote","content":[`, MaxDepth+1) + strings.Repeat(`]}`, MaxDepth+1)
+	if _, err := Parse([]byte(`{"type":"doc","content":[`+deep+`]}`), nil); !errors.Is(err, ErrTooLarge) {
+		t.Errorf("deep document: %v, want ErrTooLarge", err)
+	}
+	if n, err := Parse(nil, nil); err != nil || string(n.JSON()) != EmptyJSON {
+		t.Errorf("empty data: %v, %v", n, err)
+	}
+}
+
+func TestParseImageSrc(t *testing.T) {
+	src := `{"type":"doc","content":[{"type":"image","attrs":{"src":"/t/s/files/0123456789abcd"}}]}`
+	n, err := Parse([]byte(src), func(s string) string {
+		if id, ok := strings.CutPrefix(s, "/t/s/files/"); ok {
+			return FilePrefix + id
+		}
+		return s
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := n.Files(); len(f) != 1 || f[0] != "0123456789abcd" {
+		t.Fatalf("Files() = %v", f)
+	}
+	n.MapImages(links.Src)
+	if !strings.Contains(string(n.JSON()), `"src":"/t/s/files/0123456789abcd"`) {
+		t.Fatalf("MapImages: %s", n.JSON())
+	}
+}
+
+func TestLinks(t *testing.T) {
+	for _, href := range []string{"https://a.example/x", "http://a.example", "mailto:a@example.com", "/t/s/d/x", "#part", "wiki:Start"} {
+		if _, ok := cleanHref(href); !ok {
+			t.Errorf("cleanHref(%q) refused", href)
+		}
+	}
+	for _, href := range []string{"javascript:x", "JavaScript:x", "data:text/html,x", "//evil.example", "/\\evil", "vbscript:x", "wiki:", "wiki:#x", "https://", "a\x00b"} {
+		if _, ok := cleanHref(href); ok {
+			t.Errorf("cleanHref(%q) permitted", href)
+		}
+	}
+	if got := links.Href("wiki:Getting Started#Über uns"); got != "/t/s/w/getting-started#uber-uns" {
+		t.Errorf("Href = %q", got)
+	}
+}
+
+const sample = `{"type":"doc","content":[
+	{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Intro"}]},
+	{"type":"paragraph","attrs":{"textAlign":"right"},"content":[
+		{"type":"text","text":"Plain "},
+		{"type":"text","text":"bold","marks":[{"type":"bold"}]},
+		{"type":"text","text":" and "},
+		{"type":"text","text":"Start","marks":[{"type":"link","attrs":{"href":"wiki:Start"}}]},
+		{"type":"text","text":" <x> "},
+		{"type":"text","text":"u","marks":[{"type":"underline"}]}
+	]},
+	{"type":"bulletList","content":[
+		{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"one"}]},
+			{"type":"orderedList","attrs":{"start":3},"content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"two"}]}]}]}]}
+	]},
+	{"type":"taskList","content":[{"type":"taskItem","attrs":{"checked":true},"content":[{"type":"paragraph","content":[{"type":"text","text":"done"}]}]}]},
+	{"type":"codeBlock","attrs":{"language":"go"},"content":[{"type":"text","text":"a < b"}]},
+	{"type":"image","attrs":{"src":"file:0123456789abcd","alt":"Logo"}},
+	{"type":"table","content":[
+		{"type":"tableRow","content":[{"type":"tableHeader","attrs":{"colspan":2},"content":[{"type":"paragraph","content":[{"type":"text","text":"H|1"}]}]}]},
+		{"type":"tableRow","content":[{"type":"tableCell","content":[{"type":"paragraph","content":[{"type":"text","text":"a"}]}]},{"type":"tableCell","content":[{"type":"paragraph","content":[{"type":"text","text":"b"}]}]}]}
+	]},
+	{"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"Intro"}]}
+]}`
+
+func TestHTML(t *testing.T) {
+	got := string(mustParse(t, sample).HTML(links))
+	for _, want := range []string{
+		`<h2 id="intro">Intro</h2>`,
+		`<p class="align-right">Plain <strong>bold</strong> and <a href="/t/s/w/start" rel="nofollow noreferrer">Start</a> &lt;x&gt; <u>u</u></p>`,
+		`<ul><li><p>one</p><ol start="3"><li><p>two</p></li></ol></li></ul>`,
+		`<ul class="tasks"><li class="task done"><input type="checkbox" disabled="" checked=""><p>done</p></li></ul>`,
+		`<pre><code class="language-go">a &lt; b</code></pre>`,
+		`<img src="/t/s/files/0123456789abcd" alt="Logo" loading="lazy">`,
+		`<div class="table"><table><tbody><tr><th colspan="2"><p>H|1</p></th></tr>`,
+		`<h3 id="intro-1">Intro</h3>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("HTML does not contain\n%s\nin\n%s", want, got)
+		}
+	}
+}
+
+func TestMarkdown(t *testing.T) {
+	got := mustParse(t, sample).Markdown(links)
+	want := "# Intro\n" +
+		"\n" +
+		"Plain **bold** and [[Start]] \\<x\\> u\n" +
+		"\n" +
+		"- one\n" +
+		"  3. two\n" +
+		"\n" +
+		"- [x] done\n" +
+		"\n" +
+		"```go\na < b\n```\n" +
+		"\n" +
+		"![Logo](/t/s/files/0123456789abcd)\n" +
+		"\n" +
+		"| H\\|1 |  |\n" +
+		"| --- | --- |\n" +
+		"| a | b |\n" +
+		"\n" +
+		"## Intro\n"
+	if got != want {
+		t.Fatalf("Markdown:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestPlainText(t *testing.T) {
+	got := mustParse(t, sample).PlainText()
+	want := "Intro\nPlain bold and Start <x> u\none\ntwo\ndone\na < b\nLogo\nH|1\na\nb\nIntro"
+	if got != want {
+		t.Fatalf("PlainText:\n%q\nwant\n%q", got, want)
+	}
+}
+
+// unsafeAttr finds event handlers and script URLs in HTML attributes.
+var unsafeAttr = regexp.MustCompile(`<[^>]*(\son[a-z]+=|(href|src)="\s*(javascript|data|vbscript):)`)
+
+func FuzzParse(f *testing.F) {
+	f.Add([]byte(sample))
+	f.Add([]byte(`{"type":"doc","content":[{"type":"text","text":"<script>"}]}`))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		n, err := Parse(data, nil)
+		if err != nil {
+			return
+		}
+		h := strings.ToLower(string(n.HTML(links)))
+		if strings.Contains(h, "<script") || unsafeAttr.MatchString(h) {
+			t.Fatalf("unsafe HTML: %s", h)
+		}
+		_ = n.Markdown(links)
+		_ = n.PlainText()
+		// The result of Parse is stable.
+		again, err := Parse(n.JSON(), nil)
+		if err != nil || string(again.JSON()) != string(n.JSON()) {
+			t.Fatalf("Parse is not stable: %s / %v", n.JSON(), err)
+		}
+	})
+}

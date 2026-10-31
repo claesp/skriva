@@ -49,7 +49,7 @@ for.
 |--------------|--------------|--------|
 | Pencil       | Edit         | Change the text of the document. For a folder, the name is **Rename**. |
 | Clock        | History      | Show the old versions of the document. |
-| `< >`        | Source       | Show the Markdown text of the document. |
+| `< >`        | Source       | Show the text of the document in Markdown. See [Source](#source). |
 | Folder with arrow | Move    | Move the item to a different place. |
 | Waste bin    | Delete       | Delete the item and the items in it. |
 | Lock         | Access       | Change the permissions of the item. |
@@ -84,34 +84,33 @@ moves. Only users with access to the tenant can open them.
 1. Open the space, a folder or a document.
 2. Click **New document** or **New folder** in the page header.
 3. Type the title.
-4. For a document, type the text. Click **Preview** (eye) in the toolbar
-   to see the result.
+4. For a document, type the text in the editor. See [The editor](#the-editor).
 5. Click **Save**.
 
 The new item is in the folder or the document that you opened. A folder
 cannot be in a document.
 
 You can also make a document from a wiki link. Write `[[Title of new
-document]]` in a document. Click the link. Then click **New
+document]]` in a document and save it. Click the link. Then click **New
 document**.
 
 ## Edit a document
 
 1. Click **Edit** (pencil) in the toolbar.
 2. Change the title or the text.
-3. Click **Preview** (eye) in the toolbar. The page shows the result
-   instead of the fields. The preview does not save. Click **Preview**
-   again to go back to the fields. Your changes stay.
-4. Optionally, type a comment about the change in **Comment**.
-5. Click **Save**.
+3. Optionally, type a comment about the change in **Comment**.
+4. Click **Save**.
 
 The edit page has the same tree, path and toolbar as the page of the
 document. The **Edit** button has a line below it. To stop without a
 save, click **Edit** again.
 
 If a different user saved the document after you started, the wiki does
-not save your text. Copy your text. Then reload the page and add your
-changes again.
+not save your text. Copy your text. Then open the document again and add
+your changes.
+
+If you try to leave the page with changes that are not saved, the
+browser asks you to confirm.
 
 To change the name of a folder, click **Rename** (pencil).
 
@@ -141,61 +140,90 @@ You cannot undo this.
 The wiki saves the old text as a new version. The history does not
 change.
 
-## Markdown
+## The editor
 
-| Text                          | Result |
-|-------------------------------|--------|
-| `# Heading`                   | A heading. Use `##` and `###` for lower levels. |
-| `**bold**`, `*italic*`        | **bold**, *italic* |
-| `` `code` ``                  | `code` |
-| `~~text~~`                    | ~~text~~ |
-| `[text](https://example.com)` | A link to a different site. |
-| `[[Title]]`                   | A link to a document in the same space. |
-| `[[Title#Heading]]`           | A link to a heading in a document. |
-| `- item`                      | A list. |
-| `1. item`                     | A numbered list. |
-| `- [ ] task`                  | A task list. |
-| `> text`                      | A quotation. |
-| `![text](https://...)`        | An image. |
+The editor shows the text with its formats, as the document page shows
+it. The editor needs JavaScript. Without JavaScript, you can change only
+the title of a document. All other pages work without JavaScript.
 
-Wiki links are case insensitive. `[[Install]]`, `[[install]]` and
-`[[INSTALL]]` go to the same document. This is also true for the heading
-in `[[Title#Heading]]`.
+The toolbar of the editor is above the text. It stays visible when you
+scroll. Put the mouse pointer on a button to see its name. A button for
+a format that applies at the cursor has a gray background.
 
-If more than one document in the space has the title of a wiki link, the
-wiki shows a list. Then select the correct document.
+| Button | Action |
+|--------|--------|
+| Undo, Redo | Undo or redo a change. |
+| Type of text | Normal text, or a heading of level 1, 2 or 3. |
+| Bold, Italic, Underline, Strikethrough, Code | Format the selected text. |
+| Align left, Align center, Align right | Align the paragraph or the heading. |
+| Bulleted list, Numbered list, Task list | Start or stop a list. Tab and Shift+Tab change the level of an item. |
+| Quote, Code block, Horizontal line | Add a quotation, a block of code or a line. |
+| Link | Add, change or remove a link. See [Links](#links). |
+| Image | Add an image from your computer. See [Images](#images). |
+| Table | Add a table with 3 rows and 3 columns. The first row is the header row. |
 
-Use three back-ticks (```` ``` ````) before and after a code block. To
-make a table, use `|` between the columns:
+When the cursor is in a table, the toolbar shows more buttons: **Add
+row**, **Remove row**, **Add column**, **Remove column**, **Merge or split
+cells**, **Header row** and **Remove table**. To merge cells, select
+them with the mouse or with Shift and the arrow keys. Then click **Merge
+or split cells**. Tab goes to the next cell.
 
-```
-| Name | Value |
-|------|-------|
-| a    | 1     |
-```
+### Shortcuts
 
-The wiki does not permit HTML in documents.
+You can also use the keyboard and some Markdown syntax:
 
-## Recent changes
+| Type or press | Result |
+|---------------|--------|
+| Ctrl+B, Ctrl+I, Ctrl+U | Bold, italic, underline. |
+| Ctrl+K | Add or change a link. |
+| Ctrl+Z, Ctrl+Shift+Z | Undo, redo. |
+| `#`, `##` or `###` and a space at the start of a line | A heading. |
+| `-` or `*` and a space | A bulleted list. |
+| `1.` and a space | A numbered list. |
+| `[ ]` and a space | A task list. |
+| `>` and a space | A quotation. |
+| ```` ``` ```` | A code block. |
+| `**text**`, `*text*`, `` `text` ``, `~~text~~` | Bold, italic, code, strikethrough. |
+| `[[Title]]` | A wiki link. |
 
-Administrators with the permission `tenant.manage` see the documents
-that changed last, in all spaces. Open **Administration**, then click
-**Recent changes** in the menu.
+On a Mac, use Cmd in place of Ctrl.
 
-## Sign out
+### Links
 
-Click **Sign out** (arrow out of a door) at the right side of the page
-header.
+Click **Link** or press Ctrl+K. Type the address and click **Apply** or
+press Enter. If you selected text, the text becomes the link. These
+addresses are permitted:
 
-## Search
+- `https://…` and `http://…`: a page on a different site.
+- `mailto:…`: an e-mail address.
+- `wiki:Title` or `wiki:Title#Heading`: a document in the same space.
+- A path that starts with `/`, for example the short link of a
+  document.
 
-Type words in the search field and push Enter. In a space, the search
-finds documents in that space. Click **Search in all spaces** (four
-squares) above the results to search in all spaces of the tenant. These forms are possible:
+Type `[[Title]]` in the text to make a wiki link quickly. Wiki links are
+case insensitive. `[[Install]]`, `[[install]]` and `[[INSTALL]]` go to
+the same document. This is also true for the heading in
+`[[Title#Heading]]`. If more than one document in the space has the
+title of a wiki link, the wiki shows a list. Then select the correct
+document.
 
-| Search          | Finds |
-|-----------------|-------|
-| `alpha beta`    | Documents with the two words. |
-| `"alpha beta"`  | Documents with the two words together. |
-| `alpha or beta` | Documents with one of the words. |
-| `alpha -beta`   | Documents with `alpha`, but not `beta`. |
+### Images
+
+Click **Image** and select a file. You can also paste an image, or drag
+an image file into the text. The wiki keeps the image with the document.
+
+- The file must be a PNG, JPEG, GIF or WebP image. SVG is not permitted.
+- The maximum size is 10 MiB.
+- The name of the file becomes the description of the image (the
+  alternative text).
+- A user who can read the document can see its images.
+
+If you add an image and do not save the document, the wiki deletes the
+image after one day.
+
+### Source
+
+**Source** (`< >`) shows the text of the document in Markdown. You can
+copy it to a different program. Markdown does not have all the formats
+of the editor. The source does not show the alignment, the underline and
+merged cells.

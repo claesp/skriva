@@ -104,11 +104,60 @@ data.
 ## Cross-site scripting (XSS)
 
 - The `html/template` package escapes all data in the templates.
-- The Markdown converter does not permit raw HTML.
-- The bluemonday sanitizer removes unsafe HTML from the result. It
-  permits only the `http`, `https` and `mailto` URL schemes.
-- The `Content-Security-Policy` header does not permit scripts. Thus a
-  browser does not run a script, also if a script gets into a page.
+- The server checks each document against a list of permitted nodes,
+  marks and attributes before it saves the document. It removes all
+  other items. A document cannot contain HTML: the converter makes all
+  HTML from the list, and escapes all text. See
+  [Document format](architecture.md#document-format).
+- A link can go only to `http`, `https`, `mailto`, `wiki:` and paths on
+  the same site. An image can come only from an uploaded file or an
+  `https` URL. Thus a document cannot contain `javascript:` or `data:`
+  URLs.
+- The bluemonday sanitizer removes unsafe HTML from the result a second
+  time. It permits only the `http`, `https` and `mailto` URL schemes.
+- The `Content-Security-Policy` header does not permit scripts, except
+  the editor script on the form of a document. Thus a browser does not
+  run a script, also if a script gets into a page.
+- A fuzz test (`FuzzParse` in `internal/doc`) makes sure that no input
+  gives a script, an event handler or a script URL in the HTML.
+
+## JavaScript
+
+Only the form of a document uses JavaScript: the editor. These controls
+apply:
+
+- The script comes from the same site (`/static/editor.js`). The page
+  does not load scripts from other sites, and it has no inline scripts.
+- The form of a document has its own security policy. It adds only
+  `script-src 'self'` and `connect-src 'self'` (for uploads). It does
+  not add `'unsafe-inline'` or `'unsafe-eval'`. All other pages keep the
+  policy without scripts.
+- The editor does not add a style element or style attributes. The
+  alignment uses CSS classes.
+- The build installs the exact versions and checksums in
+  `web/editor/package-lock.json`. The packages cannot run install
+  scripts. The build stops if `npm audit` finds a known vulnerability.
+- The server does not trust the editor. It checks all data again. See
+  [Cross-site scripting](#cross-site-scripting-xss).
+
+## Uploaded files
+
+- A user must have the permission to edit the document (or to make a
+  document in the parent) to upload an image.
+- The maximum size is 10 MiB. The body limit of the request is larger
+  only for uploads.
+- The server finds the type from the data, not from the name or the
+  request. It accepts only PNG, JPEG, GIF and WebP. It does not accept
+  SVG, because an SVG file can contain scripts.
+- A user can read a file only if the user can read a document that uses
+  it. Before a document uses the file, only the user that uploaded it
+  can read it. A file that no document uses after one day is deleted.
+- The server sends a file with its type, `X-Content-Type-Options:
+  nosniff` and the security policy `default-src 'none'; sandbox`. Thus a
+  browser does not run content from a file, also if a user opens the
+  file directly.
+- The ID of a file is random, as the ID of a document. The server checks
+  the permission for each request.
 
 ## HTTP headers
 
@@ -116,7 +165,7 @@ The server sends these headers with each response:
 
 | Header | Value |
 |--------|-------|
-| `Content-Security-Policy` | `default-src 'none'; style-src 'self'; img-src 'self' https:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'` |
+| `Content-Security-Policy` | `default-src 'none'; style-src 'self'; img-src 'self' https:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`. The form of a document adds `script-src 'self'; connect-src 'self'`. An uploaded file has `default-src 'none'; sandbox`. |
 | `X-Content-Type-Options` | `nosniff` |
 | `X-Frame-Options` | `DENY` |
 | `Referrer-Policy` | `same-origin` |
@@ -142,9 +191,10 @@ control characters.
 
 ## Limits
 
-- The maximum request body is 2 MiB.
-- The maximum document text is 1 MiB. Each tenant can set a lower
-  limit.
+- The maximum request body is 2 MiB. For an upload, it is 10 MiB.
+- The maximum document text is 1 MiB (the JSON text). Each tenant can
+  set a lower limit. A document can have a maximum of 64 levels and
+  200000 nodes.
 - The maximum time for a request is 30 seconds.
 - The server permits a maximum of 20 login starts per second, for all
   clients together. Each login start writes one row to the database.

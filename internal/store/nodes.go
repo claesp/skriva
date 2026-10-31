@@ -25,7 +25,9 @@ type Node struct {
 	Kind     string
 	Title    string
 	// Slug is a readable form of the title for the URL. It can be empty.
-	Slug    string
+	Slug string
+	// Body is the text of a document in the JSON format of the editor.
+	// The store does not check the format. See package doc.
 	Body    string
 	Version int
 	// DefaultRole is the default role of the node. Nil means that the
@@ -70,6 +72,20 @@ type Revision struct {
 	CreatedAt time.Time
 }
 
+// emptyBody is the body of a folder.
+const emptyBody = `{"type":"doc"}`
+
+// Content is the text of a document.
+type Content struct {
+	// Body is the text in the JSON format of the editor.
+	Body string
+	// PlainText is the text for the search index.
+	PlainText string
+	// Files are the public IDs of the uploaded files that the text uses.
+	// Files from other spaces have no effect.
+	Files []string
+}
+
 // NewNode contains the data for a new node.
 type NewNode struct {
 	// ParentPublicID is the public ID of the parent. Empty means the root.
@@ -77,9 +93,32 @@ type NewNode struct {
 	Kind           string
 	Title          string
 	Slug           string
-	Body           string
-	Comment        string
-	AuthorID       int64
+	Content
+	Comment  string
+	AuthorID int64
+}
+
+// NodeUpdate contains the data for a new version of a node.
+type NodeUpdate struct {
+	// BaseVersion is the version that the author edited.
+	BaseVersion int
+	Title       string
+	Slug        string
+	Content
+	Comment  string
+	AuthorID int64
+}
+
+// addFileRefs records that a node uses files.
+func addFileRefs(ctx context.Context, tx pgx.Tx, spaceID, nodeID int64, files []string) error {
+	if len(files) == 0 {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO file_refs (file_id, node_id, space_id)
+		SELECT f.id, $2, $1 FROM files f WHERE f.space_id = $1 AND f.public_id = ANY($3)
+		ON CONFLICT DO NOTHING`, spaceID, nodeID, files)
+	return err
 }
 
 // Node returns the node with the given public ID in a space.
@@ -181,8 +220,8 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 	if nn.Kind != KindFolder && nn.Kind != KindDocument {
 		return "", ErrInvalid
 	}
-	if nn.Kind == KindFolder {
-		nn.Body = ""
+	if nn.Kind == KindFolder || nn.Body == "" {
+		nn.Content = Content{Body: emptyBody}
 	}
 	publicID := NewPublicID()
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -198,18 +237,22 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 		// A new node has no own access settings. Thus it gets the access
 		// path of its parent.
 		err = tx.QueryRow(ctx, `
-			INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug, body, version,
+			INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug, body, plain_text, version,
 			                   created_by, updated_by, created_at, updated_at, access_path_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8, $8, $9, $9, $10)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $9, $10, $10, $11)
 			RETURNING id`,
-			publicID, spaceID, parentID, nn.Kind, nn.Title, nn.Slug, nn.Body, nullID(nn.AuthorID), now, pathID).Scan(&id)
+			publicID, spaceID, parentID, nn.Kind, nn.Title, nn.Slug, nn.Body, nn.PlainText,
+			nullID(nn.AuthorID), now, pathID).Scan(&id)
 		if err != nil {
 			return err
 		}
 		_, err = tx.Exec(ctx, `
 			INSERT INTO revisions (node_id, version, title, body, author_id, comment, created_at)
 			VALUES ($1, 1, $2, $3, $4, $5, $6)`, id, nn.Title, nn.Body, nullID(nn.AuthorID), nn.Comment, now)
-		return err
+		if err != nil {
+			return err
+		}
+		return addFileRefs(ctx, tx, spaceID, id, nn.Files)
 	})
 	if err != nil {
 		return "", err
@@ -217,24 +260,29 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 	return publicID, nil
 }
 
-// UpdateNode saves a new version of a node. baseVersion is the version
-// that the author edited. If the node has a different version now, the
-// function returns ErrConflict and changes nothing. This prevents lost
-// updates when two users edit the same node. For a folder, the function
-// ignores body.
-func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, baseVersion int,
-	title, slug, body, comment string, authorID int64) error {
+// UpdateNode saves a new version of a node. If the node does not have
+// the version u.BaseVersion now, the function returns ErrConflict and
+// changes nothing. This prevents lost updates when two users edit the
+// same node. For a folder, the function ignores the content.
+func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, u NodeUpdate) error {
+	if u.Body == "" {
+		u.Content = Content{Body: emptyBody}
+	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		now := s.now()
 		var id int64
 		var version int
+		var body string
+		var folder bool
 		err := tx.QueryRow(ctx, `
 			UPDATE nodes SET title = $4, slug = $5,
-			                 body = CASE WHEN kind = 'folder' THEN '' ELSE $6 END,
-			                 version = version + 1, updated_by = $7, updated_at = $8
+			                 body = CASE WHEN kind = 'folder' THEN $9::jsonb ELSE $6::jsonb END,
+			                 plain_text = CASE WHEN kind = 'folder' THEN '' ELSE $7 END,
+			                 version = version + 1, updated_by = $8, updated_at = $10
 			WHERE space_id = $1 AND public_id = $2 AND version = $3
-			RETURNING id, version, body`,
-			spaceID, publicID, baseVersion, title, slug, body, nullID(authorID), now).Scan(&id, &version, &body)
+			RETURNING id, version, body, kind = 'folder'`,
+			spaceID, publicID, u.BaseVersion, u.Title, u.Slug, u.Body, u.PlainText, nullID(u.AuthorID),
+			emptyBody, now).Scan(&id, &version, &body, &folder)
 		if errors.Is(err, pgx.ErrNoRows) {
 			var exists bool
 			if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM nodes WHERE space_id = $1 AND public_id = $2)",
@@ -251,8 +299,11 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 		}
 		_, err = tx.Exec(ctx, `
 			INSERT INTO revisions (node_id, version, title, body, author_id, comment, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)`, id, version, title, body, nullID(authorID), comment, now)
-		return err
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`, id, version, u.Title, body, nullID(u.AuthorID), u.Comment, now)
+		if err != nil || folder {
+			return err
+		}
+		return addFileRefs(ctx, tx, spaceID, id, u.Files)
 	})
 }
 
@@ -505,7 +556,7 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 	rows, err := s.pool.Query(ctx, `
 		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id,
 		       sp.id, sp.slug, sp.name,
-		       ts_headline('simple', n.body, q, 'StartSel=«, StopSel=», MaxFragments=2, MaxWords=20, MinWords=5')
+		       ts_headline('simple', n.plain_text, q, 'StartSel=«, StopSel=», MaxFragments=2, MaxWords=20, MinWords=5')
 		FROM nodes n
 		JOIN spaces sp ON sp.id = n.space_id,
 		     websearch_to_tsquery('simple', $3) q

@@ -190,13 +190,6 @@
     {{with .Data.Crumb}} / {{.}}{{end}}
   </nav>
   <nav class="toolbar" aria-label="Tools">
-    {{if .Data.Editor}}<span class="group">
-      {{if .Data.Previewing}}
-      <button type="submit" form="nodeform" name="action" value="edit" class="tool current" title="Preview (close)" aria-label="Preview (close)" aria-pressed="true">{{template "icon" "preview"}}</button>
-      {{else}}
-      <button type="submit" form="nodeform" name="action" value="preview" class="tool" title="Preview" aria-label="Preview" aria-pressed="false">{{template "icon" "preview"}}</button>
-      {{end}}
-    </span>{{end}}
     {{if .Data.Node}}{{template "nodetools" .}}{{end}}
   </nav>
 </div>

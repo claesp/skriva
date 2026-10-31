@@ -1,7 +1,8 @@
 # Skriva
 
-Skriva is a wiki. Users write documents in Markdown. The server keeps
-the documents and all their versions in PostgreSQL.
+Skriva is a wiki. Users write documents in a WYSIWYG editor, with
+headings, lists, tables, alignment and images. The server keeps the
+documents, their images and all their versions in PostgreSQL.
 
 - A **tenant** is the main organizational unit. Each tenant has its own
   identity provider (OpenID Connect), users, groups, roles and settings.
@@ -9,7 +10,8 @@ the documents and all their versions in PostgreSQL.
   **documents** in a tree with no depth limit.
 - Role-based access control (RBAC) controls what each user can do.
 
-The web pages do not use JavaScript.
+The web pages do not use JavaScript. The only exception is the editor
+of a document.
 
 ## Quick start
 

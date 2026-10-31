@@ -69,10 +69,12 @@ The logs do not contain session tokens, ID tokens or secrets.
 ## Maintenance
 
 The server deletes expired sessions and login data every 10 minutes.
+At the same time, it deletes uploaded images that no document uses
+after one day.
 
 ## Backup
 
-All data is in PostgreSQL. Also make a backup of the encryption key.
+All data is in PostgreSQL, also the uploaded images. Also make a backup of the encryption key.
 Without the key, the server cannot read the client secrets of the
 tenants. Use `pg_dump` or the backup system of your database. Example:
 

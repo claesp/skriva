@@ -1,4 +1,9 @@
-.PHONY: build test test-integration test-e2e lint image dev-up dev-app dev-down run
+.PHONY: editor build test test-integration test-e2e lint image dev-up dev-app dev-down run
+
+# Build the script of the editor (needs Podman). The result is in
+# internal/web/static/editor.js.
+editor:
+	scripts/build-editor.sh
 
 build:
 	go build -trimpath -o bin/skriva ./cmd/skriva

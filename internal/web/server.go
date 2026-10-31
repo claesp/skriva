@@ -25,7 +25,6 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/clpe/skriva/internal/markdown"
 	"github.com/clpe/skriva/internal/store"
 )
 
@@ -69,7 +68,6 @@ type Server struct {
 	store *store.Store
 	opts  Options
 	log   *slog.Logger
-	md    *markdown.Renderer
 	tmpl  *templates
 
 	loginLimit *rate.Limiter
@@ -99,7 +97,6 @@ func New(st *store.Store, opts Options, log *slog.Logger) (*Server, error) {
 		store:      st,
 		opts:       opts,
 		log:        log,
-		md:         markdown.New(),
 		tmpl:       tmpl,
 		loginLimit: rate.NewLimiter(rate.Limit(opts.LoginRate), int(opts.LoginRate*5)),
 		systemMux:  http.NewServeMux(),

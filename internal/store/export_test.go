@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -79,3 +80,6 @@ func (s *Store) AccessCacheReport(ctx context.Context, spaceID int64) (cached, c
 	}
 	return cached, calculated, nil
 }
+
+// SetNow replaces the clock of the store.
+func (s *Store) SetNow(now func() time.Time) { s.now = now }

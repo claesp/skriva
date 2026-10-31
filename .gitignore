@@ -3,3 +3,4 @@
 *.test
 *.out
 .env
+/web/editor/node_modules/

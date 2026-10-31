@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/clpe/skriva/internal/rbac"
@@ -137,9 +138,16 @@ func (s *Server) withRecover(next http.Handler) http.Handler {
 	})
 }
 
-// contentSecurityPolicy permits no scripts. The application does not use
-// JavaScript.
+// contentSecurityPolicy permits no scripts. Only the form of a document
+// uses JavaScript. See editorSecurityPolicy.
 const contentSecurityPolicy = "default-src 'none'; style-src 'self'; img-src 'self' https:; " +
+	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+
+// editorSecurityPolicy applies to the form of a document. It permits the
+// script of the editor from the same site, and requests to the same site
+// for uploads. It does not permit inline scripts or inline styles.
+const editorSecurityPolicy = "default-src 'none'; script-src 'self'; connect-src 'self'; " +
+	"style-src 'self'; img-src 'self' https:; " +
 	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 
 func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
@@ -164,7 +172,11 @@ func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 
 func (s *Server) withLimits(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
+		limit := int64(maxFormBytes)
+		if isUpload(r) {
+			limit = maxUploadBytes + 64<<10
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		ctx, cancel := context.WithTimeout(r.Context(), s.opts.RequestTimeout)
 		defer cancel()
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -247,7 +259,12 @@ func (s *Server) checkCSRF(w http.ResponseWriter, r *http.Request, sess *store.S
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		return true
 	}
-	if err := r.ParseForm(); err != nil {
+	// ParseForm does not read a multipart body. An upload sends one.
+	parse := r.ParseForm
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		parse = func() error { return r.ParseMultipartForm(maxUploadBytes + 64<<10) }
+	}
+	if err := parse(); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			s.renderError(w, r, http.StatusRequestEntityTooLarge, "The form is too large.")

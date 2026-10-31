@@ -26,9 +26,9 @@ var staticFS embed.FS
 
 type templates struct {
 	pages map[string]*template.Template
-	// styleVersion is a hash of the style sheet. It changes the URL when
-	// the file changes, thus browsers can keep the file in a cache.
-	styleVersion string
+	// versions contains a hash of each static file. It changes the URL
+	// when the file changes, thus browsers can keep the file in a cache.
+	versions map[string]string
 }
 
 // treeArgs is the argument of the recursive "tree" template.
@@ -109,8 +109,12 @@ var funcs = template.FuncMap{
 	"crumb3": func(rootURL, rootLabel, parentURL, parentLabel, title, icon string) crumbArgs {
 		return crumbArgs{rootURL, rootLabel, parentURL, parentLabel, title, icon}
 	},
-	"items":       func(base string, nodes any) itemsArgs { return itemsArgs{base, nodes} },
-	"source":      groupSource,
+	"items":  func(base string, nodes any) itemsArgs { return itemsArgs{base, nodes} },
+	"source": groupSource,
+	// ebtn gives the data of a button in the toolbar of the editor.
+	"ebtn": func(command, icon, label string) toolArgs {
+		return toolArgs{Href: command, Icon: icon, Label: label}
+	},
 	"defaultrole": func(text, editURL string) defaultRoleArgs { return defaultRoleArgs{text, editURL} },
 	// ntool is a button in the toolbar of a node. The button of the
 	// current tab is marked and opens closeURL. Thus a second click ends
@@ -150,12 +154,17 @@ func loadTemplates() (*templates, error) {
 		t.pages[strings.TrimSuffix(name, ".html")] = clone
 	}
 
-	css, err := staticFS.ReadFile("static/style.css")
-	if err != nil {
-		return nil, err
+	// Each static file has a version: a part of the hash of the content.
+	// The URL contains the version, thus a browser can keep the file.
+	t.versions = map[string]string{}
+	for _, name := range []string{"style.css", "editor.js"} {
+		data, err := staticFS.ReadFile("static/" + name)
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.Sum256(data)
+		t.versions[name] = hex.EncodeToString(sum[:8])
 	}
-	sum := sha256.Sum256(css)
-	t.styleVersion = hex.EncodeToString(sum[:8])
 	return t, nil
 }
 
@@ -234,7 +243,7 @@ func (s *Server) newView(r *http.Request, title string, data any) *view {
 		Tenant:   ri.Tenant,
 		Space:    ri.Space,
 		Session:  ri.Session,
-		StyleURL: "/static/style.css?v=" + s.tmpl.styleVersion,
+		StyleURL: s.staticURL("style.css"),
 		System:   strings.HasPrefix(r.URL.Path, "/admin/"),
 		New:      ri.New,
 		Data:     data,
@@ -270,6 +279,11 @@ func (s *Server) renderError(w http.ResponseWriter, r *http.Request, status int,
 	}{status, msg})
 }
 
+// staticURL returns the URL of a static file with its version.
+func (s *Server) staticURL(name string) string {
+	return "/static/" + name + "?v=" + s.tmpl.versions[name]
+}
+
 func (s *Server) staticHandler() http.Handler {
 	sub, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -282,7 +296,7 @@ func (s *Server) staticHandler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if r.URL.Query().Get("v") == s.tmpl.styleVersion {
+		if v := s.tmpl.versions[strings.TrimPrefix(r.URL.Path, "/static/")]; v != "" && r.URL.Query().Get("v") == v {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
 			w.Header().Set("Cache-Control", "public, max-age=300")

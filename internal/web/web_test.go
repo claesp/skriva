@@ -1,10 +1,13 @@
 package web
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -250,11 +253,21 @@ func wantStatus(t *testing.T, resp *http.Response, want int) {
 
 const sp = "/dflt/default0"
 
+// docBody returns the JSON of a document. A text that does not start
+// with "{" becomes one paragraph. Other text is the JSON.
+func docBody(text string) string {
+	if strings.HasPrefix(text, "{") {
+		return text
+	}
+	t, _ := json.Marshal(text)
+	return `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":` + string(t) + `}]}]}`
+}
+
 // create makes a node and returns its public ID.
 func (c *client) create(kind, parent, title, body string) string {
 	c.e.t.Helper()
 	resp := c.post(sp+"/new", url.Values{
-		"kind": {kind}, "parent": {parent}, "title": {title}, "body": {body}, "action": {"save"},
+		"kind": {kind}, "parent": {parent}, "title": {title}, "body": {docBody(body)}, "action": {"save"},
 	})
 	wantStatus(c.e.t, resp, http.StatusSeeOther)
 	loc := resp.Header.Get("Location")
@@ -267,7 +280,7 @@ func (c *client) create(kind, parent, title, body string) string {
 
 func (c *client) save(id, title, body string, version int) *http.Response {
 	return c.post(sp+"/edit/"+id, url.Values{
-		"title": {title}, "body": {body}, "version": {strconv.Itoa(version)}, "action": {"save"},
+		"title": {title}, "body": {docBody(body)}, "version": {strconv.Itoa(version)}, "action": {"save"},
 	})
 }
 
@@ -428,8 +441,12 @@ func TestTreeAndDocuments(t *testing.T) {
 
 	guides := bob.create("folder", "", "Guides", "ignored")
 	setup := bob.create("folder", guides, "Setup", "")
-	install := bob.create("document", setup, "Install", "# Install\n\nSee [[Configure]].")
-	linux := bob.create("document", install, "Install on Linux", "Use **Podman**.")
+	install := bob.create("document", setup, "Install", `{"type":"doc","content":[
+		{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Install"}]},
+		{"type":"paragraph","content":[{"type":"text","text":"See "},
+			{"type":"text","text":"Configure","marks":[{"type":"link","attrs":{"href":"wiki:Configure"}}]}]}]}`)
+	linux := bob.create("document", install, "Install on Linux", `{"type":"doc","content":[{"type":"paragraph","content":[
+		{"type":"text","text":"Use "},{"type":"text","text":"Podman","marks":[{"type":"bold"}]},{"type":"text","text":"."}]}]}`)
 
 	// A folder cannot be in a document.
 	wantStatus(t, bob.post(sp+"/new", url.Values{"kind": {"folder"}, "parent": {install}, "title": {"x"}}), http.StatusBadRequest)
@@ -486,13 +503,8 @@ func TestTreeAndDocuments(t *testing.T) {
 		t.Fatalf("old slug redirects to %q", loc)
 	}
 
-	// Conflict, preview, history and restore.
+	// Conflict, history and restore.
 	wantStatus(t, bob.save(cfg, "Configuration", "lost", 1), http.StatusConflict)
-	resp = bob.post(sp+"/edit/"+cfg, url.Values{"title": {"C"}, "body": {"**p**"}, "version": {"2"}, "action": {"preview"}})
-	wantStatus(t, resp, http.StatusOK)
-	if b := readBody(t, resp); !strings.Contains(b, "<strong>p</strong>") {
-		t.Fatalf("no preview:\n%s", b)
-	}
 	if b := readBody(t, bob.get(sp+"/history/"+cfg)); !strings.Contains(b, "/history/"+cfg+"/1") {
 		t.Fatalf("history:\n%s", b)
 	}
@@ -501,7 +513,7 @@ func TestTreeAndDocuments(t *testing.T) {
 	if b := readBody(t, bob.get(sp+"/edit/"+cfg+"?from=1")); !strings.Contains(b, `value="Configure"`) {
 		t.Fatalf("restore form:\n%s", b)
 	}
-	if raw := readBody(t, bob.get(sp+"/raw/"+linux)); raw != "Use **Podman**." {
+	if raw := readBody(t, bob.get(sp+"/raw/"+linux)); raw != "Use **Podman**.\n" {
 		t.Fatalf("raw = %q", raw)
 	}
 
@@ -573,18 +585,29 @@ func TestTreeAndDocuments(t *testing.T) {
 		}
 	}
 
-	// Preview shows the text instead of the fields. "edit" goes back to
-	// the fields and keeps the text.
-	resp = bob.post(sp+"/edit/"+linux, url.Values{"title": {"Linux"}, "body": {"**draft**"}, "version": {"1"}, "action": {"preview"}})
+	// Only the form of a document permits the script of the editor. The
+	// form contains the JSON of the text and the toolbar.
+	resp = bob.get(sp + "/edit/" + linux)
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") || strings.Contains(csp, "unsafe-inline") {
+		t.Fatalf("CSP of the editor: %s", csp)
+	}
 	b = readBody(t, resp)
-	if !strings.Contains(b, "<strong>draft</strong>") || strings.Contains(b, "<textarea") || !strings.Contains(b, `value="edit"`) {
-		t.Fatalf("preview page:\n%s", b)
+	for _, want := range []string{`<script src="/static/editor.js?v=`, `data-editor-toolbar`, `name="body" value="{&#34;type&#34;:&#34;doc&#34;`, `data-upload="` + sp + `/files?node=` + linux + `"`} {
+		if !strings.Contains(b, want) {
+			t.Fatalf("editor page does not contain %q:\n%s", want, b)
+		}
 	}
-	resp = bob.post(sp+"/edit/"+linux, url.Values{"title": {"Linux"}, "body": {"**draft**"}, "version": {"1"}, "action": {"edit"}})
-	wantStatus(t, resp, http.StatusOK)
-	if b := readBody(t, resp); !strings.Contains(b, "**draft**</textarea>") {
-		t.Fatalf("editor after preview:\n%s", b)
+	if csp := bob.get(doc).Header.Get("Content-Security-Policy"); strings.Contains(csp, "script-src") {
+		t.Fatalf("CSP of a document permits scripts: %s", csp)
 	}
+	if csp := bob.get(sp + "/edit/" + guides).Header.Get("Content-Security-Policy"); strings.Contains(csp, "script-src") {
+		t.Fatalf("CSP of the folder form permits scripts: %s", csp)
+	}
+	if b := readBody(t, bob.get(sp+"/new?kind=document&parent="+linux)); !strings.Contains(b, `data-upload="`+sp+`/files?parent=`+linux+`"`) {
+		t.Fatalf("form of a new document:\n%s", b)
+	}
+	// A text that is not JSON is not valid.
+	wantStatus(t, bob.save(linux, "Linux", "{", 1), http.StatusUnprocessableEntity)
 }
 
 func TestValidation(t *testing.T) {
@@ -606,7 +629,11 @@ func TestValidation(t *testing.T) {
 func TestXSSIsEscaped(t *testing.T) {
 	e := newEnv(t)
 	bob := e.login("bob")
-	id := bob.create("document", "", `<script>alert("t")</script>`, "<script>alert(1)</script>\n\n[x](javascript:alert(2))")
+	id := bob.create("document", "", `<script>alert("t")</script>`, `{"type":"doc","content":[
+		{"type":"paragraph","content":[{"type":"text","text":"<script>alert(1)</script>"},
+			{"type":"text","text":"x","marks":[{"type":"link","attrs":{"href":"javascript:alert(2)"}}]}]},
+		{"type":"script","content":[{"type":"text","text":"alert(3)"}]},
+		{"type":"image","attrs":{"src":"javascript:alert(4)","onerror":"alert(5)"}}]}`)
 	body := readBody(t, bob.get(sp+"/d/"+id+"/script-alert-t-script"))
 	if strings.Contains(body, "<script") || strings.Contains(body, "javascript:") {
 		t.Fatalf("page contains script:\n%s", body)
@@ -914,7 +941,7 @@ func TestSpacePermissions(t *testing.T) {
 	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/default-role", url.Values{"default_role": {"bad role"}}), http.StatusBadRequest)
 	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/default-role", url.Values{"default_role": {"nothere"}}), http.StatusBadRequest)
 	wantStatus(t, alice.post("/dflt/admin/spaces/secret00/default-role", url.Values{"default_role": {""}}), http.StatusSeeOther)
-	resp := alice.post("/dflt/secret00/new", url.Values{"kind": {"document"}, "title": {"Plans"}, "body": {"walrus"}, "action": {"save"}})
+	resp := alice.post("/dflt/secret00/new", url.Values{"kind": {"document"}, "title": {"Plans"}, "body": {docBody("walrus")}, "action": {"save"}})
 	wantStatus(t, resp, http.StatusSeeOther)
 	doc := resp.Header.Get("Location")
 
@@ -1183,4 +1210,77 @@ func TestLargeSpaceTree(t *testing.T) {
 		t.Fatal("folder page does not show its children")
 	}
 	wantStatus(t, alice.get(sp+"/"), http.StatusOK)
+}
+
+// upload sends a file to the upload URL and returns the response.
+func (c *client) upload(path, name string, data []byte) *http.Response {
+	c.e.t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("csrf_token", c.csrf)
+	fw, _ := mw.CreateFormFile("file", name)
+	_, _ = fw.Write(data)
+	_ = mw.Close()
+	req, _ := http.NewRequest(http.MethodPost, c.e.srv.URL+path, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		c.e.t.Fatal(err)
+	}
+	return resp
+}
+
+// png is the start of a PNG file. The server finds the type from it.
+var png = append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+
+func TestUploads(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob")
+	carol := e.login("carol")
+	id := bob.create("document", "", "Pictures", "x")
+
+	// A reader cannot upload. An editor can.
+	wantStatus(t, carol.upload(sp+"/files?node="+id, "a.png", png), http.StatusForbidden)
+	wantStatus(t, bob.upload(sp+"/files?node=zzzzzzzzzzzzzz", "a.png", png), http.StatusNotFound)
+	wantStatus(t, bob.upload(sp+"/files?node="+id, "a.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)), http.StatusUnsupportedMediaType)
+	wantStatus(t, bob.upload(sp+"/files?node="+id, "a.png", append(png, make([]byte, maxUploadBytes)...)), http.StatusRequestEntityTooLarge)
+	resp := bob.upload(sp+"/files?node="+id, "a.png", png)
+	wantStatus(t, resp, http.StatusOK)
+	var out struct{ URL string }
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if !regexp.MustCompile(`^` + sp + `/files/[0-9a-z]{14}$`).MatchString(out.URL) {
+		t.Fatalf("upload URL = %q", out.URL)
+	}
+
+	// Before a document uses the file, only the user that uploaded it
+	// can read it.
+	resp = bob.get(out.URL)
+	wantStatus(t, resp, http.StatusOK)
+	if ct, csp := resp.Header.Get("Content-Type"), resp.Header.Get("Content-Security-Policy"); ct != "image/png" || !strings.Contains(csp, "sandbox") {
+		t.Fatalf("file headers: %q, %q", ct, csp)
+	}
+	resp.Body.Close()
+	wantStatus(t, carol.get(out.URL), http.StatusNotFound)
+
+	// The document saves the file as a "file:" reference. The page
+	// shows the URL. Then all readers of the document can read the file.
+	body := `{"type":"doc","content":[{"type":"image","attrs":{"src":"` + out.URL + `","alt":"A"}}]}`
+	wantStatus(t, bob.save(id, "Pictures", body, 1), http.StatusSeeOther)
+	page := readBody(t, carol.get(sp+"/d/"+id+"/pictures"))
+	if !strings.Contains(page, `<img src="`+out.URL+`" alt="A"`) {
+		t.Fatalf("document does not show the image:\n%s", page)
+	}
+	wantStatus(t, carol.get(out.URL), http.StatusOK)
+	if raw := readBody(t, carol.get(sp+"/raw/"+id)); raw != "![A]("+out.URL+")\n" {
+		t.Fatalf("raw = %q", raw)
+	}
+
+	// An upload for a new document checks the parent.
+	wantStatus(t, carol.upload(sp+"/files?parent="+id, "a.png", png), http.StatusForbidden)
+	wantStatus(t, bob.upload(sp+"/files?parent="+id, "a.png", png), http.StatusOK)
+	wantStatus(t, bob.upload(sp+"/files", "a.png", png), http.StatusOK)
 }

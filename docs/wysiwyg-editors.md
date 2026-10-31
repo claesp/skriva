@@ -1,8 +1,11 @@
 # WYSIWYG editors: research
 
 This document compares free editor components for WYSIWYG editing of
-documents in Skriva. It gives a recommendation and a plan for the
-integration. The data is from 2026-10-31.
+documents in Skriva. It gives the decision and the reasons. The data is
+from 2026-10-31.
+
+Skriva uses Tiptap 3, and keeps the documents in the JSON format of
+Tiptap. See [Decision](#decision).
 
 ## Requirements
 
@@ -13,8 +16,9 @@ integration. The data is from 2026-10-31.
    Policy. The server must not trust the editor output.
 5. Control: Skriva makes the toolbar buttons. The component must not
    force its own user interface.
-6. Storage: if possible, keep Markdown (GFM, footnotes and wiki links)
-   as the storage format.
+6. Formats: inline images, full table support (header rows, merged
+   cells), text formats, alignment and headings. The storage format can
+   change for these formats.
 7. License: an open-source license that permits use in all types of
    software (MIT, BSD, Apache or MPL). GPL-only components are not
    suitable.
@@ -60,95 +64,67 @@ input methods (IME), spelling checks, screen readers and the selection
 of the operating system. An editor that draws on a canvas does not give
 these functions. Thus the editor must use JavaScript.
 
-WebAssembly can give one small advantage: the Go Markdown renderer
-(goldmark) can run in the browser. Then the preview is the same as the
-server result. But the Go runtime adds approximately 2 to 5 MB. The
-server preview is sufficient. Do not use WebAssembly.
+WebAssembly could run Go code of the server in the browser, for example
+the HTML converter. But the Go runtime adds approximately 2 to 5 MB, and
+a WYSIWYG editor shows the result directly. Do not use WebAssembly.
 
 ## Storage format
 
-Keep Markdown as the storage format. The reasons are:
+Markdown (GFM) does not have alignment, underline or merged table cells.
+Raw HTML in Markdown can have them, but Skriva does not permit raw HTML
+for security. Thus Markdown cannot be the storage format.
 
-- The history shows the differences between versions as text.
-- The "Source" page, the search and the text export use the text.
-- A user without JavaScript can edit the text in the text field.
-- The server renders the text with goldmark and bluemonday. Thus the
-  editor is not a security control.
+| Format | Advantages | Disadvantages |
+|--------|------------|---------------|
+| Tiptap JSON (ProseMirror) | The format of the editor, with no conversion and no loss. The server can check it against a list of nodes and attributes. The server makes all HTML. | Not readable as text. Diffs of versions are difficult. Needs a converter for the search and for export. |
+| HTML | Easy to show. | The server must sanitize HTML from the browser. Inline styles conflict with the security policy. Diffs are difficult. |
+| Markdown | Readable. Easy to diff. | Does not have the necessary formats. |
 
-The editor must show only the formats that Markdown can keep. Do not
-add buttons for formats that Markdown does not have, for example text
-color, text alignment, underline or merged table cells. If a format is
-necessary in the future, do the change of the storage format then.
+The decision is Tiptap JSON. The server keeps a plain-text version of
+each document for the search, and converts a document to Markdown for
+the "Source" page. The Markdown ignores the formats that Markdown does
+not have.
 
-The editor needs these formats, because Skriva supports them now:
+## Changes without the Markdown requirement
 
-| Format | Tiptap | Milkdown |
-|--------|--------|----------|
-| Headings, bold, italic, code, links, lists, quotes, code blocks, rules | Yes | Yes |
-| Strikethrough, tables, task lists (GFM) | Yes | Yes (GFM preset) |
-| Footnotes | Own extension | Yes (GFM preset) |
-| Wiki links `[[Title]]` | Own extension | Own plugin |
-| Images (links to images) | Yes | Yes |
+- **Tiptap** stays the best choice. Its MIT extensions have all the
+  necessary formats: tables with merged cells and header rows, text
+  alignment, images and underline.
+- **Milkdown** is not suitable now. Its main advantage is the Markdown
+  support.
+- **Lexical** is the best alternative. It has tables with merged cells
+  and alignment, but it is still at version 0.x.
+- **CKEditor 5** has the most formats, but its free license is GPL.
 
-## Recommendation
+## Decision
 
-Use **Tiptap 3** with `@tiptap/markdown`. The reasons are:
+Skriva uses **Tiptap 3** (MIT) with the JSON format. The reasons are:
 
-- **Control.** Tiptap has no user interface. Skriva makes the toolbar
-  with its own HTML and icons. Each button calls a command, for example
-  `editor.chain().focus().toggleBold().run()`. The function
-  `editor.isActive("bold")` gives the state of each button.
-- **Reliability.** Tiptap uses ProseMirror. It has the most users of the
-  components in this document, a company maintains it, and it has new
-  releases each week. All parts that Skriva needs have the MIT license.
-  Skriva does not use the paid parts (Tiptap Cloud, collaboration, AI).
-- **Security.** The ProseMirror schema removes all HTML that it does not
-  know, also in pasted text. The editor does not need `eval`.
+- **Control.** Tiptap has no user interface. The Go templates make the
+  toolbar with the same icons as the other pages. The script connects
+  each button to a command.
+- **Reliability.** Tiptap uses ProseMirror, which many products use. A
+  company maintains Tiptap and makes new releases each week. Skriva uses
+  only the MIT parts.
+- **Security.** The ProseMirror schema removes unknown HTML, also in
+  pasted text. The editor works with the strict security policy: no
+  inline scripts, no `eval`, no inline styles. The server checks all
+  data again.
 - **Performance.** ProseMirror changes only the parts of the DOM that
-  change. The size of the script is approximately 150 to 250 KB
-  minified (estimate, measure it in the prototype).
+  change. The script is 445 KB minified (140 KB with gzip). Only the
+  form of a document loads it, and the browser keeps it in its cache.
 
-The risk: `@tiptap/markdown` is new. The vendor calls it an early
-release. Do a test of the conversion from Markdown to the editor and
-back with a set of test documents before the decision. Each document
-must stay the same, or change only in the format of the text (for
-example `*` in place of `_`).
+WebAssembly is not an option: no maintained WYSIWYG editor uses it, and
+a text editor must use the DOM for input methods, spelling checks and
+screen readers.
 
-The alternative is **Milkdown 7** (`@milkdown/kit`, not Crepe). Its
-Markdown support is better, because it uses remark, and its GFM preset
-includes footnotes. But one person does most of the work on Milkdown.
-Use Milkdown if the Tiptap test fails.
+## Implementation
 
-## Integration plan
-
-1. **Progressive enhancement.** The edit page keeps the text field. The
-   script replaces the text field with the editor. Before the form is
-   sent, the script writes the Markdown into the text field. Without
-   JavaScript, the page works as it does now.
-2. **Content Security Policy.** Add `script-src 'self'` only on the
-   edit pages. Do not use inline scripts. The page gives settings to
-   the script with `data-` attributes. Keep `style-src 'self'` without
-   `'unsafe-inline'`. Some ProseMirror menus set `style` attributes.
-   Skriva does not use these menus. Do a test of each function with the
-   strict policy.
-3. **Toolbar.** The Go templates make the toolbar with the same
-   `button.tool` icons as other pages. Each button has a
-   `data-command` attribute. The script connects the buttons to the
-   commands and sets `aria-pressed`. The buttons are not visible
-   without JavaScript.
-4. **Mode switch.** A button changes between the editor and the
-   Markdown text. The preview button stays as it is.
-5. **Build.** Keep `package.json` and `package-lock.json` in
-   `web/editor/`. Build the script in a Podman container with
-   `npm ci --ignore-scripts` and esbuild. Put the result in
-   `internal/web/static/editor.js`. The Go program embeds it. The
-   program does not load scripts from other sites.
-6. **Dependencies.** Use exact versions. Do a check with `npm audit` at
-   each update, as with `govulncheck` for Go.
-7. **Server checks.** The server keeps all checks: the size limit, the
-   version check and the sanitizer. The editor gives only Markdown.
-8. **Tests.** Add a test of the conversion with the test documents. Add
-   an end-to-end test that edits a document with the editor.
+- [Architecture: document format](architecture.md#document-format)
+- [Architecture: uploaded files](architecture.md#uploaded-files)
+- [Security: JavaScript](security.md#javascript)
+- [Development: editor](development.md#editor)
+- [User guide: the editor](user-guide.md#the-editor)
 
 ## Sources
 

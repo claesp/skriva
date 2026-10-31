@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -10,12 +11,33 @@ import (
 	"time"
 
 	"github.com/clpe/skriva/internal/db"
+	"github.com/clpe/skriva/internal/doc"
 	"github.com/clpe/skriva/internal/rbac"
 	"github.com/clpe/skriva/internal/store"
 	"github.com/clpe/skriva/internal/testdb"
 )
 
 var ctx = context.Background()
+
+// content returns the content of a document with one paragraph.
+func content(text string) store.Content {
+	t, _ := json.Marshal(text)
+	n, err := doc.Parse([]byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":`+string(t)+`}]}]}`), nil)
+	if err != nil {
+		panic(err)
+	}
+	return store.Content{Body: string(n.JSON()), PlainText: n.PlainText(), Files: n.Files()}
+}
+
+// bodyText returns the plain text of a body.
+func bodyText(t *testing.T, body string) string {
+	t.Helper()
+	n, err := doc.Parse([]byte(body), nil)
+	if err != nil {
+		t.Fatalf("body %q: %v", body, err)
+	}
+	return n.PlainText()
+}
 
 func newStore(t *testing.T) *store.Store {
 	return store.New(testdb.New(t), testdb.Box(t))
@@ -276,7 +298,7 @@ func TestTenantIsolation(t *testing.T) {
 		t.Fatalf("tenant b sees default space: %v", err)
 	}
 	spA := defaultSpace(t, st, a)
-	id, err := st.CreateNode(ctx, spA.ID, store.NewNode{Kind: store.KindDocument, Title: "Secret plans", Body: "zebra", AuthorID: ua.ID})
+	id, err := st.CreateNode(ctx, spA.ID, store.NewNode{Kind: store.KindDocument, Title: "Secret plans", Content: content("zebra"), AuthorID: ua.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +511,7 @@ func TestNodeTree(t *testing.T) {
 	mk := func(parent, kind, title string) string {
 		t.Helper()
 		id, err := st.CreateNode(ctx, sp.ID, store.NewNode{
-			ParentPublicID: parent, Kind: kind, Title: title, Body: "text of " + title, AuthorID: u.ID,
+			ParentPublicID: parent, Kind: kind, Title: title, Content: content("text of " + title), AuthorID: u.ID,
 		})
 		if err != nil {
 			t.Fatalf("create %s: %v", title, err)
@@ -510,7 +532,7 @@ func TestNodeTree(t *testing.T) {
 	}
 
 	n, err := st.Node(ctx, sp.ID, folder)
-	if err != nil || n.Body != "" || !n.IsFolder() {
+	if err != nil || bodyText(t, n.Body) != "" || !n.IsFolder() {
 		t.Fatalf("folder = %+v, %v", n, err)
 	}
 
@@ -629,21 +651,21 @@ func TestNodeVersions(t *testing.T) {
 	tn := defaultTenant(t, st)
 	sp := defaultSpace(t, st, tn)
 	u := login(t, st, tn, "erin")
-	id, err := st.CreateNode(ctx, sp.ID, store.NewNode{Kind: store.KindDocument, Title: "Home", Slug: "home", Body: "Hello world", Comment: "first", AuthorID: u.ID})
+	id, err := st.CreateNode(ctx, sp.ID, store.NewNode{Kind: store.KindDocument, Title: "Home", Slug: "home", Content: content("Hello world"), Comment: "first", AuthorID: u.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpdateNode(ctx, sp.ID, id, 1, "Home", "home", "Hello again", "second", u.ID); err != nil {
+	if err := st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 1, Title: "Home", Slug: "home", Content: content("Hello again"), Comment: "second", AuthorID: u.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpdateNode(ctx, sp.ID, id, 1, "Home", "home", "lost", "", u.ID); !errors.Is(err, store.ErrConflict) {
+	if err := st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 1, Title: "Home", Slug: "home", Content: content("lost"), AuthorID: u.ID}); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("stale update: %v", err)
 	}
-	if err := st.UpdateNode(ctx, sp.ID, "000000000000", 1, "X", "", "", "", u.ID); !errors.Is(err, store.ErrNotFound) {
+	if err := st.UpdateNode(ctx, sp.ID, "000000000000", store.NodeUpdate{BaseVersion: 1, Title: "X", AuthorID: u.ID}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("update of missing node: %v", err)
 	}
 	n, _ := st.Node(ctx, sp.ID, id)
-	if n.Version != 2 || n.Body != "Hello again" || n.UpdatedBy != "erin" {
+	if n.Version != 2 || bodyText(t, n.Body) != "Hello again" || n.UpdatedBy != "erin" {
 		t.Fatalf("node = %+v", n)
 	}
 	revs, _ := st.Revisions(ctx, n.ID)
@@ -651,7 +673,7 @@ func TestNodeVersions(t *testing.T) {
 		t.Fatalf("revisions = %+v", revs)
 	}
 	r1, err := st.Revision(ctx, n.ID, 1)
-	if err != nil || r1.Body != "Hello world" {
+	if err != nil || bodyText(t, r1.Body) != "Hello world" {
 		t.Fatalf("revision 1 = %+v, %v", r1, err)
 	}
 	if res, _ := st.NodesBySlug(ctx, sp.ID, "home"); len(res) != 1 || res[0].PublicID != id {
@@ -668,7 +690,7 @@ func TestNodeVersions(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs[i] = st.UpdateNode(ctx, sp.ID, id, 2, "Home", "home", "v3", "", u.ID)
+			errs[i] = st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 2, Title: "Home", Slug: "home", Content: content("v3"), AuthorID: u.ID})
 		}()
 	}
 	wg.Wait()
@@ -1142,5 +1164,68 @@ func TestFolderBindingIsolation(t *testing.T) {
 	b := newTenant(t, st, "bbbb")
 	if err := st.SetNodeDefaultRole(ctx, b.ID, sp.ID, f.PublicID, nil); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("default role through a different tenant: %v", err)
+	}
+}
+
+func TestFiles(t *testing.T) {
+	st := newStore(t)
+	tn := defaultTenant(t, st)
+	sp := defaultSpace(t, st, tn)
+	u := login(t, st, tn, "erin")
+	used, err := st.CreateFile(ctx, sp.ID, "image/png", []byte("png"), u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unused, _ := st.CreateFile(ctx, sp.ID, "image/png", []byte("png"), u.ID)
+	if _, err := st.CreateFile(ctx, sp.ID, "image/svg+xml", []byte("<svg/>"), u.ID); err == nil {
+		t.Fatal("the database accepts an SVG file")
+	}
+
+	f, err := st.File(ctx, sp.ID, used)
+	if err != nil || f.CreatedBy != u.ID || string(f.Data) != "png" || len(f.AccessPaths) != 0 {
+		t.Fatalf("new file = %+v, %v", f, err)
+	}
+	c := content("picture")
+	c.Files = []string{used, "zzzzzzzzzzzzzz"}
+	id, err := st.CreateNode(ctx, sp.ID, store.NewNode{Kind: store.KindDocument, Title: "Pictures", Content: c, AuthorID: u.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _ := st.Node(ctx, sp.ID, id)
+	f, _ = st.File(ctx, sp.ID, used)
+	if len(f.AccessPaths) != 1 || f.AccessPaths[0] != n.AccessPathID {
+		t.Fatalf("access paths = %v, want [%d]", f.AccessPaths, n.AccessPathID)
+	}
+	// A new version without the image keeps the reference. Thus the old
+	// version continues to show the image.
+	if err := st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 1, Title: "Pictures", Content: content("none"), AuthorID: u.ID}); err != nil {
+		t.Fatal(err)
+	}
+	// Another space cannot use the file.
+	if err := st.CreateSpace(ctx, tn.ID, "other000", "Other", ""); err != nil {
+		t.Fatal(err)
+	}
+	other, _ := st.Space(ctx, tn.ID, "other000")
+	if _, err := st.File(ctx, other.ID, used); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("file from other space: %v", err)
+	}
+
+	// After one day, DeleteExpired removes the unused file only.
+	st.SetNow(func() time.Time { return time.Now().Add(25 * time.Hour) })
+	if err := st.DeleteExpired(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.File(ctx, sp.ID, unused); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unused file: %v", err)
+	}
+	if _, err := st.File(ctx, sp.ID, used); err != nil {
+		t.Fatalf("used file: %v", err)
+	}
+	// The deletion of the node also removes the reference.
+	if err := st.DeleteNode(ctx, sp.ID, id); err != nil {
+		t.Fatal(err)
+	}
+	if f, _ := st.File(ctx, sp.ID, used); len(f.AccessPaths) != 0 {
+		t.Fatalf("access paths after delete = %v", f.AccessPaths)
 	}
 }

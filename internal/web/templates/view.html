@@ -7,7 +7,7 @@
 {{if .Node.IsFolder}}
   {{with .Children}}{{template "itemtable" (items $.SpacePath .)}}{{else}}<p>This folder is empty.</p>{{end}}
 {{else}}
-<article class="markdown">{{.HTML}}</article>
+<article class="prose">{{.HTML}}</article>
 {{with .Children}}
 <section class="children" aria-label="Sub-documents">
   <h2>Sub-documents</h2>

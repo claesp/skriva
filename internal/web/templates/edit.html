@@ -3,10 +3,6 @@
 {{with .Data}}
 <h1 class="vh">{{if .IsNew}}New {{.Kind}}{{else if .IsFolder}}Rename folder{{else}}Edit document{{end}}</h1>
 {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
-{{if .Previewing}}
-<div class="pagehead"><h1>{{.Title}}</h1></div>
-<article class="markdown">{{.Preview}}</article>
-{{end}}
 <form id="nodeform" action="{{.Action}}" method="post" class="stack editor">
   {{template "csrf" $.CSRF}}
   <input type="hidden" name="version" value="{{.Version}}">
@@ -14,23 +10,88 @@
   <input type="hidden" name="kind" value="{{.Kind}}">
   <input type="hidden" name="parent" value="{{.ParentID}}">
   {{end}}
-  {{if .Previewing}}
-  <input type="hidden" name="title" value="{{.Title}}">
-  <input type="hidden" name="body" value="{{.Body}}">
-  {{else}}
   <label class="title"><span class="vh">Title</span>
     <input name="title" value="{{.Title}}" required maxlength="200" placeholder="Title" autofocus></label>
   {{if not .IsFolder}}
-  <label><span class="vh">Text (Markdown)</span>
-    <textarea name="body" rows="24" spellcheck="true" placeholder="Text (Markdown)">{{.Body}}</textarea>
-  </label>
-  {{end}}
+  <input type="hidden" name="body" value="{{.Body}}" data-editor-body>
+  <div class="wysiwyg" data-upload="{{.UploadURL}}" data-csrf="{{$.CSRF}}">
+    {{template "editortoolbar"}}
+    <div class="wysiwyg-text prose" data-editor-text></div>
+    <p class="editor-status" role="status" data-editor-status></p>
+    <noscript><p class="error">The editor needs JavaScript. Without JavaScript, you can change only the title.</p></noscript>
+  </div>
   {{end}}
   <label>Comment <input name="comment" value="{{.Comment}}" maxlength="500"></label>
   <div class="buttons">
     <button type="submit" name="action" value="save">Save</button>
   </div>
 </form>
+{{if not .IsFolder}}<script src="{{.EditorURL}}" defer></script>{{end}}
 {{end}}
 {{template "nodefoot"}}
 {{end}}
+
+{{/* The toolbar of the editor. The script of the editor connects each
+   button to a command with the data-command attribute, and shows the
+   toolbar. Without the script, the toolbar is not visible. */}}
+{{define "editortoolbar"}}
+<div class="editor-toolbar" role="toolbar" aria-label="Format" hidden data-editor-toolbar>
+  <span class="group">
+    {{template "ebtn" (ebtn "undo" "undo" "Undo (Ctrl+Z)")}}
+    {{template "ebtn" (ebtn "redo" "redo" "Redo (Ctrl+Shift+Z)")}}
+  </span>
+  <span class="group">
+    <label class="vh" for="editor-block">Type of text</label>
+    <select id="editor-block" data-command="block">
+      <option value="paragraph">Text</option>
+      <option value="1">Heading 1</option>
+      <option value="2">Heading 2</option>
+      <option value="3">Heading 3</option>
+    </select>
+  </span>
+  <span class="group">
+    {{template "ebtn" (ebtn "bold" "bold" "Bold (Ctrl+B)")}}
+    {{template "ebtn" (ebtn "italic" "italic" "Italic (Ctrl+I)")}}
+    {{template "ebtn" (ebtn "underline" "underline" "Underline (Ctrl+U)")}}
+    {{template "ebtn" (ebtn "strike" "strike" "Strikethrough")}}
+    {{template "ebtn" (ebtn "code" "code" "Code")}}
+  </span>
+  <span class="group">
+    {{template "ebtn" (ebtn "alignLeft" "align-left" "Align left")}}
+    {{template "ebtn" (ebtn "alignCenter" "align-center" "Align center")}}
+    {{template "ebtn" (ebtn "alignRight" "align-right" "Align right")}}
+  </span>
+  <span class="group">
+    {{template "ebtn" (ebtn "bulletList" "list-bullet" "Bulleted list")}}
+    {{template "ebtn" (ebtn "orderedList" "list-number" "Numbered list")}}
+    {{template "ebtn" (ebtn "taskList" "list-task" "Task list")}}
+    {{template "ebtn" (ebtn "blockquote" "quote" "Quote")}}
+    {{template "ebtn" (ebtn "codeBlock" "code-block" "Code block")}}
+    {{template "ebtn" (ebtn "horizontalRule" "rule" "Horizontal line")}}
+  </span>
+  <span class="group">
+    {{template "ebtn" (ebtn "link" "link" "Link (Ctrl+K)")}}
+    {{template "ebtn" (ebtn "image" "image" "Image")}}
+    {{template "ebtn" (ebtn "table" "table" "Table")}}
+  </span>
+  <span class="group" data-editor-group="table" hidden>
+    {{template "ebtn" (ebtn "addRow" "row-add" "Add row")}}
+    {{template "ebtn" (ebtn "deleteRow" "row-remove" "Remove row")}}
+    {{template "ebtn" (ebtn "addColumn" "col-add" "Add column")}}
+    {{template "ebtn" (ebtn "deleteColumn" "col-remove" "Remove column")}}
+    {{template "ebtn" (ebtn "mergeCells" "merge" "Merge or split cells")}}
+    {{template "ebtn" (ebtn "headerRow" "header-row" "Header row")}}
+    {{template "ebtn" (ebtn "deleteTable" "table-remove" "Remove table")}}
+  </span>
+  <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden data-editor-file>
+</div>
+<div class="editor-linkbar" hidden data-editor-linkbar>
+  <label>Link address
+    <input type="text" placeholder="https://… or wiki:Title" data-editor-href></label>
+  <button type="button" data-command="linkApply">Apply</button>
+  <button type="button" data-command="linkRemove">Remove link</button>
+  <button type="button" data-command="linkCancel">Cancel</button>
+</div>
+{{end}}
+
+{{define "ebtn"}}<button type="button" class="tool" data-command="{{.Href}}" title="{{.Label}}" aria-label="{{.Label}}">{{template "icon" .Icon}}</button>{{end}}

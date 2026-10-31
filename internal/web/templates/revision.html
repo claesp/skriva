@@ -6,7 +6,7 @@
   {{if $.Can "doc.edit"}}{{template "tool" (tool (print $.SpacePath "/edit/" .Node.PublicID "?from=" .Revision.Version) "restore" "Restore")}}{{end}}
 </div>
 <div class="pagehead"><h1>{{.Revision.Title}}</h1></div>
-<article class="markdown">{{.HTML}}</article>
+<article class="prose">{{.HTML}}</article>
 {{end}}
 {{template "nodefoot"}}
 {{end}}

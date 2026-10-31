@@ -3,8 +3,8 @@
 ## Overview
 
 Skriva is one Go program. The program contains the HTTP server, the HTML
-templates, the style sheet and the database migrations. It needs these
-external services:
+templates, the style sheet, the script of the editor and the database
+migrations. It needs these external services:
 
 - A PostgreSQL database (version 15 or later).
 - One or more OpenID Connect (OIDC) providers, for example Keycloak.
@@ -23,7 +23,7 @@ Browser ──HTTP──> Skriva ──SQL──> PostgreSQL
 | Tenant   | The main organizational unit. A tenant has its own identity provider, users, groups, custom roles, settings and spaces. |
 | Space    | A collection of folders and documents in a tenant. |
 | Folder   | An item in a space that contains other items. It has no text. |
-| Document | An item in a space with Markdown text and a history of versions. |
+| Document | An item in a space with formatted text and a history of versions. |
 | Node     | A folder or a document. The code and the database use this term. |
 
 ```
@@ -59,6 +59,7 @@ These rules apply to the tree:
 | `/{tenant}/{space}/d/{id}/{slug}` | One folder or document. |
 | `/{tenant}/{space}/d/{id}` | Short link. It goes to the full link. |
 | `/{tenant}/{space}/w/{slug}` | The target of a wiki link. |
+| `/{tenant}/{space}/files/{id}` | An uploaded image. A `POST` to `/{tenant}/{space}/files` uploads an image. |
 
 - The tenant code has exactly 4 characters from `a-z` and `0-9`, for
   example `acme`.
@@ -101,10 +102,12 @@ space `default0` ("Default").
 | `internal/rbac`     | Defines the permissions and the permission set. |
 | `internal/auth`     | Connects to the OIDC providers. Keeps one client for each tenant. |
 | `internal/secret`   | Encrypts the client secrets of the tenants. |
-| `internal/markdown` | Converts Markdown to safe HTML. Makes slugs from titles. |
+| `internal/doc`      | Checks the documents. Converts a document to HTML, Markdown and plain text. |
+| `internal/slug`     | Makes slugs from titles. |
 | `internal/web`      | Contains the HTTP handlers, middleware and templates. |
 | `internal/testdb`   | Makes temporary databases for the integration tests. |
 | `e2e`               | Contains the end-to-end test. |
+| `web/editor`        | The source of the editor script (JavaScript). See [Development](development.md#editor). |
 
 ## Request flow
 
@@ -133,6 +136,8 @@ space `default0` ("Default").
 | `nodes`            | Folders and documents. `parent_id` makes the tree. An item can have its own default role. `access_path_id` points to the cached access path. |
 | `access_paths`     | A cache: the access paths of the items of each space. See [Access control](access-control.md). |
 | `revisions`        | All versions of each node. |
+| `files`            | Uploaded images. The data is in the table. |
+| `file_refs`        | The nodes that use each file, in one or more versions. |
 | `users`            | Users. The key is (tenant, issuer, subject). A user with no tenant is a system administrator. |
 | `groups`           | Groups of a tenant. The source is `oidc` or `local`. |
 | `group_members`    | The members of each group. |
@@ -170,24 +175,85 @@ same time. A move checks the subtree with a recursive query.
 
 The deletion of a folder or a document also deletes its subtree.
 
-### Markdown
+### Document format
 
-The server uses [goldmark](https://github.com/yuin/goldmark) with these
-extensions:
+The text of a document is a tree of nodes in the JSON format of the
+[Tiptap](https://tiptap.dev/) editor. This is the ProseMirror format, for
+example:
 
-- GitHub Flavored Markdown (tables, task lists, strikethrough, links).
-- Footnotes.
-- Wiki links: `[[Title]]` and `[[Title#Section]]`. A wiki link points to
-  `/{tenant}/{space}/w/{slug}`. That page finds the item with the slug in
-  the same space.
-- Automatic heading IDs. The IDs use the slug algorithm. Thus
-  `[[Title#Install & Run]]` and `[[Title#install & run]]` both go to the
-  heading "Install & Run". If two headings have the same ID, the second
-  ID gets `-1`, the third ID gets `-2`, and so on.
+```json
+{"type": "doc", "content": [
+  {"type": "heading", "attrs": {"level": 1}, "content": [{"type": "text", "text": "Install"}]},
+  {"type": "paragraph", "attrs": {"textAlign": "center"}, "content": [
+    {"type": "text", "text": "See "},
+    {"type": "text", "text": "Configure", "marks": [{"type": "link", "attrs": {"href": "wiki:Configure"}}]}
+  ]}
+]}
+```
 
-The server does not permit raw HTML in Markdown. After the conversion,
-[bluemonday](https://github.com/microcosm-cc/bluemonday) removes all
-unsafe HTML a second time.
+The column `nodes.body` and the column `revisions.body` have the type
+`jsonb`. The column `nodes.plain_text` contains the plain text of the
+document. The search index uses the title and the plain text.
+
+The package `internal/doc` has a list of the permitted nodes, marks and
+attributes:
+
+| Item | Permitted |
+|------|-----------|
+| Blocks | Paragraph, heading (levels 1 to 3), quotation, code block, horizontal line, bulleted list, numbered list, task list, image, table |
+| Text formats (marks) | Bold, italic, underline, strikethrough, code, link |
+| Attributes | Alignment (center, right) of paragraphs and headings, language of a code block, start of a numbered list, checked state of a task, the source and the descriptions of an image, the number of columns and rows that a table cell covers |
+| Link destinations | `http`, `https`, `mailto`, `wiki:Title#Heading`, paths that start with one `/`, fragments |
+| Image sources | `file:{id}` (an uploaded file), `https` URLs |
+
+The server does not trust the editor. When it saves a document, it
+removes all other nodes, marks and attributes. It refuses a document that
+is not valid JSON, or that has more than 64 levels or more than 200000
+nodes. The size limit of the tenant applies to the JSON text.
+
+The package converts a checked document to:
+
+- **HTML** for the document page. Alignment becomes a CSS class, for
+  example `align-center`, not an inline style. Headings of levels 1 to 3
+  become `h2` to `h4`, because the title of the page is the `h1`. The
+  IDs of the headings use the slug algorithm. Thus `wiki:Title#Install &
+  Run` and `wiki:Title#install & run` both go to the heading "Install &
+  Run". After the conversion,
+  [bluemonday](https://github.com/microcosm-cc/bluemonday) removes all
+  unsafe HTML a second time.
+- **Markdown** for the "Source" page. Markdown does not have all the
+  formats. The conversion ignores the alignment and the underline. A cell
+  that covers more than one column becomes one cell and empty cells.
+- **Plain text** for the search index and the parts of the text in the
+  search results.
+
+A wiki link has the destination `wiki:Title`. The HTML has a link to
+`/{tenant}/{space}/w/{slug}`. That page finds the item with the slug in
+the same space.
+
+### Uploaded files
+
+An image in a document has the source `file:{id}`. The ID is a random
+value with 14 characters, as the ID of a document. The editor shows the
+URL `/{tenant}/{space}/files/{id}`. The server changes the URL to the
+`file:` source when it saves the document, and back when it opens the
+editor.
+
+When the server saves a version of a document, it adds a row to
+`file_refs` for each file in the text. It does not remove rows. Thus old
+versions continue to show their images. A user can read a file if the
+user can read one of the nodes in `file_refs`. Before a node uses a
+file, only the user that uploaded it can read it. The cleanup task
+deletes files that no node uses after one day.
+
+### Editor
+
+The form of a document contains the JSON of the text in a hidden field,
+and a toolbar that the templates make. The script `static/editor.js`
+starts the Tiptap editor, connects the toolbar buttons to the commands
+and shows the toolbar. When the user saves, the script writes the JSON
+into the hidden field. Only the form of a document loads the script.
+See [Security](security.md#javascript).
 
 ### Large spaces
 

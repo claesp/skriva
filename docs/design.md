@@ -45,7 +45,7 @@ and these guidelines for long-form text:
   "24 minutes ago", "3 hours ago", "Yesterday" or "2 days ago". A date
   that is more than 10 days ago shows as an ISO 8601 date, for example
   "2026-10-31". The server calculates the days with the calendar days in
-  UTC. The page does not use scripts, thus the server cannot know the
+  UTC. The pages do not use scripts, thus the server cannot know the
   time zone of the reader.
 - When the mouse pointer is on a date, the page shows the full time in
   ISO 8601 format with the time zone, for example
@@ -53,3 +53,10 @@ and these guidelines for long-form text:
   programs can read the time from the `datetime` attribute.
 - In a table, a date column is the last data column. The text in it is
   right-aligned.
+- The toolbar of the editor uses the same icon buttons as the toolbar
+  of a page. It stays below the bar of the page when the user scrolls.
+  The buttons for tables are visible only when the cursor is in a table.
+- The editor shows the text with the same font, size and line length as
+  the document page.
+- Alignment uses CSS classes (`align-center`, `align-right`), not inline
+  styles.

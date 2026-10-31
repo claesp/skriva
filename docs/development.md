@@ -3,7 +3,8 @@
 ## Necessary tools
 
 - Go 1.26 or later.
-- Podman 5 or later.
+- Podman 5 or later. The build of the editor script uses a Node
+  container. Node on the host is not necessary.
 - `make` and `curl`.
 
 ## Development environment
@@ -90,19 +91,66 @@ after the tests. The tests run with the race detector.
 The HTTP tests in `internal/web` use a fake identity provider. The
 end-to-end test in `e2e` uses the real Keycloak login form.
 
+## Editor
+
+The source of the editor script is in `web/editor`:
+
+| File | Contents |
+|------|----------|
+| `src/editor.js` | The script. It starts Tiptap and connects the toolbar of the page to the commands. |
+| `package.json` | The exact versions of the packages. |
+| `package-lock.json` | The versions and the checksums of all packages and their dependencies. |
+
+Run `make editor` after a change to these files. The command runs
+`scripts/build-editor.sh`. The script uses a Node container in Podman:
+
+1. `npm ci --ignore-scripts` installs the packages from the lock file.
+   The packages cannot run install scripts.
+2. `npm audit` stops the build if a package has a known vulnerability
+   with the level "moderate" or higher.
+3. esbuild makes one minified file, `internal/web/static/editor.js`.
+
+Commit `editor.js` together with the source. The Go program embeds the
+file. Thus `go build` does not need Node.
+
+To update Tiptap, change the versions in `package.json`. Use the same
+version for all `@tiptap` packages. Then run this command and
+`make editor`:
+
+```sh
+podman run --rm -v "$PWD/web/editor":/src:Z -w /src docker.io/library/node:24-alpine \
+  npm install --ignore-scripts --no-audit --no-fund
+```
+
+Rules for the script:
+
+- Do not use inline styles or style elements. The security policy of
+  the page does not permit them. Use CSS classes in `style.css`.
+- Each button of the toolbar is in the template `edit.html`. The
+  attribute `data-command` names the command.
+- The server checks all data from the editor again. Add a new node,
+  mark or attribute to the list in `internal/doc` first. Otherwise the
+  server removes it.
+
+The tests in `internal/doc` and `internal/web` do not run the script.
+Before a release, open the editor in a browser and try each button.
+
 ## Checks before a commit
 
 1. Run `make lint`.
 2. Run `make test-integration`.
 3. If you changed the login or RBAC, run `make dev-app` and
    `make test-e2e`.
+4. If you changed the editor, run `make editor`. Then try the editor in
+   a browser.
 
 ## Rules for code and text
 
 - Write documentation, code comments and commit messages in Simplified
   Technical English (ASD-STE100).
 - Put documentation in the `docs` folder.
-- Do not use JavaScript in the web pages.
+- Do not use JavaScript in the web pages. The only exception is the
+  editor of a document.
 - Put all SQL queries in the `internal/store` package.
 - Give the tenant ID to each store function for tenant data. Use it in
   each query.

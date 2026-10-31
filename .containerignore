@@ -3,3 +3,4 @@ bin
 docs
 *.test
 *.out
+web/editor/node_modules

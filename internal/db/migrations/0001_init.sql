@@ -123,7 +123,11 @@ CREATE TABLE nodes (
     kind           text        NOT NULL CHECK (kind IN ('folder', 'document')),
     title          text        NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
     slug           text        NOT NULL CHECK (slug ~ '^([a-z0-9]+(-[a-z0-9]+)*)?$'),
-    body           text        NOT NULL,
+    -- The text of a document in the JSON format of the editor. The
+    -- server checks the format before it saves the text.
+    body           jsonb       NOT NULL DEFAULT '{"type":"doc"}',
+    -- The plain text of the body for the search index.
+    plain_text     text        NOT NULL DEFAULT '',
     version        integer     NOT NULL DEFAULT 1,
     -- The default role of the node. NULL means that the node uses the
     -- default role of its parent (or of the space). An empty value means
@@ -136,7 +140,7 @@ CREATE TABLE nodes (
     updated_at     timestamptz NOT NULL DEFAULT now(),
     search         tsvector GENERATED ALWAYS AS (
         setweight(to_tsvector('simple', title), 'A') ||
-        setweight(to_tsvector('simple', body), 'B')
+        setweight(to_tsvector('simple', plain_text), 'B')
     ) STORED,
     UNIQUE (space_id, id),
     CONSTRAINT nodes_parent_fkey
@@ -155,12 +159,41 @@ CREATE TABLE revisions (
     node_id    bigint      NOT NULL REFERENCES nodes (id) ON DELETE CASCADE,
     version    integer     NOT NULL,
     title      text        NOT NULL,
-    body       text        NOT NULL,
+    body       jsonb       NOT NULL,
     author_id  bigint      REFERENCES users (id) ON DELETE SET NULL,
     comment    text        NOT NULL DEFAULT '',
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (node_id, version)
 );
+
+-- An uploaded file, for example an image in a document. A file belongs
+-- to a space. The data is in the database, thus a backup of the database
+-- contains all data.
+CREATE TABLE files (
+    id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    space_id     bigint      NOT NULL REFERENCES spaces (id) ON DELETE CASCADE,
+    public_id    text        NOT NULL UNIQUE CHECK (public_id ~ '^[0-9a-z]{14}$'),
+    content_type text        NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg', 'image/gif', 'image/webp')),
+    data         bytea       NOT NULL,
+    created_by   bigint      REFERENCES users (id) ON DELETE SET NULL,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (space_id, id)
+);
+CREATE INDEX files_created_idx ON files (created_at);
+
+-- The nodes that use a file, in one or more of their revisions. A user
+-- can read a file if the user can read one of these nodes. The server
+-- adds rows when it saves a node, and it does not remove them. Thus old
+-- revisions continue to show their images.
+CREATE TABLE file_refs (
+    file_id  bigint NOT NULL,
+    node_id  bigint NOT NULL,
+    space_id bigint NOT NULL,
+    PRIMARY KEY (file_id, node_id),
+    FOREIGN KEY (space_id, file_id) REFERENCES files (space_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (space_id, node_id) REFERENCES nodes (space_id, id) ON DELETE CASCADE
+);
+CREATE INDEX file_refs_node_idx ON file_refs (node_id);
 
 -- A role binding gives a role to one user or to one group. A binding
 -- without a space applies in all spaces of the tenant. A binding with a
