@@ -387,7 +387,9 @@ h1 .i { margin-right: 0.4em; width: 0.9em; height: 0.9em; }
 
 /* An icon button that sends a form, in a toolbar or in a table row. */
 .toolform { display: inline-flex; margin: 0; }
-button.tool { padding: 0; border: 0; background: none; cursor: pointer; }
+/* Reset the colors of the normal button. Without this, the icon has the
+   text color of a normal button and is not visible. */
+button.tool { padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
 td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
 
 /* The sub-documents and the data below a document. */
