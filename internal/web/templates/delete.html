@@ -1,20 +1,18 @@
 {{define "content"}}
+{{template "nodehead" .}}
 {{with .Data}}
-<h1>Delete {{.Node.Kind}}</h1>
-<p>Do you want to delete "{{.Node.Title}}" and all its history?
+<div class="pagehead"><h1>Delete {{.Node.Kind}} "{{.Node.Title}}"</h1></div>
+<p>Do you want to delete the {{.Node.Kind}} and all its history?
 {{if .Descendants}}This also deletes <strong>{{.Descendants}}</strong> items in it.{{end}}
 You cannot undo this.</p>
 {{if .Permitted}}
 <form action="{{$.SpacePath}}/delete/{{.Node.PublicID}}" method="post">
   {{template "csrf" $.CSRF}}
-  <div class="buttons">
-    <a class="button secondary" href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Cancel</a>
-    <button type="submit" class="danger">Delete</button>
-  </div>
+  <div class="buttons"><button type="submit" class="danger">Delete</button></div>
 </form>
 {{else}}
 <p class="error" role="alert">You cannot delete this item. It contains items that you do not have permission to delete.</p>
-<div class="buttons"><a class="button secondary" href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">Cancel</a></div>
 {{end}}
 {{end}}
+{{template "nodefoot"}}
 {{end}}

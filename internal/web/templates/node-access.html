@@ -1,16 +1,16 @@
 {{define "content"}}
+{{template "nodehead" .}}
 {{with .Data}}
 {{$back := print $.SpacePath "/access/" .Node.PublicID}}
-<div class="topbar">
-  <nav class="breadcrumbs" aria-label="Path"><a href="{{$.SpacePath}}/">{{$.Space.Name}}</a> / <a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">{{.Node.Title}}</a> / Access</nav>
-  <nav class="toolbar" aria-label="Tools">
+<div class="sectionbar">
+  <h1>Access to {{.Node.Kind}} "{{.Node.Title}}"</h1>
+  <nav class="toolbar" aria-label="Access">
     <span class="group">
       {{template "tool" (tool (print $back "/default-role") "edit" "Change the default role")}}
       {{template "tool" (tool (print $.TenantPath "/admin/bindings/new?space=" $.Space.Slug "&node=" .Node.PublicID "&return_to=" $back) "new" "New role binding")}}
     </span>
   </nav>
 </div>
-<h1>Access to {{.Node.Kind}} "{{.Node.Title}}"</h1>
 <p>A user has these permissions for this {{.Node.Kind}} and for all items in it:</p>
 <ul>
   <li>The document permissions of the default role. If this {{.Node.Kind}} uses "Same as the parent", the nearest parent folder or document with its own setting gives the default role. If there is none, the space gives it.</li>
@@ -24,4 +24,5 @@
 {{template "bindingtable" .Table}}
 <p><small>Bindings for this {{.Node.Kind}} give only document permissions (<code>doc.*</code>). The access to the space is in Administration › Spaces.</small></p>
 {{end}}
+{{template "nodefoot"}}
 {{end}}

@@ -167,6 +167,42 @@ func (s *Server) handleSpaceHome(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "space", ri.Space.Name, tree)
 }
 
+// nodePage is the data that all pages of a node show: the path, the
+// toolbar and the tree. Tab is the current button in the toolbar, or ""
+// on the page of the node. The current button opens CloseURL: by default
+// the page of the node. Crumb is an optional last part of the path.
+type nodePage struct {
+	Node      *store.Node
+	Tab       string
+	CloseURL  string
+	Crumb     string
+	Ancestors []store.NodeSummary
+	Tree      []*store.TreeNode
+	// Editor is true on the form of a document. Previewing is true when
+	// the form shows the preview instead of the fields. The toolbar then
+	// has a preview button.
+	Editor     bool
+	Previewing bool
+}
+
+// loadNodePage loads the path and the tree for a page of node n. It also
+// sets the place for the buttons for new items in the page header.
+func (s *Server) loadNodePage(r *http.Request, n *store.Node, tab, crumb string) (nodePage, error) {
+	ancestors, err := s.store.Ancestors(r.Context(), n.ID)
+	if err != nil {
+		return nodePage{}, err
+	}
+	tree, err := s.tree(r, n.ID, ancestors)
+	if err != nil {
+		return nodePage{}, err
+	}
+	reqInfoFrom(r.Context()).New = &newTarget{Parent: n.PublicID, Folder: n.IsFolder()}
+	return nodePage{
+		Node: n, Tab: tab, Crumb: crumb, CloseURL: docPath(base(r), n.PublicID, n.Slug),
+		Ancestors: readableOnly(r, ancestors), Tree: tree,
+	}, nil
+}
+
 func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	// Send the browser to the canonical URL if the slug is missing or
 	// old. The slug changes when the title changes. The case of the
@@ -176,17 +212,12 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Nod
 		http.Redirect(w, r, docPath(base(r), n.PublicID, n.Slug), http.StatusFound)
 		return
 	}
-	ancestors, err := s.store.Ancestors(r.Context(), n.ID)
+	page, err := s.loadNodePage(r, n, "", "")
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
 	children, err := s.store.Children(r.Context(), n.SpaceID, &n.ID)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	tree, err := s.tree(r, n.ID, ancestors)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -198,16 +229,11 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Nod
 			return
 		}
 	}
-	ri := reqInfoFrom(r.Context())
-	ri.New = &newTarget{Parent: n.PublicID, Folder: n.IsFolder()}
 	s.render(w, r, http.StatusOK, "view", n.Title, struct {
-		Node      *store.Node
-		HTML      template.HTML
-		Ancestors []store.NodeSummary
-		Children  []store.NodeSummary
-		Tree      []*store.TreeNode
-		Tab       string
-	}{n, html, readableOnly(r, ancestors), readableOnly(r, children), tree, ""})
+		nodePage
+		HTML     template.HTML
+		Children []store.NodeSummary
+	}{page, html, readableOnly(r, children)})
 }
 
 func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request, n *store.Node) {
@@ -229,14 +255,9 @@ type nodeForm struct {
 	Version     int
 	Preview     template.HTML
 	Error       string
-	// Node is the node that the form edits, or nil for a new node. Tab
-	// marks the current button in the toolbar of the node.
-	Node *store.Node
-	Tab  string
-	// Ancestors is the path above the form, and Tree is the tree of the
-	// space. renderNodeForm sets them.
-	Ancestors []store.NodeSummary
-	Tree      []*store.TreeNode
+	// The Node of nodePage is the node that the form edits, or nil for a
+	// new node. renderNodeForm sets the other fields.
+	nodePage
 	// parent is the parent of a new node, or nil for the top level.
 	parent *store.Node
 }
@@ -329,6 +350,7 @@ func (s *Server) validateForm(r *http.Request, f *nodeForm) (string, error) {
 	}
 	if r.PostFormValue("action") == "preview" && !f.IsFolder() {
 		var err error
+		f.Previewing = true
 		f.Preview, err = s.md.Render(f.Body, base(r)+"/w/")
 		return "", err
 	}
@@ -355,7 +377,7 @@ func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	if msg != "" || f.Preview != "" {
+	if msg != "" || f.Previewing || r.PostFormValue("action") == "edit" {
 		f.Error = msg
 		s.renderNodeForm(w, r, formStatus(msg), "New "+f.Kind, &f)
 		return
@@ -376,37 +398,34 @@ func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
 // to the node, as the page of a node. The buttons for new items in the
 // page header use the node, or the parent of a new node.
 func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status int, title string, f *nodeForm) {
-	ri := reqInfoFrom(r.Context())
-	anchor := f.Node
-	if anchor == nil {
-		anchor = f.parent
-	}
-	var ancestors []store.NodeSummary
-	var current int64
-	if anchor != nil {
-		var err error
-		if ancestors, err = s.store.Ancestors(r.Context(), anchor.ID); err != nil {
-			s.serverError(w, r, err)
-			return
+	var err error
+	previewing := f.Previewing
+	switch {
+	case f.Node != nil:
+		f.nodePage, err = s.loadNodePage(r, f.Node, "edit", "")
+	case f.parent != nil:
+		f.nodePage, err = s.loadNodePage(r, f.parent, "", "")
+		if err == nil {
+			// The path of a new node ends with the parent.
+			p := f.parent
+			f.Ancestors = append(f.Ancestors, store.NodeSummary{
+				ID: p.ID, PublicID: p.PublicID, Kind: p.Kind, Title: p.Title, Slug: p.Slug,
+			})
+			f.Node = nil
 		}
-		current = anchor.ID
-		ri.New = &newTarget{Parent: anchor.PublicID, Folder: anchor.IsFolder()}
-	} else {
-		ri.New = &newTarget{Folder: true}
+	default:
+		reqInfoFrom(r.Context()).New = &newTarget{Folder: true}
+		f.Tree, err = s.tree(r, 0, nil)
 	}
-	tree, err := s.tree(r, current, ancestors)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	f.Tree = tree
-	f.Ancestors = readableOnly(r, ancestors)
-	if f.Node == nil && f.parent != nil {
-		p := f.parent
-		f.Ancestors = append(f.Ancestors, store.NodeSummary{
-			ID: p.ID, PublicID: p.PublicID, Kind: p.Kind, Title: p.Title, Slug: p.Slug,
-		})
+	if f.IsNew {
+		f.Crumb = "New " + f.Kind
 	}
+	f.Editor = !f.IsFolder()
+	f.Previewing = previewing
 	s.render(w, r, status, "edit", title, f)
 }
 
@@ -419,7 +438,7 @@ func formStatus(msg string) int {
 
 func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	f := nodeForm{
-		Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind, Node: n, Tab: "edit",
+		Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind, nodePage: nodePage{Node: n},
 		Title: n.Title, Body: n.Body, Version: n.Version,
 	}
 	// "from" loads the text of an old revision. The user can then save
@@ -446,14 +465,14 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Nod
 		s.badRequest(w, r, "The form is not valid.")
 		return
 	}
-	f := nodeForm{Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind, Node: n, Tab: "edit", Version: version}
+	f := nodeForm{Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind, nodePage: nodePage{Node: n}, Version: version}
 	readNodeForm(r, &f)
 	msg, err := s.validateForm(r, &f)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	if msg != "" || f.Preview != "" {
+	if msg != "" || f.Previewing || r.PostFormValue("action") == "edit" {
 		f.Error = msg
 		s.renderNodeForm(w, r, formStatus(msg), "Edit "+f.Title, &f)
 		return
@@ -486,13 +505,18 @@ func (s *Server) handleMoveForm(w http.ResponseWriter, r *http.Request, n *store
 		s.serverError(w, r, err)
 		return
 	}
+	page, err := s.loadNodePage(r, n, "move", "Move")
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	acc := reqInfoFrom(r.Context()).Access
 	s.render(w, r, http.StatusOK, "move", "Move "+n.Title, struct {
-		Node     *store.Node
+		nodePage
 		Targets  []moveTarget
 		AtRoot   bool
 		RootOpen bool
-	}{n, moveTargets(nodes, n, acc), n.ParentID == nil, acc.Root().Has(rbac.DocCreate)})
+	}{page, moveTargets(nodes, n, acc), n.ParentID == nil, acc.Root().Has(rbac.DocCreate)})
 }
 
 // moveTargets returns the nodes that can be the new parent of n. The
@@ -619,11 +643,16 @@ func (s *Server) handleDeleteForm(w http.ResponseWriter, r *http.Request, n *sto
 		s.serverError(w, r, err)
 		return
 	}
+	page, err := s.loadNodePage(r, n, "delete", "Delete")
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	s.render(w, r, http.StatusOK, "delete", "Delete "+n.Title, struct {
-		Node        *store.Node
+		nodePage
 		Descendants int
 		Permitted   bool
-	}{n, count, permitted})
+	}{page, count, permitted})
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, n *store.Node) {
@@ -662,10 +691,15 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, n *store.
 		s.serverError(w, r, err)
 		return
 	}
+	page, err := s.loadNodePage(r, n, "history", "History")
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	s.render(w, r, http.StatusOK, "history", "History of "+n.Title, struct {
-		Node      *store.Node
+		nodePage
 		Revisions []store.Revision
-	}{n, revs})
+	}{page, revs})
 }
 
 func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store.Node) {
@@ -688,11 +722,17 @@ func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store
 		s.serverError(w, r, err)
 		return
 	}
+	page, err := s.loadNodePage(r, n, "history", "Version "+strconv.Itoa(version))
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	page.CloseURL = base(r) + "/history/" + n.PublicID
 	s.render(w, r, http.StatusOK, "revision", rev.Title+" (version "+strconv.Itoa(version)+")", struct {
-		Node     *store.Node
+		nodePage
 		Revision *store.Revision
 		HTML     template.HTML
-	}{n, rev, html})
+	}{page, rev, html})
 }
 
 // handleWikiLink finds the target of a wiki link [[Title]]. One readable
@@ -734,11 +774,16 @@ func (s *Server) handleNodeAccess(w http.ResponseWriter, r *http.Request, n *sto
 		s.serverError(w, r, err)
 		return
 	}
+	page, err := s.loadNodePage(r, n, "access", "Access")
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	s.render(w, r, http.StatusOK, "node-access", "Access to "+n.Title, struct {
-		Node            *store.Node
+		nodePage
 		DefaultRoleText string
 		Table           bindingTable
-	}{n, defaultRoleText(n.DefaultRole, "parent"), table})
+	}{page, defaultRoleText(n.DefaultRole, "parent"), table})
 }
 
 func (s *Server) handleNodeDefaultRoleForm(w http.ResponseWriter, r *http.Request, n *store.Node) {
@@ -752,11 +797,17 @@ func (s *Server) handleNodeDefaultRoleForm(w http.ResponseWriter, r *http.Reques
 	if n.DefaultRole != nil {
 		defaultRole = *n.DefaultRole
 	}
+	page, err := s.loadNodePage(r, n, "access", "Default role")
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	page.CloseURL = base(r) + "/access/" + n.PublicID
 	s.render(w, r, http.StatusOK, "node-default-role", "Default role", struct {
-		Node        *store.Node
+		nodePage
 		DefaultRole string
 		Roles       []store.Role
-	}{n, defaultRole, roles})
+	}{page, defaultRole, roles})
 }
 
 // handleNodeDefaultRole sets the default role of a folder or a document.

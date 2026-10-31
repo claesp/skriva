@@ -1,25 +1,12 @@
 {{define "content"}}
+{{template "nodehead" .}}
 {{with .Data}}
-<div class="with-sidebar">
-<div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path">
-    <a href="{{$.SpacePath}}/">{{$.Space.Name}}</a>
-    {{range .Ancestors}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{end}}
-    {{with .Node}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{else}} / New {{.Kind}}{{end}}
-  </nav>
-  <nav class="toolbar" aria-label="Tools">
-    {{if not .IsFolder}}<span class="group">
-      <button type="submit" form="nodeform" name="action" value="preview" class="tool" title="Preview" aria-label="Preview">{{template "icon" "preview"}}</button>
-    </span>{{end}}
-    {{if .Node}}{{template "nodetools" $}}{{end}}
-  </nav>
-</div>
-<aside class="sidebar" aria-label="Contents">
-  {{template "tree" (tree $.SpacePath .Tree)}}
-</aside>
-<div class="main reading">
 <h1 class="vh">{{if .IsNew}}New {{.Kind}}{{else if .IsFolder}}Rename folder{{else}}Edit document{{end}}</h1>
 {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+{{if .Previewing}}
+<div class="pagehead"><h1>{{.Title}}</h1></div>
+<article class="markdown">{{.Preview}}</article>
+{{end}}
 <form id="nodeform" action="{{.Action}}" method="post" class="stack editor">
   {{template "csrf" $.CSRF}}
   <input type="hidden" name="version" value="{{.Version}}">
@@ -27,6 +14,10 @@
   <input type="hidden" name="kind" value="{{.Kind}}">
   <input type="hidden" name="parent" value="{{.ParentID}}">
   {{end}}
+  {{if .Previewing}}
+  <input type="hidden" name="title" value="{{.Title}}">
+  <input type="hidden" name="body" value="{{.Body}}">
+  {{else}}
   <label class="title"><span class="vh">Title</span>
     <input name="title" value="{{.Title}}" required maxlength="200" placeholder="Title" autofocus></label>
   {{if not .IsFolder}}
@@ -34,18 +25,12 @@
     <textarea name="body" rows="24" spellcheck="true" placeholder="Text (Markdown)">{{.Body}}</textarea>
   </label>
   {{end}}
+  {{end}}
   <label>Comment <input name="comment" value="{{.Comment}}" maxlength="500"></label>
   <div class="buttons">
     <button type="submit" name="action" value="save">Save</button>
   </div>
 </form>
-{{with .Preview}}
-<section class="preview" aria-label="Preview">
-  <h2>Preview</h2>
-  <article class="markdown">{{.}}</article>
-</section>
 {{end}}
-</div>
-</div>
-{{end}}
+{{template "nodefoot"}}
 {{end}}

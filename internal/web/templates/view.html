@@ -1,17 +1,6 @@
 {{define "content"}}
+{{template "nodehead" .}}
 {{with .Data}}
-<div class="with-sidebar">
-<div class="topbar wide">
-<nav class="breadcrumbs" aria-label="Path">
-  <a href="{{$.SpacePath}}/">{{$.Space.Name}}</a>
-  {{range .Ancestors}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{end}}
-</nav>
-<nav class="toolbar" aria-label="Tools">{{template "nodetools" $}}</nav>
-</div>
-<aside class="sidebar" aria-label="Contents">
-  {{template "tree" (tree $.SpacePath .Tree)}}
-</aside>
-<div class="main reading">
 <div class="pagehead">
   <h1>{{if .Node.IsFolder}}{{template "icon" "folder"}}{{end}}{{.Node.Title}}</h1>
 </div>
@@ -32,7 +21,6 @@
   Version {{.Node.Version}} · Changed {{date .Node.UpdatedAt}}{{with .Node.UpdatedBy}} by {{.}}{{end}} ·
   Short link: <a href="{{$.SpacePath}}/d/{{.Node.PublicID}}">{{$.SpacePath}}/d/{{.Node.PublicID}}</a>
 </footer>
-</div>
-</div>
 {{end}}
+{{template "nodefoot"}}
 {{end}}

@@ -50,6 +50,11 @@ for.
 | Waste bin    | Delete       | Delete the item and the items in it. |
 | Lock         | Access       | Change the permissions of the item. |
 
+**Edit**, **History**, **Move**, **Delete** and **Access** open a page
+with the same tree, path and toolbar. On that page, the button has a
+line below it. Click the button again to go back to the document. From
+an old version, **History** goes back to the list of versions.
+
 ## Access
 
 The administrators can give access to a full space, to one folder or to
@@ -90,14 +95,15 @@ document**.
 
 1. Click **Edit** (pencil) in the toolbar.
 2. Change the title or the text.
-3. Click **Preview** (eye) in the toolbar to see the result below the
-   form. The preview does not save.
+3. Click **Preview** (eye) in the toolbar. The page shows the result
+   instead of the fields. The preview does not save. Click **Preview**
+   again to go back to the fields. Your changes stay.
 4. Optionally, type a comment about the change in **Comment**.
 5. Click **Save**.
 
 The edit page has the same tree, path and toolbar as the page of the
 document. The **Edit** button has a line below it. To stop without a
-save, click the document in the path or in the tree.
+save, click **Edit** again.
 
 If a different user saved the document after you started, the wiki does
 not save your text. Copy your text. Then reload the page and add your

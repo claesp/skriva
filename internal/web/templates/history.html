@@ -1,9 +1,7 @@
 {{define "content"}}
+{{template "nodehead" .}}
 {{with .Data}}
-<div class="topbar">
-  <nav class="breadcrumbs" aria-label="Path"><a href="{{$.SpacePath}}/">{{$.Space.Name}}</a> / <a href="{{docpath $.SpacePath .Node.PublicID .Node.Slug}}">{{.Node.Title}}</a> / History</nav>
-</div>
-<h1>History of {{.Node.Title}}</h1>
+<div class="pagehead"><h1>History of {{.Node.Title}}</h1></div>
 <table>
   <thead><tr><th>Version</th><th>Date</th><th>Author</th><th>Comment</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
@@ -19,4 +17,5 @@
   </tbody>
 </table>
 {{end}}
+{{template "nodefoot"}}
 {{end}}

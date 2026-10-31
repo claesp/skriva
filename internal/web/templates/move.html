@@ -1,7 +1,8 @@
 {{define "content"}}
+{{template "nodehead" .}}
 {{with .Data}}
-<h1>Move "{{.Node.Title}}"</h1>
-<form action="{{$.SpacePath}}/move/{{.Node.PublicID}}" method="post" class="stack narrow">
+<div class="pagehead"><h1>Move "{{.Node.Title}}"</h1></div>
+<form action="{{$.SpacePath}}/move/{{.Node.PublicID}}" method="post" class="stack">
   {{template "csrf" $.CSRF}}
   <label>New place
     <select name="parent">
@@ -10,7 +11,8 @@
     </select>
   </label>
   {{if .Node.IsFolder}}<p><small>A folder can be only in a folder.</small></p>{{end}}
-  {{template "savebuttons" (docpath $.SpacePath .Node.PublicID .Node.Slug)}}
+  <div class="buttons"><button type="submit">Save</button></div>
 </form>
 {{end}}
+{{template "nodefoot"}}
 {{end}}

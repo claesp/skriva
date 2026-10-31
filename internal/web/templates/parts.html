@@ -180,22 +180,59 @@
 </table>
 {{end}}
 
+{{/* The start of each page of a folder or a document: the path, the
+   toolbar and the tree. The argument is the view. The data embeds a
+   nodePage. The page ends with the template "nodefoot". */}}
+{{define "nodehead"}}
+<div class="with-sidebar">
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path">
+    <a href="{{.SpacePath}}/">{{.Space.Name}}</a>
+    {{range .Data.Ancestors}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{end}}
+    {{if .Data.Tab}}{{with .Data.Node}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{end}}{{end}}
+    {{with .Data.Crumb}} / {{.}}{{end}}
+  </nav>
+  <nav class="toolbar" aria-label="Tools">
+    {{if .Data.Editor}}<span class="group">
+      {{if .Data.Previewing}}
+      <button type="submit" form="nodeform" name="action" value="edit" class="tool current" title="Preview (close)" aria-label="Preview (close)" aria-pressed="true">{{template "icon" "preview"}}</button>
+      {{else}}
+      <button type="submit" form="nodeform" name="action" value="preview" class="tool" title="Preview" aria-label="Preview" aria-pressed="false">{{template "icon" "preview"}}</button>
+      {{end}}
+    </span>{{end}}
+    {{if .Data.Node}}{{template "nodetools" .}}{{end}}
+  </nav>
+</div>
+<aside class="sidebar" aria-label="Contents">
+  {{template "tree" (tree .SpacePath .Data.Tree)}}
+</aside>
+<div class="main reading">
+{{end}}
+
+{{define "nodefoot"}}
+</div>
+</div>
+{{end}}
+
 {{/* The buttons of a folder or a document in the toolbar. The argument
-   is the view. The data has the fields Node and Tab. */}}
+   is the view. The data embeds a nodePage. The button of the current
+   tab opens CloseURL. */}}
 {{define "nodetools"}}
 {{$id := .Data.Node.PublicID}}
+{{$t := .Data.Tab}}
+{{$c := .Data.CloseURL}}
 {{if .Can "doc.edit"}}<span class="group">
-  {{template "tool" (tab (print .SpacePath "/edit/" $id) "edit" (or (and .Data.Node.IsFolder "Rename") "Edit") (eq .Data.Tab "edit"))}}
+  {{template "tool" (ntool $t "edit" (print .SpacePath "/edit/" $id) $c "edit" (or (and .Data.Node.IsFolder "Rename") "Edit"))}}
 </span>{{end}}
 {{if not .Data.Node.IsFolder}}<span class="group">
-  {{template "tool" (tool (print .SpacePath "/history/" $id) "history" "History")}}
+  {{template "tool" (ntool $t "history" (print .SpacePath "/history/" $id) $c "history" "History")}}
   {{template "tool" (tool (print .SpacePath "/raw/" $id) "source" "Source")}}
 </span>{{end}}
 {{if or (.Can "doc.edit") (.Can "doc.delete")}}<span class="group">
-  {{if .Can "doc.edit"}}{{template "tool" (tool (print .SpacePath "/move/" $id) "move" "Move")}}{{end}}
-  {{if .Can "doc.delete"}}{{template "tool" (tool (print .SpacePath "/delete/" $id) "delete" "Delete")}}{{end}}
+  {{if .Can "doc.edit"}}{{template "tool" (ntool $t "move" (print .SpacePath "/move/" $id) $c "move" "Move")}}{{end}}
+  {{if .Can "doc.delete"}}{{template "tool" (ntool $t "delete" (print .SpacePath "/delete/" $id) $c "delete" "Delete")}}{{end}}
 </span>{{end}}
 {{if .Can "tenant.manage"}}<span class="group">
-  {{template "tool" (tool (print .SpacePath "/access/" $id) "access" "Access")}}
+  {{template "tool" (ntool $t "access" (print .SpacePath "/access/" $id) $c "access" "Access")}}
 </span>{{end}}
 {{end}}

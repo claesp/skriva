@@ -271,6 +271,21 @@ func (c *client) save(id, title, body string, version int) *http.Response {
 	})
 }
 
+// selectList returns the first select element of a page. The page also
+// contains the tree of the space, thus a test of the select must not use
+// the full page.
+func selectList(page string) string {
+	i := strings.Index(page, "<select")
+	if i < 0 {
+		return ""
+	}
+	j := strings.Index(page[i:], "</select>")
+	if j < 0 {
+		return page[i:]
+	}
+	return page[i : i+j]
+}
+
 func TestRootRedirect(t *testing.T) {
 	e := newEnv(t)
 	resp := e.anon().get("/")
@@ -493,7 +508,7 @@ func TestTreeAndDocuments(t *testing.T) {
 	// Move.
 	wantStatus(t, bob.post(sp+"/move/"+guides, url.Values{"parent": {setup}}), http.StatusBadRequest)
 	wantStatus(t, bob.post(sp+"/move/"+setup, url.Values{"parent": {install}}), http.StatusBadRequest)
-	form := readBody(t, bob.get(sp+"/move/"+install))
+	form := selectList(readBody(t, bob.get(sp+"/move/"+install)))
 	if strings.Contains(form, linux) || !strings.Contains(form, "Guides / Setup") {
 		t.Fatalf("move form targets:\n%s", form)
 	}
@@ -542,6 +557,29 @@ func TestTreeAndDocuments(t *testing.T) {
 	b = readBody(t, bob.get(sp+"/"))
 	if !strings.Contains(b, `new?kind=document"`) || !strings.Contains(b, `new?kind=folder"`) {
 		t.Fatalf("header buttons on the space page:\n%s", b)
+	}
+
+	// The button of the current mode is marked. A second click goes back
+	// to the document.
+	doc := sp + "/d/" + linux + "/install-on-linux"
+	for _, mode := range []string{"edit", "history", "move"} {
+		b := readBody(t, bob.get(sp+"/"+mode+"/"+linux))
+		if !strings.Contains(b, `class="tool`) || !strings.Contains(b, `href="`+doc+`" title=`) || !strings.Contains(b, `aria-current="page"`) {
+			t.Fatalf("%s page has no current button that goes back:\n%s", mode, b)
+		}
+	}
+
+	// Preview shows the text instead of the fields. "edit" goes back to
+	// the fields and keeps the text.
+	resp = bob.post(sp+"/edit/"+linux, url.Values{"title": {"Linux"}, "body": {"**draft**"}, "version": {"1"}, "action": {"preview"}})
+	b = readBody(t, resp)
+	if !strings.Contains(b, "<strong>draft</strong>") || strings.Contains(b, "<textarea") || !strings.Contains(b, `value="edit"`) {
+		t.Fatalf("preview page:\n%s", b)
+	}
+	resp = bob.post(sp+"/edit/"+linux, url.Values{"title": {"Linux"}, "body": {"**draft**"}, "version": {"1"}, "action": {"edit"}})
+	wantStatus(t, resp, http.StatusOK)
+	if b := readBody(t, resp); !strings.Contains(b, "**draft**</textarea>") {
+		t.Fatalf("editor after preview:\n%s", b)
 	}
 }
 
@@ -1013,7 +1051,7 @@ func TestFolderPermissions(t *testing.T) {
 	// folder where she cannot create items.
 	wantStatus(t, carol.post(sp+"/move/"+child, url.Values{"parent": {""}}), http.StatusForbidden)
 	wantStatus(t, carol.post(sp+"/move/"+child, url.Values{"parent": {bobFolder}}), http.StatusForbidden)
-	if b := readBody(t, carol.get(sp+"/move/"+child)); strings.Contains(b, "Top of the space") || strings.Contains(b, "Bob folder") {
+	if b := selectList(readBody(t, carol.get(sp+"/move/"+child))); strings.Contains(b, "Top of the space") || strings.Contains(b, "Bob folder") {
 		t.Fatalf("move form shows places without permission:\n%s", b)
 	}
 

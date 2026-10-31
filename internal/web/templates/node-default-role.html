@@ -1,8 +1,8 @@
 {{define "content"}}
+{{template "nodehead" .}}
 {{with .Data}}
-{{$back := print $.SpacePath "/access/" .Node.PublicID}}
-{{template "formhead" (crumb $back .Node.Title "Default role")}}
-<form method="post" action="{{$back}}/default-role" class="stack narrow">
+<div class="pagehead"><h1>Default role of {{.Node.Kind}} "{{.Node.Title}}"</h1></div>
+<form method="post" action="{{$.SpacePath}}/access/{{.Node.PublicID}}/default-role" class="stack">
   {{template "csrf" $.CSRF}}
   <label>Default role of all signed-in users in this {{.Node.Kind}}
     <select name="default_role" autofocus>
@@ -11,7 +11,8 @@
       {{range .Roles}}<option value="{{.Name}}"{{if eq .Name $.Data.DefaultRole}} selected{{end}}>{{.Name}}</option>{{end}}
     </select>
   </label>
-  {{template "savebuttons" $back}}
+  <div class="buttons"><button type="submit">Save</button></div>
 </form>
 {{end}}
+{{template "nodefoot"}}
 {{end}}

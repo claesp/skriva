@@ -94,6 +94,15 @@ var funcs = template.FuncMap{
 	"head":  func(title, newURL, newLabel string) headArgs { return headArgs{title, newURL, newLabel} },
 	"crumb": func(parentURL, parentLabel, title string) crumbArgs { return crumbArgs{parentURL, parentLabel, title} },
 	"items": func(base string, nodes any) itemsArgs { return itemsArgs{base, nodes} },
+	// ntool is a button in the toolbar of a node. The button of the
+	// current tab is marked and opens closeURL. Thus a second click ends
+	// the mode, for example the editor.
+	"ntool": func(currentTab, tab, href, closeURL, icon, label string) toolArgs {
+		if currentTab == tab {
+			return toolArgs{Href: closeURL, Icon: icon, Label: label + " (close)", Current: true}
+		}
+		return toolArgs{Href: href, Icon: icon, Label: label}
+	},
 }
 
 func loadTemplates() (*templates, error) {
