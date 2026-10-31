@@ -58,6 +58,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/spaces/new", s.require(sm, s.handleAdminSpaceNew))
 	mux.Handle("POST "+p+"/spaces", s.require(sm, s.handleAdminSpaceCreate))
 	mux.Handle("GET "+p+"/spaces/{slug}", s.require(sm, s.handleAdminSpace))
+	mux.Handle("GET "+p+"/spaces/{slug}/edit", s.require(sm, s.handleAdminSpaceEdit))
 	mux.Handle("POST "+p+"/spaces/{slug}", s.require(sm, s.handleAdminSpaceUpdate))
 	mux.Handle("GET "+p+"/spaces/{slug}/delete", s.require(sm, s.handleAdminSpaceDeleteForm))
 	mux.Handle("POST "+p+"/spaces/{slug}/delete", s.require(sm, s.handleAdminSpaceDelete))
@@ -118,7 +119,10 @@ func (s *Server) bindings(r *http.Request, keep func(b store.Binding) bool, retu
 // confirmDelete is the data of the page that asks the user to confirm a
 // deletion. Code is the text that the user must type, or "".
 type confirmDelete struct {
-	Heading string
+	// RootURL and RootLabel are the list page above the item.
+	RootURL   string
+	RootLabel string
+	Heading   string
 	// Parent is the name of the page of Cancel.
 	Parent  string
 	Message string
@@ -126,6 +130,15 @@ type confirmDelete struct {
 	Code    string
 	Cancel  string
 	CSRF    string
+}
+
+// tabCrumbs are the last parts of the path for the tabs of an item.
+var tabCrumbs = map[string]string{
+	"bindings":    "Role bindings",
+	"permissions": "Permissions",
+	"access":      "Access",
+	"delete":      "Delete",
+	"spaces":      "Spaces",
 }
 
 // defaultRoleText describes the default role of a space or a node. A nil
@@ -158,6 +171,7 @@ type userHead struct {
 	User   *store.User
 	IsSelf bool
 	Tab    string
+	Crumb  string
 }
 
 // loadUser loads the user from the {id} path value.
@@ -172,11 +186,11 @@ func (s *Server) loadUser(w http.ResponseWriter, r *http.Request, tab string) (u
 		s.storeResult(w, r, err)
 		return userHead{}, false
 	}
-	return userHead{user, id == reqInfoFrom(r.Context()).Session.User.ID, tab}, true
+	return userHead{user, id == reqInfoFrom(r.Context()).Session.User.ID, tab, tabCrumbs[tab]}, true
 }
 
 func (s *Server) handleAdminUser(w http.ResponseWriter, r *http.Request) {
-	h, ok := s.loadUser(w, r, "details")
+	h, ok := s.loadUser(w, r, "")
 	if !ok {
 		return
 	}
@@ -299,6 +313,7 @@ func (s *Server) handleAdminGroupCreate(w http.ResponseWriter, r *http.Request) 
 type groupHead struct {
 	Group *store.Group
 	Tab   string
+	Crumb string
 }
 
 // loadGroup loads the group from the {id} path value.
@@ -313,11 +328,11 @@ func (s *Server) loadGroup(w http.ResponseWriter, r *http.Request, tab string) (
 		s.storeResult(w, r, err)
 		return groupHead{}, false
 	}
-	return groupHead{group, tab}, true
+	return groupHead{group, tab, tabCrumbs[tab]}, true
 }
 
 func (s *Server) handleAdminGroup(w http.ResponseWriter, r *http.Request) {
-	h, ok := s.loadGroup(w, r, "members")
+	h, ok := s.loadGroup(w, r, "")
 	if !ok {
 		return
 	}
@@ -350,7 +365,7 @@ func (s *Server) handleAdminGroupBindings(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleAdminGroupDeleteForm(w http.ResponseWriter, r *http.Request) {
-	h, ok := s.loadGroup(w, r, "")
+	h, ok := s.loadGroup(w, r, "delete")
 	if !ok {
 		return
 	}
@@ -363,6 +378,7 @@ func (s *Server) handleAdminGroupDeleteForm(w http.ResponseWriter, r *http.Reque
 		Heading: "Delete group " + h.Group.Name,
 		Message: "Do you want to delete the group and its role bindings? The members lose the roles of the group.",
 		Action:  g + "/delete", Cancel: g, Parent: h.Group.Name, CSRF: csrfOf(r),
+		RootURL: adminPath(r) + "/groups", RootLabel: "Groups",
 	})
 }
 
@@ -763,6 +779,7 @@ func (s *Server) handleAdminSpaceCreate(w http.ResponseWriter, r *http.Request) 
 type spaceHead struct {
 	Space *store.Space
 	Tab   string
+	Crumb string
 }
 
 // loadSpace loads the space from the {slug} path value.
@@ -772,15 +789,23 @@ func (s *Server) loadSpace(w http.ResponseWriter, r *http.Request, tab string) (
 		s.storeResult(w, r, err)
 		return spaceHead{}, false
 	}
-	return spaceHead{sp, tab}, true
+	return spaceHead{sp, tab, tabCrumbs[tab]}, true
 }
 
 func (s *Server) handleAdminSpace(w http.ResponseWriter, r *http.Request) {
-	h, ok := s.loadSpace(w, r, "settings")
+	h, ok := s.loadSpace(w, r, "")
 	if !ok {
 		return
 	}
 	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space", "Space "+h.Space.Name, h)
+}
+
+func (s *Server) handleAdminSpaceEdit(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.loadSpace(w, r, "")
+	if !ok {
+		return
+	}
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-edit", "Settings of "+h.Space.Name, h)
 }
 
 func (s *Server) handleAdminSpaceUpdate(w http.ResponseWriter, r *http.Request) {
@@ -793,11 +818,11 @@ func (s *Server) handleAdminSpaceUpdate(w http.ResponseWriter, r *http.Request) 
 	if !s.storeResult(w, r, s.store.UpdateSpace(r.Context(), tenantOf(r).ID, slug, name, desc)) {
 		return
 	}
-	http.Redirect(w, r, adminPath(r)+"/spaces", http.StatusSeeOther)
+	http.Redirect(w, r, adminPath(r)+"/spaces/"+slug, http.StatusSeeOther)
 }
 
 func (s *Server) handleAdminSpaceDeleteForm(w http.ResponseWriter, r *http.Request) {
-	h, ok := s.loadSpace(w, r, "")
+	h, ok := s.loadSpace(w, r, "delete")
 	if !ok {
 		return
 	}
@@ -806,6 +831,7 @@ func (s *Server) handleAdminSpaceDeleteForm(w http.ResponseWriter, r *http.Reque
 		Heading: "Delete space " + h.Space.Name,
 		Message: "Do you want to delete the space? This deletes all folders and documents in it.",
 		Action:  sp + "/delete", Code: h.Space.Slug, Cancel: sp, Parent: h.Space.Name, CSRF: csrfOf(r),
+		RootURL: adminPath(r) + "/spaces", RootLabel: "Spaces",
 	})
 }
 

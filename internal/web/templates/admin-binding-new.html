@@ -1,25 +1,31 @@
 {{define "content"}}
 {{with .Data}}
-{{template "formhead" (crumb .ReturnTo "Back" "New role binding")}}
-<form method="post" action="{{$.TenantPath}}/admin/bindings" class="stack narrow">
+{{template "formhead" (crumb .ReturnTo "Back" "New role binding" "new")}}
+<form method="post" action="{{$.TenantPath}}/admin/bindings" class="stack">
   {{template "csrf" $.CSRF}}
   <input type="hidden" name="return_to" value="{{.ReturnTo}}">
   <label>Role <select name="role" required autofocus>{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
   {{if .Subject}}
   <input type="hidden" name="subject" value="{{.Subject}}">
-  <p>Give to: <strong>{{.SubjectLabel}}</strong></p>
   {{else}}
   {{template "subjectselect" .}}
   {{end}}
   {{if .Space}}
   <input type="hidden" name="space" value="{{.Space.Slug}}">
   {{with .Node}}<input type="hidden" name="node" value="{{.PublicID}}">{{end}}
-  <p>Scope: <strong>{{with .Node}}{{if .IsFolder}}Folder{{else}}Document{{end}} "{{.Title}}" in space {{else}}Space {{end}}{{.Space.Name}}</strong>.
-    The binding gives only the document permissions (<code>doc.*</code>) of the role.</p>
   {{else}}
   {{template "spaceselect" .Spaces}}
   {{end}}
-  {{template "savebuttons" .ReturnTo}}
+  {{if or .Subject .Space}}
+  <table class="settings">
+    <tbody>
+      {{if .Subject}}<tr><th scope="row">Given to</th><td>{{.SubjectLabel}}</td></tr>{{end}}
+      {{if .Space}}<tr><th scope="row">Scope</th><td>{{with .Node}}{{if .IsFolder}}Folder{{else}}Document{{end}} "{{.Title}}" in space {{else}}Space {{end}}{{.Space.Name}}</td></tr>{{end}}
+    </tbody>
+  </table>
+  {{if .Space}}<p><small>The binding gives only the document permissions (<code>doc.*</code>) of the role.</small></p>{{end}}
+  {{end}}
+  {{template "savebutton"}}
 </form>
 {{end}}
 {{end}}

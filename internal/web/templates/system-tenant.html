@@ -1,17 +1,18 @@
 {{define "content"}}
 {{with .Data}}
-{{if .IsNew}}{{template "formhead" (crumb "/admin/" "Tenants" "New tenant")}}{{else}}{{template "tenanthead" $}}{{end}}
+{{if .IsNew}}{{template "formhead" (crumb "/admin/" "Tenants" "New tenant" "new")}}{{else}}{{template "formhead" (crumb3 "/admin/" "Tenants" (print "/admin/tenants/" .Code) .Code "Settings" "edit")}}{{end}}
 {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
-<form method="post" action="/admin/tenants{{if not .IsNew}}/{{.Code}}{{end}}" class="stack narrow">
+<form method="post" action="/admin/tenants{{if not .IsNew}}/{{.Code}}{{end}}" class="stack">
   {{template "csrf" $.CSRF}}
   {{if .IsNew}}
+  <span id="general"></span>
   <label>Code (exactly 4 characters: a-z, 0-9). The code is part of the URLs. You cannot change it later.
     <input name="code" value="{{.Code}}" required minlength="4" maxlength="4" pattern="[a-z0-9]{4}" autofocus></label>
   {{end}}
   <label>Name <input name="name" value="{{.Name}}" required maxlength="200"></label>
   <label class="check"><input type="checkbox" name="disabled"{{if .Disabled}} checked{{end}}> Disabled. Nobody can use a disabled tenant.</label>
 
-  <fieldset>
+  <fieldset id="idp">
     <legend>Identity provider (OpenID Connect)</legend>
     {{with .RedirectURI}}
     <p><small>Redirect URI: <code>{{.}}</code><br>Post-logout redirect URI: <code>{{$.Data.LogoutURI}}</code></small></p>
@@ -27,7 +28,7 @@
     <label>Groups claim <input name="oidc_groups_claim" value="{{.OIDCGroupsClaim}}" maxlength="100"></label>
   </fieldset>
 
-  <fieldset>
+  <fieldset id="access">
     <legend>Access</legend>
     <label>Admin group. Members of this OIDC group always have the admin role.
       <input name="admin_group" value="{{.AdminGroup}}" maxlength="200"></label>
@@ -39,13 +40,13 @@
     </label>
   </fieldset>
 
-  <fieldset>
+  <fieldset id="limits">
     <legend>Limits</legend>
     <label>Session life (for example 12h) <input name="session_ttl" value="{{.SessionTTL}}" required maxlength="20"></label>
     <label>Maximum document size in KiB (1 to 1024) <input name="max_doc_kib" value="{{.MaxDocKiB}}" type="number" min="1" max="1024" required></label>
   </fieldset>
 
-  {{template "savebuttons" "/admin/"}}
+  {{template "savebutton"}}
 </form>
 {{end}}
 {{end}}

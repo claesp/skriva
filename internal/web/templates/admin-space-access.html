@@ -2,6 +2,7 @@
 {{template "spacehead" .}}
 {{with .Data}}
 {{$s := print $.TenantPath "/admin/spaces/" .Space.Slug}}
+<div class="pagehead"><h1>Access</h1></div>
 <p>A user has these permissions in the space:</p>
 <ul>
   <li>The document permissions of the default role of the space.</li>
@@ -10,11 +11,7 @@
 </ul>
 {{template "defaultroletable" (defaultrole .DefaultRoleText (print $s "/default-role"))}}
 <h2>Role bindings</h2>
-<div class="tablebar">
-  <nav class="toolbar" aria-label="Role bindings"><span class="group">
-    {{template "tool" (tool (print $.TenantPath "/admin/bindings/new?space=" .Space.Slug "&return_to=" $s "/access") "new" "New role binding")}}
-  </span></nav>
-</div>
+{{template "tablebar" (tool (print $.TenantPath "/admin/bindings/new?space=" .Space.Slug "&return_to=" $s "/access") "new" "New role binding")}}
 {{template "bindingtable" .Table}}
 {{end}}
 {{end}}

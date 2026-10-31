@@ -33,130 +33,131 @@
 </table>
 {{end}}
 
-{{/* The buttons at the bottom of a form. The argument is the URL of the
-   Cancel button. */}}
-{{define "savebuttons"}}<div class="buttons">
-    <a class="button secondary" href="{{.}}">Cancel</a>
-    <button type="submit">Save</button>
-  </div>{{end}}
+{{/* The button at the bottom of a form. The current button in the
+   toolbar goes back without a save. */}}
+{{define "savebutton"}}<div class="buttons"><button type="submit">Save</button></div>{{end}}
+
+{{/* A toolbar above a table, for the actions of the table. The argument
+   is a toolArgs. */}}
+{{define "tablebar"}}<div class="tablebar"><nav class="toolbar" aria-label="Actions"><span class="group">{{template "tool" .}}</span></nav></div>{{end}}
+
+{{/* The administration pages have the layout of the pages of a document:
+   a bar with the path and the toolbar over the full width, the menu at
+   the left side and the text in the center. The heads below make the
+   bar and start the main column. The layout closes the main column and
+   adds the menu. */}}
 
 {{/* The head of the pages of one user. The argument is the view. The data
-   has the fields User, IsSelf and Tab. */}}
+   embeds a userHead. */}}
 {{define "userhead"}}
 {{$u := print .TenantPath "/admin/users/" .Data.User.ID}}
-<div class="topbar">
-  <nav class="breadcrumbs" aria-label="Path"><a href="{{.TenantPath}}/admin/users">Users</a> / {{.Data.User.Username}}</nav>
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path"><a href="{{.TenantPath}}/admin/users">Users</a> /
+    {{if .Data.Tab}}<a href="{{$u}}">{{.Data.User.Username}}</a> / {{.Data.Crumb}}{{else}}{{.Data.User.Username}}{{end}}</nav>
   <nav class="toolbar" aria-label="Tools">
     <span class="group">
-      {{template "tool" (tab $u "details" "Details" (eq .Data.Tab "details"))}}
-      {{template "tool" (tab (print $u "/bindings") "binding" "Role bindings" (eq .Data.Tab "bindings"))}}
-      {{template "tool" (tab (print $u "/permissions") "permissions" "Permissions" (eq .Data.Tab "permissions"))}}
+      {{template "tool" (ntool .Data.Tab "bindings" (print $u "/bindings") $u "binding" "Role bindings")}}
+      {{template "tool" (ntool .Data.Tab "permissions" (print $u "/permissions") $u "permissions" "Permissions")}}
     </span>
-    {{if or (eq .Data.Tab "bindings") (not .Data.IsSelf)}}<span class="group">
-      {{if eq .Data.Tab "bindings"}}{{template "tool" (tool (print .TenantPath "/admin/bindings/new?subject=user:" .Data.User.ID "&return_to=" $u "/bindings") "new" "New role binding")}}{{end}}
-      {{if .Data.IsSelf}}{{else if .Data.User.Disabled}}{{template "post" (post (print $u "/enable") "enable" "Enable" .CSRF "")}}
-      {{else}}{{template "post" (post (print $u "/disable") "disable" "Disable" .CSRF "")}}{{end}}
-    </span>{{end}}
   </nav>
 </div>
-<h1>User {{.Data.User.Username}}{{if .Data.User.Disabled}} <span class="tag danger">Disabled</span>{{end}}</h1>
+<div class="main reading">
 {{end}}
 
 {{/* The head of the pages of one group. The argument is the view. The data
-   has the fields Group and Tab. */}}
+   embeds a groupHead. */}}
 {{define "grouphead"}}
 {{$g := print .TenantPath "/admin/groups/" .Data.Group.ID}}
-{{$local := eq .Data.Group.Source "local"}}
-<div class="topbar">
-  <nav class="breadcrumbs" aria-label="Path"><a href="{{.TenantPath}}/admin/groups">Groups</a> / {{.Data.Group.Name}}</nav>
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path"><a href="{{.TenantPath}}/admin/groups">Groups</a> /
+    {{if .Data.Tab}}<a href="{{$g}}">{{.Data.Group.Name}}</a> / {{.Data.Crumb}}{{else}}{{.Data.Group.Name}}{{end}}</nav>
   <nav class="toolbar" aria-label="Tools">
     <span class="group">
-      {{template "tool" (tab $g "group" "Members" (eq .Data.Tab "members"))}}
-      {{template "tool" (tab (print $g "/bindings") "binding" "Role bindings" (eq .Data.Tab "bindings"))}}
+      {{template "tool" (ntool .Data.Tab "bindings" (print $g "/bindings") $g "binding" "Role bindings")}}
     </span>
-    {{if or $local (eq .Data.Tab "bindings")}}<span class="group">
-      {{if and $local (eq .Data.Tab "members")}}{{template "tool" (tool (print $g "/members/new") "new-user" "New member")}}{{end}}
-      {{if eq .Data.Tab "bindings"}}{{template "tool" (tool (print .TenantPath "/admin/bindings/new?subject=group:" .Data.Group.ID "&return_to=" $g "/bindings") "new" "New role binding")}}{{end}}
-      {{if $local}}{{template "tool" (tool (print $g "/delete") "delete" "Delete")}}{{end}}
+    {{if eq .Data.Group.Source "local"}}<span class="group">
+      {{template "tool" (ntool .Data.Tab "delete" (print $g "/delete") $g "delete" "Delete")}}
     </span>{{end}}
   </nav>
 </div>
-<h1>Group {{.Data.Group.Name}} <span class="tag">{{.Data.Group.Source}}</span></h1>
-{{with .Data.Group.Description}}<p>{{.}}</p>{{end}}
+<div class="main reading">
 {{end}}
 
 {{/* The head of the pages of one space in the tenant administration. The
-   argument is the view. The data has the fields Space and Tab. */}}
+   argument is the view. The data embeds a spaceHead. */}}
 {{define "spacehead"}}
 {{$s := print .TenantPath "/admin/spaces/" .Data.Space.Slug}}
-<div class="topbar">
-  <nav class="breadcrumbs" aria-label="Path"><a href="{{.TenantPath}}/admin/spaces">Spaces</a> / {{.Data.Space.Name}}</nav>
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path"><a href="{{.TenantPath}}/admin/spaces">Spaces</a> /
+    {{if .Data.Tab}}<a href="{{$s}}">{{.Data.Space.Name}}</a> / {{.Data.Crumb}}{{else}}{{.Data.Space.Name}}{{end}}</nav>
   <nav class="toolbar" aria-label="Tools">
     <span class="group">
-      {{if .Can "space.manage"}}{{template "tool" (tab $s "settings" "Settings" (eq .Data.Tab "settings"))}}{{end}}
-      {{if .Can "tenant.manage"}}{{template "tool" (tab (print $s "/access") "access" "Access" (eq .Data.Tab "access"))}}{{end}}
-    </span>
-    <span class="group">
+      {{if .Can "tenant.manage"}}{{template "tool" (ntool .Data.Tab "access" (print $s "/access") $s "access" "Access")}}{{end}}
       {{template "tool" (tool (print .TenantPath "/" .Data.Space.Slug "/") "open" "Open the space")}}
-      {{if .Can "space.manage"}}{{template "tool" (tool (print $s "/delete") "delete" "Delete")}}{{end}}
     </span>
+    {{if .Can "space.manage"}}<span class="group">
+      {{template "tool" (ntool .Data.Tab "delete" (print $s "/delete") $s "delete" "Delete")}}
+    </span>{{end}}
   </nav>
 </div>
-<h1>Space {{.Data.Space.Name}} <code>{{.Data.Space.Slug}}</code></h1>
+<div class="main reading">
 {{end}}
 
 {{/* The head of the pages of one tenant in the system administration. The
-   argument is the view. The data has the fields Code, IsDefault and Tab. */}}
+   argument is the view. The data has the fields Code, IsDefault, Tab and
+   Crumb. */}}
 {{define "tenanthead"}}
 {{$t := print "/admin/tenants/" .Data.Code}}
-<div class="topbar">
-  <nav class="breadcrumbs" aria-label="Path"><a href="/admin/">Tenants</a> / {{.Data.Code}}</nav>
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path"><a href="/admin/">Tenants</a> /
+    {{if .Data.Tab}}<a href="{{$t}}">{{.Data.Code}}</a> / {{.Data.Crumb}}{{else}}{{.Data.Code}}{{end}}</nav>
   <nav class="toolbar" aria-label="Tools">
     <span class="group">
-      {{template "tool" (tab $t "settings" "Settings" (eq .Data.Tab "settings"))}}
-      {{template "tool" (tab (print $t "/spaces") "space" "Spaces" (eq .Data.Tab "spaces"))}}
-    </span>
-    <span class="group">
-      {{if eq .Data.Tab "spaces"}}{{template "tool" (tool (print $t "/spaces/new") "new" "New space")}}{{end}}
+      {{template "tool" (ntool .Data.Tab "spaces" (print $t "/spaces") $t "space" "Spaces")}}
       {{template "tool" (tool (print "/" .Data.Code "/") "open" "Open the tenant")}}
-      {{if not .Data.IsDefault}}{{template "tool" (tool (print $t "/delete") "delete" "Delete")}}{{end}}
     </span>
+    {{if not .Data.IsDefault}}<span class="group">
+      {{template "tool" (ntool .Data.Tab "delete" (print $t "/delete") $t "delete" "Delete")}}
+    </span>{{end}}
   </nav>
 </div>
-<h1>Tenant <code>{{.Data.Code}}</code>{{if .Data.IsDefault}} <span class="tag">default</span>{{end}}</h1>
+<div class="main reading">
 {{end}}
 
-{{/* The head of a form page: a path bar with a link to the parent page,
-   and the heading. The argument is a crumbArgs. */}}
-{{define "formhead"}}
-<div class="topbar">
-  <nav class="breadcrumbs" aria-label="Path"><a href="{{.ParentURL}}">{{.ParentLabel}}</a> / {{.Title}}</nav>
-</div>
-<h1>{{.Title}}</h1>
-{{end}}
-
-{{/* The head of a list page in the administration. The argument has the
-   fields Title, NewURL and NewLabel. An empty NewURL shows no button. */}}
+{{/* The head of a list page. The argument is a headArgs. */}}
 {{define "listhead"}}
-<div class="topbar">
+<div class="topbar wide">
   <nav class="breadcrumbs" aria-label="Path">{{.Title}}</nav>
-  {{if .NewURL}}<nav class="toolbar" aria-label="Tools"><span class="group">{{template "tool" (tool .NewURL "new" .NewLabel)}}</span></nav>{{end}}
 </div>
-<h1>{{.Title}}</h1>
+<div class="main reading">
+<div class="pagehead"><h1>{{.Title}}</h1></div>
+{{end}}
+
+{{/* The head of a form page. The path ends with the title of the form. The
+   toolbar has the button of the form action, marked as current. The
+   button goes back to the parent page without a save. The argument is a
+   crumbArgs. */}}
+{{define "formhead"}}
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path">
+    {{with .RootURL}}<a href="{{.}}">{{$.RootLabel}}</a> / {{end}}<a href="{{.ParentURL}}">{{.ParentLabel}}</a> / {{.Title}}</nav>
+  <nav class="toolbar" aria-label="Tools"><span class="group">
+    {{template "tool" (tab .ParentURL .Icon (print .Title " (close)") true)}}
+  </span></nav>
+</div>
+<div class="main reading">
+<div class="pagehead"><h1>{{.Title}}</h1></div>
 {{end}}
 
 {{/* A page that asks the user to confirm a deletion. The argument is a
    confirmDelete. */}}
 {{define "confirmdelete"}}
-{{template "formhead" (crumb .Cancel .Parent .Heading)}}
+{{template "formhead" (crumb3 .RootURL .RootLabel .Cancel .Parent "Delete" "delete")}}
 <p>{{.Message}} You cannot undo this.</p>
-<form method="post" action="{{.Action}}" class="stack narrow">
+<form method="post" action="{{.Action}}" class="stack">
   <input type="hidden" name="csrf_token" value="{{.CSRF}}">
   {{with .Code}}<label><span>Type <code>{{.}}</code> to confirm</span> <input name="confirm" required autocomplete="off"></label>{{end}}
-  <div class="buttons">
-    <a class="button secondary" href="{{.Cancel}}">Cancel</a>
-    <button type="submit" class="danger">Delete</button>
-  </div>
+  <div class="buttons"><button type="submit" class="danger">Delete</button></div>
 </form>
 {{end}}
 

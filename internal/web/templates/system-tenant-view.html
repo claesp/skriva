@@ -1,0 +1,45 @@
+{{define "content"}}
+{{template "tenanthead" .}}
+{{with .Data}}
+{{$edit := print "/admin/tenants/" .Code "/edit"}}
+<div class="pagehead"><h1>{{.Name}}{{if .IsDefault}} <span class="tag">default</span>{{end}}</h1></div>
+<h2>General</h2>
+{{template "tablebar" (tool (print $edit "#general") "edit" "Change the settings")}}
+<table class="settings">
+  <tbody>
+    <tr><th scope="row">Code</th><td><code>{{.Code}}</code></td></tr>
+    <tr><th scope="row">Name</th><td>{{.Name}}</td></tr>
+    <tr><th scope="row">Status</th><td>{{if .Disabled}}<span class="tag danger">Disabled</span>{{else}}Active{{end}}</td></tr>
+  </tbody>
+</table>
+<h2>Identity provider</h2>
+{{template "tablebar" (tool (print $edit "#idp") "edit" "Change the identity provider")}}
+<table class="settings">
+  <tbody>
+    <tr><th scope="row">Issuer URL</th><td>{{with .OIDCIssuer}}<code>{{.}}</code>{{else}}<span class="tag danger">Not set</span>{{end}}</td></tr>
+    <tr><th scope="row">Client ID</th><td>{{.OIDCClientID}}</td></tr>
+    <tr><th scope="row">Client secret</th><td>{{if .HasSecret}}Set{{else}}Not set{{end}}</td></tr>
+    <tr><th scope="row">Scopes</th><td><code>{{.Scopes}}</code></td></tr>
+    <tr><th scope="row">Groups claim</th><td><code>{{.OIDCGroupsClaim}}</code></td></tr>
+    <tr><th scope="row">Redirect URI</th><td><code>{{.RedirectURI}}</code></td></tr>
+    <tr><th scope="row">Post-logout redirect URI</th><td><code>{{.LogoutURI}}</code></td></tr>
+  </tbody>
+</table>
+<h2>Access</h2>
+{{template "tablebar" (tool (print $edit "#access") "edit" "Change the access")}}
+<table class="settings">
+  <tbody>
+    <tr><th scope="row">Admin group</th><td>{{.AdminGroup}}</td></tr>
+    <tr><th scope="row">Default role</th><td>{{with .DefaultRole}}{{.}}{{else}}None{{end}}</td></tr>
+  </tbody>
+</table>
+<h2>Limits</h2>
+{{template "tablebar" (tool (print $edit "#limits") "edit" "Change the limits")}}
+<table class="settings">
+  <tbody>
+    <tr><th scope="row">Session life</th><td>{{.SessionTTL}}</td></tr>
+    <tr><th scope="row">Maximum document size</th><td>{{.MaxDocKiB}} KiB</td></tr>
+  </tbody>
+</table>
+{{end}}
+{{end}}

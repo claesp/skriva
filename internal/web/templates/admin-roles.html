@@ -1,6 +1,7 @@
 {{define "content"}}
-{{template "listhead" (head "Roles" (print .TenantPath "/admin/roles/new") "New role")}}
+{{template "listhead" (head "Roles" "" "")}}
 {{with .Tenant.DefaultRole}}<p>All signed-in users have the role "{{.}}".</p>{{end}}
+{{template "tablebar" (tool (print .TenantPath "/admin/roles/new") "new" "New role")}}
 <table>
   <thead><tr><th>Name</th><th>Description</th><th>Permissions</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>

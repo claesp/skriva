@@ -49,9 +49,11 @@
 </header>
 <main id="content">
 {{if .Menu}}
+{{/* The head template of the page starts the main column. */}}
 <div class="with-sidebar">
+{{template "content" .}}
+</div>
 <aside class="sidebar" aria-label="Administration">{{template "menu" .}}</aside>
-<div class="main">{{template "content" .}}</div>
 </div>
 {{else}}
 {{block "content" .}}{{end}}

@@ -1,13 +1,14 @@
 {{define "content"}}
-{{template "listhead" (head "Spaces" (print .TenantPath "/admin/spaces/new") "New space")}}
+{{template "listhead" (head "Spaces" "" "")}}
+{{template "tablebar" (tool (print .TenantPath "/admin/spaces/new") "new" "New space")}}
 <table>
-  <thead><tr><th>Name</th><th>Code</th><th>Items</th><th>Description</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>Name</th><th>Code</th><th class="num">Items</th><th>Description</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr>
     <td><a href="{{$.TenantPath}}/admin/spaces/{{.Slug}}">{{.Name}}</a></td>
     <td><code>{{.Slug}}</code></td>
-    <td>{{.Nodes}}</td>
+    <td class="num">{{.Nodes}}</td>
     <td>{{.Description}}</td>
     <td class="actions">
       {{if $.Can "tenant.manage"}}{{template "tool" (tool (print $.TenantPath "/admin/spaces/" .Slug "/access") "access" "Access")}}{{end}}

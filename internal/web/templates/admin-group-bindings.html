@@ -1,4 +1,10 @@
 {{define "content"}}
 {{template "grouphead" .}}
-{{template "bindingtable" .Data.Table}}
+{{with .Data}}
+{{$g := print $.TenantPath "/admin/groups/" .Group.ID}}
+<div class="pagehead"><h1>Role bindings</h1></div>
+<p>The members of {{.Group.Name}} have these roles.</p>
+{{template "tablebar" (tool (print $.TenantPath "/admin/bindings/new?subject=group:" .Group.ID "&return_to=" $g "/bindings") "new" "New role binding")}}
+{{template "bindingtable" .Table}}
+{{end}}
 {{end}}

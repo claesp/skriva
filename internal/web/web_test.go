@@ -730,7 +730,7 @@ func TestAdminPages(t *testing.T) {
 		"/dflt/admin/roles", "/dflt/admin/roles/new", "/dflt/admin/roles/" + strconv.FormatInt(readerID, 10) + "/delete",
 		"/dflt/admin/bindings", "/dflt/admin/bindings/new",
 		"/dflt/admin/bindings/new?subject=group:" + groupID + "&space=default0",
-		"/dflt/admin/spaces", "/dflt/admin/spaces/new", "/dflt/admin/spaces/default0",
+		"/dflt/admin/spaces", "/dflt/admin/spaces/new", "/dflt/admin/spaces/default0", "/dflt/admin/spaces/default0/edit",
 		"/dflt/admin/spaces/default0/access", "/dflt/admin/spaces/default0/default-role",
 		"/dflt/admin/spaces/default0/delete",
 	}
@@ -839,7 +839,7 @@ func TestSystemAdmin(t *testing.T) {
 	if b := readBody(t, root.get("/admin/tenants/acme/spaces")); !strings.Contains(b, "acmedocs") {
 		t.Fatalf("spaces page of the tenant:\n%s", b)
 	}
-	for _, p := range []string{"/admin/tenants/new", "/admin/tenants/acme/spaces/new", "/admin/tenants/acme/delete"} {
+	for _, p := range []string{"/admin/tenants/new", "/admin/tenants/acme/edit", "/admin/tenants/acme/spaces/new", "/admin/tenants/acme/delete"} {
 		wantStatus(t, root.get(p), http.StatusOK)
 	}
 	// The default tenant has no delete page.

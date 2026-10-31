@@ -13,22 +13,30 @@ administration. Each level has its own sign-in and its own session.
 
 ## Layout of the administration pages
 
-The administration pages use the same layout on the two levels:
+The administration pages use the same layout as the pages of a
+document, on the two levels:
 
+- The bar below the page header covers the full width. It shows the
+  path at the left side and the toolbar of the item at the right side.
 - The menu at the left side shows the main sections, for example
-  **Users**, **Groups**, **Roles**, **Role bindings** and **Spaces**.
+  **Users**, **Groups**, **Roles**, **Role bindings**, **Recent
+  changes** and **Spaces**.
 - Each page has one function: a list, the data of one item, or one
   form.
-- The toolbar at the top right side contains icon buttons. Put the mouse
-  pointer on a button to see its name. The first group of buttons opens
-  the pages of the item, for example **Details**, **Role bindings** and
-  **Permissions** of a user. The current page has a line below its
-  button. The next group of buttons does actions, for example
-  **New role binding** (+) or **Delete** (waste bin).
-- A form opens on its own page. The buttons are at the bottom right
-  side: **Cancel** and **Save**.
-- **Remove** (circle with x) in a table row removes that role binding or
-  group member immediately.
+- The page of an item shows its data in a table. A section, for example
+  **Members** or **Role bindings**, has a heading and a table. The
+  buttons for the section, for example **New member** (+), are in a
+  small toolbar above the table.
+- The toolbar at the top opens the other pages of the item, for example
+  **Role bindings** and **Permissions** of a user. On such a page, the
+  button has a line below it. Click the button again to go back to the
+  item.
+- A form opens on its own page. The toolbar at the top shows the button
+  of the form, with a line below it. Click it to go back without a save.
+  The **Save** button is at the bottom right side.
+- The buttons in a table row act on that row. **Remove** (circle with x)
+  removes the role binding or the group member immediately. **Disable**
+  and **Enable** are in the **Status** row of a user.
 - **Delete** opens a page that asks you to confirm. To delete a space or
   a tenant, you must also type its code.
 
@@ -39,7 +47,6 @@ The administration pages use the same layout on the two levels:
 | Waste bin | Delete | Open the page to delete the item. |
 | Pencil | Change the default role | Open the form for the default role. |
 | Lock | Access | Open the default role and the role bindings of a space. |
-| Sliders | Settings | Open the settings of a space or a tenant. |
 | Arrow out of a box | Open | Open the space or the tenant in the wiki. |
 | Circle with a line | Disable | Disable the user. |
 | Circle with a check mark | Enable | Enable the user again. |
@@ -61,7 +68,8 @@ The administration pages use the same layout on the two levels:
 8. Add the redirect URI and the post-logout redirect URI to the client
    at the identity provider. The settings page of the tenant shows the
    two URIs.
-9. Click **Spaces** (four squares). Then click **New space** (+).
+9. Click **Spaces** (four squares) in the toolbar. Then click **New
+   space** (+) above the table.
 10. Type the name and the code of the space. The code has exactly 8
     characters from `a-z` and `0-9`. Click **Save**.
 

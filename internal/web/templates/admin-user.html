@@ -1,17 +1,30 @@
 {{define "content"}}
 {{template "userhead" .}}
 {{with .Data}}
-<dl class="facts">
-  <dt>Name</dt><dd>{{.User.DisplayName}}</dd>
-  <dt>E-mail</dt><dd>{{.User.Email}}</dd>
-  <dt>Issuer</dt><dd><code>{{.User.Issuer}}</code></dd>
-  <dt>Subject</dt><dd><code>{{.User.Subject}}</code></dd>
-  <dt>First sign-in</dt><dd>{{date .User.CreatedAt}}</dd>
-  <dt>Status</dt><dd>{{if .User.Disabled}}Disabled{{else}}Active{{end}}</dd>
-</dl>
+{{$u := print $.TenantPath "/admin/users/" .User.ID}}
+<div class="pagehead"><h1>{{.User.Username}}</h1></div>
+<table class="settings">
+  <tbody>
+    <tr><th scope="row">Name</th><td>{{.User.DisplayName}}</td><td class="actions"></td></tr>
+    <tr><th scope="row">E-mail</th><td>{{.User.Email}}</td><td class="actions"></td></tr>
+    <tr><th scope="row">Issuer</th><td><code>{{.User.Issuer}}</code></td><td class="actions"></td></tr>
+    <tr><th scope="row">Subject</th><td><code>{{.User.Subject}}</code></td><td class="actions"></td></tr>
+    <tr><th scope="row">First sign-in</th><td>{{date .User.CreatedAt}}</td><td class="actions"></td></tr>
+    <tr><th scope="row">Status</th>
+      <td>{{if .User.Disabled}}<span class="tag danger">Disabled</span>{{else}}Active{{end}}</td>
+      <td class="actions">{{if not .IsSelf}}{{if .User.Disabled}}{{template "post" (post (print $u "/enable") "enable" "Enable" $.CSRF "")}}{{else}}{{template "post" (post (print $u "/disable") "disable" "Disable" $.CSRF "")}}{{end}}{{end}}</td></tr>
+  </tbody>
+</table>
 <h2>Groups</h2>
-{{with .Groups}}
-<ul>{{range .}}<li><a href="{{$.TenantPath}}/admin/groups/{{.ID}}">{{.Name}}</a> <span class="tag">{{.Source}}</span></li>{{end}}</ul>
-{{else}}<p>The user is not a member of a group.</p>{{end}}
+<table>
+  <thead><tr><th>Name</th><th>Source</th></tr></thead>
+  <tbody>
+  {{range .Groups}}
+  <tr><td><a href="{{$.TenantPath}}/admin/groups/{{.ID}}">{{.Name}}</a></td><td><span class="tag">{{.Source}}</span></td></tr>
+  {{else}}
+  <tr><td colspan="2">The user is not a member of a group.</td></tr>
+  {{end}}
+  </tbody>
+</table>
 {{end}}
 {{end}}

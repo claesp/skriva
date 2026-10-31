@@ -1,11 +1,17 @@
 {{define "content"}}
 {{template "spacehead" .}}
 {{with .Data.Space}}
-<form method="post" action="{{$.TenantPath}}/admin/spaces/{{.Slug}}" class="stack narrow">
-  {{template "csrf" $.CSRF}}
-  <label>Name <input name="name" value="{{.Name}}" required maxlength="200"></label>
-  <label>Description <input name="description" value="{{.Description}}" maxlength="500"></label>
-  {{template "savebuttons" (print $.TenantPath "/admin/spaces")}}
-</form>
+{{$s := print $.TenantPath "/admin/spaces/" .Slug}}
+<div class="pagehead"><h1>{{.Name}}</h1></div>
+<h2>Settings</h2>
+{{if $.Can "space.manage"}}{{template "tablebar" (tool (print $s "/edit") "edit" "Change the settings")}}{{end}}
+<table class="settings">
+  <tbody>
+    <tr><th scope="row">Name</th><td>{{.Name}}</td></tr>
+    <tr><th scope="row">Code</th><td><code>{{.Slug}}</code></td></tr>
+    <tr><th scope="row">Description</th><td>{{.Description}}</td></tr>
+    <tr><th scope="row">Made</th><td>{{date .CreatedAt}}</td></tr>
+  </tbody>
+</table>
 {{end}}
 {{end}}

@@ -1,8 +1,8 @@
 {{define "content"}}
 {{with .Data}}
 {{$back := print $.TenantPath "/admin/spaces/" .Space.Slug "/access"}}
-{{template "formhead" (crumb $back .Space.Name "Default role")}}
-<form method="post" action="{{$.TenantPath}}/admin/spaces/{{.Space.Slug}}/default-role" class="stack narrow">
+{{template "formhead" (crumb3 (print $.TenantPath "/admin/spaces/" .Space.Slug) .Space.Name $back "Access" "Default role" "edit")}}
+<form method="post" action="{{$.TenantPath}}/admin/spaces/{{.Space.Slug}}/default-role" class="stack">
   {{template "csrf" $.CSRF}}
   <label>Default role of all signed-in users in this space
     <select name="default_role" autofocus>
@@ -11,7 +11,7 @@
       {{range .Roles}}<option value="{{.Name}}"{{if eq .Name $.Data.DefaultRole}} selected{{end}}>{{.Name}}</option>{{end}}
     </select>
   </label>
-  {{template "savebuttons" $back}}
+  {{template "savebutton"}}
 </form>
 {{end}}
 {{end}}

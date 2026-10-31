@@ -64,11 +64,16 @@ type headArgs struct {
 	NewLabel string
 }
 
-// crumbArgs is the argument of the "formhead" template.
+// crumbArgs is the argument of the "formhead" template. RootURL and
+// RootLabel are an optional first part of the path. Icon is the icon of
+// the form action.
 type crumbArgs struct {
+	RootURL     string
+	RootLabel   string
 	ParentURL   string
 	ParentLabel string
 	Title       string
+	Icon        string
 }
 
 // itemsArgs is the argument of the "itemtable" template. Nodes is a slice
@@ -97,8 +102,13 @@ var funcs = template.FuncMap{
 	"post": func(action, icon, label, csrf, returnTo string) postArgs {
 		return postArgs{action, icon, label, csrf, returnTo}
 	},
-	"head":        func(title, newURL, newLabel string) headArgs { return headArgs{title, newURL, newLabel} },
-	"crumb":       func(parentURL, parentLabel, title string) crumbArgs { return crumbArgs{parentURL, parentLabel, title} },
+	"head": func(title, newURL, newLabel string) headArgs { return headArgs{title, newURL, newLabel} },
+	"crumb": func(parentURL, parentLabel, title, icon string) crumbArgs {
+		return crumbArgs{ParentURL: parentURL, ParentLabel: parentLabel, Title: title, Icon: icon}
+	},
+	"crumb3": func(rootURL, rootLabel, parentURL, parentLabel, title, icon string) crumbArgs {
+		return crumbArgs{rootURL, rootLabel, parentURL, parentLabel, title, icon}
+	},
 	"items":       func(base string, nodes any) itemsArgs { return itemsArgs{base, nodes} },
 	"defaultrole": func(text, editURL string) defaultRoleArgs { return defaultRoleArgs{text, editURL} },
 	// ntool is a button in the toolbar of a node. The button of the

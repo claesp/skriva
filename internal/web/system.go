@@ -28,7 +28,8 @@ func (s *Server) systemRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /admin/{$}", s.requireSystem(s.handleTenants))
 	mux.Handle("GET /admin/tenants/new", s.requireSystem(s.handleTenantNewForm))
 	mux.Handle("POST /admin/tenants", s.requireSystem(s.handleTenantCreate))
-	mux.Handle("GET /admin/tenants/{code}", s.requireSystem(s.handleTenantForm))
+	mux.Handle("GET /admin/tenants/{code}", s.requireSystem(s.handleTenant))
+	mux.Handle("GET /admin/tenants/{code}/edit", s.requireSystem(s.handleTenantForm))
 	mux.Handle("POST /admin/tenants/{code}", s.requireSystem(s.handleTenantUpdate))
 	mux.Handle("GET /admin/tenants/{code}/delete", s.requireSystem(s.handleTenantDeleteForm))
 	mux.Handle("POST /admin/tenants/{code}/delete", s.requireSystem(s.handleTenantDelete))
@@ -60,12 +61,13 @@ type tenantForm struct {
 	LogoutURI   string
 	Roles       []store.Role
 	Error       string
-	// Tab is the current tab of the tenant pages.
-	Tab string
+	// Tab and Crumb are the current tab of the tenant pages and its name.
+	Tab   string
+	Crumb string
 }
 
 func (s *Server) newTenantForm(r *http.Request, t *store.Tenant) (*tenantForm, error) {
-	f := &tenantForm{IsNew: t == nil, Tab: "settings"}
+	f := &tenantForm{IsNew: t == nil}
 	var tenantID int64
 	if t == nil {
 		f.TenantSettings = store.TenantSettings{
@@ -233,6 +235,20 @@ func (s *Server) loadTenant(w http.ResponseWriter, r *http.Request) (*store.Tena
 	return t, true
 }
 
+// handleTenant shows the settings of a tenant.
+func (s *Server) handleTenant(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.loadTenant(w, r)
+	if !ok {
+		return
+	}
+	f, err := s.newTenantForm(r, t)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-tenant-view", "Tenant "+t.Code, f)
+}
+
 func (s *Server) handleTenantForm(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.loadTenant(w, r)
 	if !ok {
@@ -296,6 +312,7 @@ func (s *Server) handleTenantDeleteForm(w http.ResponseWriter, r *http.Request) 
 		Heading: "Delete tenant " + t.Name,
 		Message: "Do you want to delete the tenant? This deletes all users, groups, roles, spaces and documents of the tenant.",
 		Action:  p + "/delete", Code: t.Code, Cancel: p, Parent: t.Code, CSRF: csrfOf(r),
+		RootURL: "/admin/", RootLabel: "Tenants",
 	})
 }
 
@@ -336,8 +353,9 @@ func (s *Server) handleTenantSpaces(w http.ResponseWriter, r *http.Request) {
 		Code      string
 		IsDefault bool
 		Tab       string
+		Crumb     string
 		Spaces    []store.Space
-	}{t.Code, t.IsDefault, "spaces", spaces})
+	}{t.Code, t.IsDefault, "spaces", "Spaces", spaces})
 }
 
 func (s *Server) handleTenantSpaceNew(w http.ResponseWriter, r *http.Request) {

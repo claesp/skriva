@@ -1,15 +1,25 @@
 {{define "content"}}
 {{template "grouphead" .}}
 {{with .Data}}
-{{if ne .Group.Source "local"}}<p>The identity provider controls the members of this group.</p>{{end}}
+{{$g := print $.TenantPath "/admin/groups/" .Group.ID}}
+{{$local := eq .Group.Source "local"}}
+<div class="pagehead"><h1>{{.Group.Name}}</h1></div>
+<table class="settings">
+  <tbody>
+    <tr><th scope="row">Source</th><td><span class="tag">{{.Group.Source}}</span>{{if not $local}} The identity provider controls the members.{{end}}</td></tr>
+    <tr><th scope="row">Description</th><td>{{.Group.Description}}</td></tr>
+  </tbody>
+</table>
+<h2>Members</h2>
+{{if $local}}{{template "tablebar" (tool (print $g "/members/new") "new-user" "New member")}}{{end}}
 <table>
-  <thead><tr><th>User name</th><th>Name</th>{{if eq .Group.Source "local"}}<th class="actions"><span class="vh">Actions</span></th>{{end}}</tr></thead>
+  <thead><tr><th>User name</th><th>Name</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
   {{range .Members}}
   <tr>
     <td><a href="{{$.TenantPath}}/admin/users/{{.ID}}">{{.Username}}</a></td>
     <td>{{.DisplayName}}</td>
-    {{if eq $.Data.Group.Source "local"}}<td class="actions">{{template "post" (post (print $.TenantPath "/admin/groups/" $.Data.Group.ID "/members/" .ID "/remove") "remove" "Remove" $.CSRF "")}}</td>{{end}}
+    <td class="actions">{{if $local}}{{template "post" (post (print $g "/members/" .ID "/remove") "remove" "Remove" $.CSRF "")}}{{end}}</td>
   </tr>
   {{else}}
   <tr><td colspan="3">The group has no members.</td></tr>
