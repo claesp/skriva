@@ -165,6 +165,8 @@ table.items td a:hover { text-decoration: underline; }
 table.items .i { margin-right: 0.4em; color: var(--muted); }
 table.items .i-folder { color: var(--accent); fill: color-mix(in srgb, var(--accent) 18%, transparent); }
 th.num, td.num { text-align: right; }
+th.date, td.date { text-align: right; white-space: nowrap; }
+time[title] { cursor: help; }
 
 .tag {
   display: inline-block;

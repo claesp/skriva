@@ -17,14 +17,14 @@
 </div>
 {{with .Data}}
 <table class="items">
-  <thead><tr><th>Name</th><th>Description</th><th class="num">Items</th><th>Changed</th></tr></thead>
+  <thead><tr><th>Name</th><th>Description</th><th class="num">Items</th><th class="date">Changed</th></tr></thead>
   <tbody>
   {{range .}}
   <tr>
     <td><a href="{{$.TenantPath}}/{{.Slug}}/">{{template "icon" "space"}}{{.Name}}</a></td>
     <td>{{.Description}}</td>
     <td class="num">{{.Nodes}}</td>
-    <td>{{with .LastChanged}}{{date .}}{{else}}Never{{end}}</td>
+    <td class="date">{{with .LastChanged}}{{date .}}{{else}}Never{{end}}</td>
   </tr>
   {{end}}
   </tbody>

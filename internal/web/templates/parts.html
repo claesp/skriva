@@ -164,13 +164,13 @@
 {{/* A table of folders and documents. The argument is an itemsArgs. */}}
 {{define "itemtable"}}
 <table class="items">
-  <thead><tr><th>Name</th><th>Type</th><th>Changed</th></tr></thead>
+  <thead><tr><th>Name</th><th>Type</th><th class="date">Changed</th></tr></thead>
   <tbody>
   {{range .Nodes}}
   <tr>
     <td><a href="{{docpath $.Base .PublicID .Slug}}">{{template "icon" .Kind}}{{.Title}}</a></td>
     <td>{{if .IsFolder}}Folder{{else}}Document{{end}}</td>
-    <td>{{date .UpdatedAt}}</td>
+    <td class="date">{{date .UpdatedAt}}</td>
   </tr>
   {{end}}
   </tbody>

@@ -14,6 +14,10 @@ sign-in. If you use more than one tenant, sign in to each tenant.
   number of items and the date of the last change.
 - A space contains **folders** and **documents** in a tree.
 - A folder contains documents and other folders.
+- Dates show as a relative time, for example "24 minutes ago" or
+  "Yesterday". A date that is more than 10 days ago shows as a date, for
+  example "2026-10-31". Put the mouse pointer on a date to see the full
+  time in UTC.
 - A document contains text. It can also contain other documents, for
   example a main document with sub-documents.
 

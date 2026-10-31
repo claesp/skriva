@@ -2,13 +2,13 @@
 {{template "listhead" (head "Recent changes" "" "")}}
 <p>The documents that changed last, in all spaces.</p>
 <table>
-  <thead><tr><th>Document</th><th>Space</th><th>Changed</th></tr></thead>
+  <thead><tr><th>Document</th><th>Space</th><th class="date">Changed</th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr>
     <td><a href="{{docpath (print $.TenantPath "/" .SpaceSlug) .PublicID .Slug}}">{{.Title}}</a></td>
     <td>{{.SpaceName}}</td>
-    <td>{{date .UpdatedAt}}</td>
+    <td class="date">{{date .UpdatedAt}}</td>
   </tr>
   {{else}}
   <tr><td colspan="3">There are no documents.</td></tr>

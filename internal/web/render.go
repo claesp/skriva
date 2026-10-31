@@ -90,7 +90,7 @@ type defaultRoleArgs struct {
 }
 
 var funcs = template.FuncMap{
-	"date":    func(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") },
+	"date":    func(t time.Time) template.HTML { return timeElement(t, now()) },
 	"add":     func(a, b int) int { return a + b },
 	"sub":     func(a, b int) int { return a - b },
 	"docpath": docPath,
@@ -300,4 +300,58 @@ func groupSource(source string) string {
 		return "Local"
 	}
 	return source
+}
+
+// now gives the current time. Tests can replace it.
+var now = time.Now
+
+// timeElement gives a time element for t. The text is relative to now,
+// for example "24 minutes ago". The title shows the full time in ISO 8601
+// format.
+func timeElement(t, now time.Time) template.HTML {
+	t = t.UTC()
+	s := fmt.Sprintf(`<time datetime="%s" title="%s">%s</time>`,
+		t.Format(time.RFC3339), t.Format("2006-01-02T15:04:05-07:00"), relativeTime(t, now))
+	return template.HTML(s) // #nosec G203 -- all values come from the time, not from a user.
+}
+
+// relativeDays is the maximum number of days that relativeTime shows as
+// a relative value. For older times it shows the date.
+const relativeDays = 10
+
+// relativeTime gives the time t relative to now, as in "2 seconds ago",
+// "24 minutes ago", "3 hours ago", "Yesterday" and "2 days ago". If t is
+// more than relativeDays days ago, it gives the date, as in "2026-10-31".
+// The calculation of days uses the calendar days in UTC.
+func relativeTime(t, now time.Time) string {
+	t, now = t.UTC(), now.UTC()
+	d := now.Sub(t)
+	switch {
+	case d < time.Second:
+		return "Just now"
+	case d < time.Minute:
+		return plural(int(d/time.Second), "second") + " ago"
+	case d < time.Hour:
+		return plural(int(d/time.Minute), "minute") + " ago"
+	case d < 24*time.Hour:
+		return plural(int(d/time.Hour), "hour") + " ago"
+	}
+	y, m, dd := t.Date()
+	ny, nm, nd := now.Date()
+	days := int(time.Date(ny, nm, nd, 0, 0, 0, 0, time.UTC).Sub(time.Date(y, m, dd, 0, 0, 0, 0, time.UTC)) / (24 * time.Hour))
+	switch {
+	case days <= 1:
+		return "Yesterday"
+	case days <= relativeDays:
+		return plural(days, "day") + " ago"
+	}
+	return t.Format("2006-01-02")
+}
+
+// plural gives n and the word, with an "s" if n is not 1.
+func plural(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }
