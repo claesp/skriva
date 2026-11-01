@@ -44,8 +44,11 @@ and these guidelines for long-form text:
 
 - All pages have the same layout: the bar with the path below the page
   header, the column at the left side and the text in the center. This
-  also applies to pages without a tree or a menu, for example the page
-  after the sign-out. On a small window, an empty column is not shown.
+  also applies to pages without a tree or a menu: the error pages (for
+  example "Forbidden" and "Not Found"), the page after the sign-out and
+  the page of a wiki link without one target. These pages use the
+  template `plainhead`. On a small window, an empty column is not
+  shown. A new page must use one of the shared head templates.
 
 - All sizes use `rem` or `em`. Thus the text size that the user sets in
   the browser applies.

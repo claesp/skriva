@@ -236,6 +236,20 @@
 </form>
 {{end}}{{end}}
 
+{{/* The start of a page without a tree or a menu, for example an error
+   page or the page after the sign-out. The page has the same layout as
+   the other pages: the bar with the path, the column at the left side
+   and the text in the center. The column is empty. The argument is the
+   text of the path. The page ends with the template "nodefoot". */}}
+{{define "plainhead"}}
+<div class="with-sidebar">
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path">{{.}}</nav>
+</div>
+<aside class="sidebar" aria-label="Contents"></aside>
+<div class="main reading">
+{{end}}
+
 {{define "nodefoot"}}
 </div>
 </div>

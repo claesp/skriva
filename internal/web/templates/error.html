@@ -1,5 +1,7 @@
 {{define "content"}}
-<h1>{{.Title}}</h1>
+{{template "plainhead" .Title}}
+<div class="pagehead"><h1>{{.Title}}</h1></div>
 <p>{{.Data.Message}}</p>
 <div class="buttons"><a class="button secondary" href="{{if .System}}/admin/{{else if .Tenant}}{{.TenantPath}}/{{else}}/{{end}}">Start page</a></div>
+{{template "nodefoot"}}
 {{end}}
