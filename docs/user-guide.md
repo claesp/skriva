@@ -191,8 +191,10 @@ On a Mac, use Cmd in place of Ctrl.
 ### Links
 
 Click **Link** or press Ctrl+K. Type the address and click **Apply** or
-press Enter. If you selected text, the text becomes the link. These
-addresses are permitted:
+press Enter. If you selected text, the text becomes the link. The
+editor keeps the selected text marked while you type the address. If
+the cursor is in a link, the editor selects all of the link and you can
+change its address. These addresses are permitted:
 
 - `https://…` and `http://…`: a page on a different site.
 - `mailto:…`: an e-mail address.

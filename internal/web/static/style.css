@@ -236,6 +236,8 @@ form.editor label.title input {
 .wysiwyg-text { max-width: none; min-height: 50vh; padding: 1rem 1.25rem; }
 .wysiwyg-text .ProseMirror { min-height: 48vh; outline: none; }
 .wysiwyg-text .ProseMirror > :first-child { margin-top: 0; }
+/* The selected text while the focus is in the link bar. */
+.wysiwyg-text .kept-selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
 .wysiwyg:focus-within { border-color: var(--accent); }
 .editor-status { margin: 0; padding: 0 0.75rem; color: var(--muted); font-size: var(--ui-size); }
 .editor-status:empty { display: none; }

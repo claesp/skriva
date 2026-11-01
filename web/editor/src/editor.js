@@ -11,6 +11,8 @@ import StarterKit from '@tiptap/starter-kit'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table'
 import Image from '@tiptap/extension-image'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
 const ALIGNMENTS = ['center', 'right']
 const ALIGN_TYPES = ['paragraph', 'heading']
@@ -41,6 +43,37 @@ const Align = Extension.create({
         return ALIGN_TYPES.map((t) => commands.updateAttributes(t, { textAlign: value })).some(Boolean)
       },
     }
+  },
+})
+
+// KeptSelection shows the selected text while the focus is in a field
+// out of the editor, for example the link bar. The browser does not show
+// the selection of an element that does not have the focus. The plugin
+// adds the class "kept-selection" to the text. The meta value of the key
+// sets the range ({ from, to }) or removes it (null).
+const keptSelection = new PluginKey('keptSelection')
+const KeptSelection = Extension.create({
+  name: 'keptSelection',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: keptSelection,
+      state: {
+        init: () => DecorationSet.empty,
+        apply(tr, set) {
+          const range = tr.getMeta(keptSelection)
+          if (range === null) return DecorationSet.empty
+          if (range) {
+            return DecorationSet.create(tr.doc, [
+              Decoration.inline(range.from, range.to, { class: 'kept-selection' }),
+            ])
+          }
+          return set.map(tr.mapping, tr.doc)
+        },
+      },
+      props: {
+        decorations: (state) => keptSelection.getState(state),
+      },
+    })]
   },
 })
 
@@ -142,6 +175,7 @@ function start(root) {
       }),
       Align,
       WikiLink,
+      KeptSelection,
       TaskList,
       TaskItem.configure({ nested: true }),
       SkrivaTable.configure({ resizable: false }),
@@ -204,7 +238,14 @@ function start(root) {
   }
 
   // The link bar.
+  const keepSelection = (range) => editor.view.dispatch(editor.state.tr.setMeta(keptSelection, range))
   function openLinkbar() {
+    // In a link, with no selection, the link bar changes all of the link.
+    if (editor.state.selection.empty && editor.isActive('link')) {
+      editor.commands.extendMarkRange('link')
+    }
+    const { from, to, empty } = editor.state.selection
+    keepSelection(empty ? null : { from, to })
     linkbar.hidden = false
     hrefInput.value = editor.getAttributes('link').href || ''
     hrefInput.focus()
@@ -212,6 +253,7 @@ function start(root) {
   }
   function closeLinkbar() {
     linkbar.hidden = true
+    keepSelection(null)
     editor.commands.focus()
   }
   function applyLink() {
@@ -348,6 +390,13 @@ function start(root) {
   let dirty = false
   let saving = false
   editor.on('update', () => { dirty = true })
+  // When the user goes back to the text, the browser shows the selection
+  // again.
+  editor.on('focus', () => {
+    if (keptSelection.getState(editor.state) !== DecorationSet.empty) {
+      queueMicrotask(() => keepSelection(null))
+    }
+  })
   editor.on('transaction', update)
   window.addEventListener('beforeunload', (event) => {
     if (dirty && !saving) event.preventDefault()
