@@ -1,4 +1,16 @@
 {{define "content"}}
-<h1>You signed out</h1>
+{{/* The page has the same layout as the other pages: the bar with the
+   path, the column at the left side and the text in the center. The
+   bar and the column are empty, because the user is not signed in. */}}
+<div class="with-sidebar">
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path">Signed out</nav>
+</div>
+<aside class="sidebar" aria-label="Contents"></aside>
+<div class="main reading">
+<div class="pagehead"><h1>You signed out</h1></div>
+<p>Your session ended. To continue, sign in again.</p>
 <div class="buttons"><a class="button" href="{{.Data}}/login">Sign in</a></div>
+</div>
+</div>
 {{end}}

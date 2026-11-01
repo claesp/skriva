@@ -725,6 +725,9 @@ td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
   .with-sidebar { grid-template-columns: minmax(0, 1fr); }
   .with-sidebar:has(> .topbar.wide) > .main { grid-column: 1; grid-row: 3; }
   .sidebar { position: static; height: auto; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  /* An empty column (for example on the page after the sign-out) uses
+     no space above the text. */
+  .sidebar:empty { display: none; }
   .with-sidebar > .main { padding: 0 1rem 3rem; }
 }
 

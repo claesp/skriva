@@ -42,6 +42,11 @@ and these guidelines for long-form text:
 
 ## Other rules
 
+- All pages have the same layout: the bar with the path below the page
+  header, the column at the left side and the text in the center. This
+  also applies to pages without a tree or a menu, for example the page
+  after the sign-out. On a small window, an empty column is not shown.
+
 - All sizes use `rem` or `em`. Thus the text size that the user sets in
   the browser applies.
 - A link "Skip to the content" is the first item of each page. It is
