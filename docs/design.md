@@ -22,7 +22,7 @@ and these guidelines for long-form text:
 | Line length | 40rem to 64rem. The width increases with the width of the window. This is approximately 40 characters on a telephone, 75 characters on a 1440 px screen and up to 90 characters on very large screens. | The guidelines recommend 45 to 75 characters, and WCAG 1.4.8 permits a maximum of 80. Large screens use more of the width, by decision of the project. |
 | Paragraph space | 1.25em below each paragraph. | The space between paragraphs must be larger than the space between lines. |
 | Alignment | Left. No justification. | WCAG 1.4.8 does not permit justified text. |
-| Headings | Normal weight. The second and third levels are italic. | As in Tufte CSS. |
+| Headings | Levels 1 and 2: normal weight, italic. Level 3: bold. The editor shows the headings with the same styles. | As in Tufte CSS. |
 | Links | The color of the text, with a thin underline. | The underline identifies the link. The color does not interrupt the reading. |
 | Tables | Sans-serif font, smaller size. | As in Tufte CSS. |
 | Colors | Text `#111111` on `#fffff8`. Dark mode: `#dddddd` on `#151515`. | High contrast, as in Tufte CSS. |

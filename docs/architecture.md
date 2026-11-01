@@ -255,6 +255,10 @@ and shows the toolbar. When the user saves, the script writes the JSON
 into the hidden field. Only the form of a document loads the script.
 See [Security](security.md#javascript).
 
+The editor uses the same HTML elements as the document page, thus the
+same styles apply. For example, a heading of level 1 is an `h2` element
+in the editor and on the page.
+
 ### Large spaces
 
 - The permission data of a request does not depend on the number of

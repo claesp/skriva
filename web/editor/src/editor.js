@@ -11,6 +11,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table'
 import Image from '@tiptap/extension-image'
+import Heading from '@tiptap/extension-heading'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
@@ -45,6 +46,21 @@ const Align = Extension.create({
     }
   },
 })
+
+// SkrivaHeading shows a heading with the element of the document page.
+// The title of the page is the h1 element. Thus heading level 1 is an
+// h2 element, level 2 is h3 and level 3 is h4. The editor then uses the
+// same styles as the page. Pasted headings h1 to h6 become levels 1 to 3.
+const HEADING_TAGS = { h1: 1, h2: 1, h3: 2, h4: 3, h5: 3, h6: 3 }
+const SkrivaHeading = Heading.extend({
+  parseHTML() {
+    return Object.entries(HEADING_TAGS).map(([tag, level]) => ({ tag, attrs: { level } }))
+  },
+  renderHTML({ node, HTMLAttributes }) {
+    const level = this.options.levels.includes(node.attrs.level) ? node.attrs.level : this.options.levels[0]
+    return ['h' + (level + 1), mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), 0]
+  },
+}).configure({ levels: [1, 2, 3] })
 
 // KeptSelection shows the selected text while the focus is in a field
 // out of the editor, for example the link bar. The browser does not show
@@ -163,7 +179,7 @@ function start(root) {
     injectCSS: false,
     extensions: [
       StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
+        heading: false,
         link: {
           openOnClick: false,
           autolink: true,
@@ -173,6 +189,7 @@ function start(root) {
           HTMLAttributes: { rel: 'noopener noreferrer nofollow', target: null },
         },
       }),
+      SkrivaHeading,
       Align,
       WikiLink,
       KeptSelection,
