@@ -33,6 +33,10 @@ and these guidelines for long-form text:
   for the normal text and 13 px for menus, the tree, toolbars and notes
   (at the default browser size of 16 px). The document text and the
   title of a document do not change.
+- The page header has the name of the tenant (or "System
+  administration" on the pages of the system administration) at the
+  left side. The user name and the **Sign out** button (or **Sign in**)
+  are always at the right side, also on small windows.
 - The **New** button in the page header has the accent color. It opens
   a list of the items that the user can make. The list is a `details`
   element, thus it does not need JavaScript. The left side of the list

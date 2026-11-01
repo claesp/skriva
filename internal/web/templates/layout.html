@@ -12,7 +12,7 @@
 {{template "icons"}}
 <header class="site">
 {{if .System}}
-  <a class="brand" href="/admin/">Skriva system administration</a>
+  <a class="brand" href="/admin/">System administration</a>
   {{if and .Session .Session.System}}
   <nav aria-label="Main"><a href="/admin/">Tenants</a></nav>
   <div class="user">
@@ -47,7 +47,7 @@
     {{template "post" (post (print .TenantPath "/logout") "sign-out" "Sign out" .CSRF "")}}
   </div>
   {{else}}
-  <nav><a href="{{.TenantPath}}/login">Sign in</a></nav>
+  <div class="user"><a href="{{.TenantPath}}/login">Sign in</a></div>
   {{end}}
 {{else}}
   <a class="brand" href="/">Skriva</a>
