@@ -123,6 +123,9 @@ func (s *Store) CreateTenant(ctx context.Context, code string, ts TenantSettings
 		if err := checkRole(ctx, tx, t.ID, ts.DefaultRole); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(ctx, "SELECT add_default_classifications($1)", t.ID); err != nil {
+			return err
+		}
 		if err := s.audit(ctx, tx, auditEntry{Action: AuditTenantCreate, Target: t.Name, TargetID: code}); err != nil {
 			return err
 		}

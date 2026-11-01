@@ -1348,3 +1348,117 @@ func TestTrash(t *testing.T) {
 	}
 	checkAccessCache(t, st, sp.ID)
 }
+
+func TestClassifications(t *testing.T) {
+	st := newStore(t)
+	tn := defaultTenant(t, st)
+	sp := defaultSpace(t, st, tn)
+
+	levels, err := st.Classifications(ctx, tn.ID)
+	if err != nil || len(levels) != 5 || levels[0].Name != "Unclassified" || !levels[0].IsDefault ||
+		levels[4].Name != "Top Secret" {
+		t.Fatalf("default levels = %+v, %v", levels, err)
+	}
+	byName := map[string]int64{}
+	for _, c := range levels {
+		byName[c.Name] = c.ID
+	}
+
+	// A new document gets the default level. A folder has none.
+	id, err := st.CreateNode(ctx, sp.ID, store.NewNode{Kind: store.KindDocument, Title: "Plan"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _ := st.Node(ctx, sp.ID, id)
+	if n.Classification != "Unclassified" {
+		t.Fatalf("classification = %q", n.Classification)
+	}
+	folder, _ := st.CreateNode(ctx, sp.ID, store.NewNode{Kind: store.KindFolder, Title: "Box"})
+	if f, _ := st.Node(ctx, sp.ID, folder); f.ClassificationID != 0 {
+		t.Fatalf("folder classification = %+v", f)
+	}
+
+	// A change of the level is in the revision and in the audit log.
+	if err := st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 1, Title: "Plan", ClassificationID: byName["Secret"]}); err != nil {
+		t.Fatal(err)
+	}
+	if rev, _ := st.Revision(ctx, n.ID, 2); rev.Classification != "Secret" {
+		t.Fatalf("revision classification = %q", rev.Classification)
+	}
+	if rev, _ := st.Revision(ctx, n.ID, 1); rev.Classification != "Unclassified" {
+		t.Fatalf("old revision classification = %q", rev.Classification)
+	}
+	events, _ := st.AuditEvents(ctx, &tn.ID, 0, 1)
+	if len(events) != 1 || events[0].Action != store.AuditNodeClassify || events[0].Details != "From Unclassified to Secret." {
+		t.Fatalf("audit events = %+v", events)
+	}
+	// 0 keeps the level.
+	if err := st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 2, Title: "Plan"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := st.Node(ctx, sp.ID, id); n.Classification != "Secret" {
+		t.Fatalf("classification after a save = %q", n.Classification)
+	}
+
+	// A level of a different tenant is not permitted.
+	other := newTenant(t, st, "othr")
+	otherLevels, _ := st.Classifications(ctx, other.ID)
+	if len(otherLevels) != 5 {
+		t.Fatalf("levels of a new tenant = %+v", otherLevels)
+	}
+	if err := st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 3, Title: "Plan", ClassificationID: otherLevels[3].ID}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("level of a different tenant: %v", err)
+	}
+	if _, err := st.CreateNode(ctx, sp.ID, store.NewNode{Kind: store.KindDocument, Title: "X", ClassificationID: otherLevels[0].ID}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("new document with a level of a different tenant: %v", err)
+	}
+
+	// A new default replaces the old default.
+	newID, err := st.SaveClassification(ctx, tn.ID, store.Classification{Name: "Internal", Position: 2, IsDefault: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SaveClassification(ctx, tn.ID, store.Classification{Name: "internal"}); err != nil {
+		t.Fatalf("names are case sensitive: %v", err)
+	}
+	if _, err := st.SaveClassification(ctx, tn.ID, store.Classification{Name: "Internal"}); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("duplicate name: %v", err)
+	}
+	levels, _ = st.Classifications(ctx, tn.ID)
+	defaults := 0
+	for _, c := range levels {
+		if c.IsDefault {
+			defaults++
+			if c.ID != newID {
+				t.Fatalf("default = %+v", c)
+			}
+		}
+	}
+	if defaults != 1 {
+		t.Fatalf("%d defaults", defaults)
+	}
+	// The default and a level in use cannot be deleted.
+	if err := st.DeleteClassification(ctx, tn.ID, newID); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("delete the default: %v", err)
+	}
+	if err := st.DeleteClassification(ctx, tn.ID, byName["Secret"]); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("delete a level in use: %v", err)
+	}
+	if err := st.DeleteClassification(ctx, tn.ID, byName["Public"]); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteClassification(ctx, other.ID, byName["Restricted"]); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("delete a level of a different tenant: %v", err)
+	}
+	// A tenant with documents can be deleted with its levels.
+	if err := st.CreateSpace(ctx, other.ID, "othsp000", "Other", ""); err != nil {
+		t.Fatal(err)
+	}
+	osp, _ := st.Space(ctx, other.ID, "othsp000")
+	if _, err := st.CreateNode(ctx, osp.ID, store.NewNode{Kind: store.KindDocument, Title: "Doc"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteTenant(ctx, other.ID); err != nil {
+		t.Fatalf("delete a tenant with documents: %v", err)
+	}
+}

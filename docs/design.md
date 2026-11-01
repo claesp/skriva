@@ -81,6 +81,15 @@ and these guidelines for long-form text:
   value without spaces (a URL or an ID) breaks at any character. Words
   break only at spaces. A table with many columns (the audit log) is in
   a box that scrolls to the side.
+- The page of a document has a bar below the toolbar: "This document is
+  classified RESTRICTED". The level is in capital letters and bold. The
+  bar covers the width of the window without the column at the left
+  side. It has a faint background in the accent color and a bottom
+  border in the accent color. On a small window, the bar is directly
+  below the toolbar. A printed document keeps the bar.
+- The accent color (`--accent`) is the color of the folder icons, the
+  links and the main buttons. Change the color in one place: the
+  tokens at the top of `style.css`, for light and dark mode.
 - In a table, a date column is the last data column. The text in it is
   right-aligned.
 - All toolbars and all columns of action buttons show all their

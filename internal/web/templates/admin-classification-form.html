@@ -1,0 +1,15 @@
+{{define "content"}}
+{{with .Data}}
+{{if .IsNew}}{{template "formhead" (crumb (print $.TenantPath "/admin/classifications") "Classifications" "New classification" "new")}}{{else}}{{template "formhead" (crumb (print $.TenantPath "/admin/classifications") "Classifications" (print "Change " .Name) "edit")}}{{end}}
+{{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+<form method="post" action="{{.Action}}" class="stack narrow">
+  {{template "csrf" $.CSRF}}
+  <label>Name <input name="name" value="{{.Name}}" required maxlength="60" autofocus></label>
+  <label>Description <input name="description" value="{{.Description}}" maxlength="500"></label>
+  <label>Order (a low number is a low level) <input name="position" type="number" min="0" max="1000" value="{{.Position}}" required></label>
+  <label class="check"><input type="checkbox" name="default"{{if .IsDefault}} checked disabled{{end}}> The default for new documents</label>
+  {{if .IsDefault}}<input type="hidden" name="default" value="on"><p class="meta">To change the default, make a different classification the default.</p>{{end}}
+  {{template "savebutton"}}
+</form>
+{{end}}
+{{end}}

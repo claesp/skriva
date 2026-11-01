@@ -128,6 +128,25 @@ From the page of a user or a group, the form gives the role to that user
 or group. From the access page of a space or an item, the form gives
 the role for that space or item.
 
+## Classifications
+
+Open **Administration**, then **Classifications** (needs
+`tenant.manage`). The page shows the levels of information
+classification of the tenant, from the lowest to the highest, and the
+number of documents with each level. See [User guide: information
+classification](user-guide.md#information-classification).
+
+- **New classification** (+) makes a level. **Order** sets the place
+  in the list: a low number is a low level.
+- **Change** (pencil) changes the name, the description, the order or
+  the default. Select **The default for new documents** to make a level
+  the default. The old default then stops being the default.
+- **Delete** (waste bin) deletes a level. The button is disabled for
+  the default level and for a level that documents use.
+
+A new tenant gets the levels Unclassified (the default), Public,
+Restricted, Secret and Top Secret. The audit log records the changes.
+
 ## Audit log
 
 The audit log shows who changed what, and when. Open **Administration**,

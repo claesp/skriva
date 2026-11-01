@@ -568,6 +568,16 @@ function start(root) {
     if (dirty && !saving) event.preventDefault()
   })
 
+  // The bar below the toolbar shows the selected classification.
+  const classSelect = form.querySelector('select[name="classification"]')
+  const classLevel = document.querySelector('[data-classbar-level]')
+  if (classSelect && classLevel) {
+    classSelect.addEventListener('change', () => {
+      classLevel.textContent = classSelect.selectedOptions[0].textContent.toUpperCase()
+      dirty = true
+    })
+  }
+
   form.addEventListener('submit', () => {
     saving = true
     input.value = JSON.stringify(editor.getJSON())

@@ -47,6 +47,14 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/roles/{id}/delete", s.require(m, s.handleAdminRoleDeleteForm))
 	mux.Handle("POST "+p+"/roles/{id}/delete", s.require(m, s.handleAdminRoleDelete))
 
+	mux.Handle("GET "+p+"/classifications", s.require(m, s.handleAdminClassifications))
+	mux.Handle("GET "+p+"/classifications/new", s.require(m, s.handleAdminClassificationNew))
+	mux.Handle("POST "+p+"/classifications", s.require(m, s.handleAdminClassificationSave))
+	mux.Handle("GET "+p+"/classifications/{id}/edit", s.require(m, s.handleAdminClassificationEdit))
+	mux.Handle("POST "+p+"/classifications/{id}", s.require(m, s.handleAdminClassificationSave))
+	mux.Handle("GET "+p+"/classifications/{id}/delete", s.require(m, s.handleAdminClassificationDeleteForm))
+	mux.Handle("POST "+p+"/classifications/{id}/delete", s.require(m, s.handleAdminClassificationDelete))
+
 	mux.Handle("GET "+p+"/recent", s.require(m, s.handleAdminRecent))
 	mux.Handle("GET "+p+"/audit", s.require(m, s.handleAudit))
 	mux.Handle("GET "+p+"/bindings", s.require(m, s.handleAdminBindings))

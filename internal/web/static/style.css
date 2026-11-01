@@ -665,6 +665,26 @@ main:has(.with-sidebar) { max-width: none; padding: 0; }
    administration comes after the main column. */
 .with-sidebar:has(> .topbar.wide) > .sidebar { grid-column: 1; grid-row: 2; }
 .with-sidebar:has(> .topbar.wide) > .main { grid-column: 2; grid-row: 2; }
+/* The information classification of a document. The bar is below the
+   toolbar and covers the main column: the width of the window without
+   the column at the left side. */
+.classbar {
+  grid-column: 2;
+  grid-row: 2;
+  padding: 0.5rem 1.5rem;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  border-bottom: 2px solid var(--accent);
+  font-size: var(--ui-size);
+  letter-spacing: 0.02em;
+}
+.classbar strong { font-weight: 700; letter-spacing: 0.06em; }
+/* The row of the bar has the height of the bar. The column at the left
+   side covers the row of the bar and the row of the text. */
+.with-sidebar:has(> .topbar.wide):has(> .classbar) { grid-template-rows: auto auto 1fr; }
+.with-sidebar:has(> .topbar.wide):has(> .classbar) > .sidebar { grid-row: 2 / span 2; }
+.with-sidebar:has(> .topbar.wide):has(> .classbar) > .main { grid-row: 3; }
+form.editor label.classification { flex-direction: row; align-items: center; gap: 0.5rem; font-size: var(--ui-size); }
+form.editor label.classification select { width: auto; }
 .sidebar {
   position: sticky;
   top: var(--sidebar-top, 0px);
@@ -781,6 +801,11 @@ td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
 @media (max-width: 50rem) {
   .with-sidebar { grid-template-columns: minmax(0, 1fr); }
   .with-sidebar:has(> .topbar.wide) > .main { grid-column: 1; grid-row: 3; }
+  /* On a small window, the bar is directly below the toolbar. */
+  .classbar { grid-column: 1; grid-row: 2; padding: 0.5rem 1rem; }
+  .with-sidebar:has(> .topbar.wide):has(> .classbar) { grid-template-rows: none; }
+  .with-sidebar:has(> .topbar.wide):has(> .classbar) > .sidebar { grid-row: 3; }
+  .with-sidebar:has(> .topbar.wide):has(> .classbar) > .main { grid-row: 4; }
   .sidebar { position: static; height: auto; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
   /* An empty column (for example on the page after the sign-out) uses
      no space above the text. */
@@ -812,6 +837,8 @@ td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
   .with-sidebar { display: block; }
   .topbar { position: static; border: 0; }
   body { background: #fff; color: #000; }
+  /* The printed document keeps its classification. */
+  .classbar { margin-bottom: 1rem; padding: 0.25rem 0; background: none; border-bottom: 1px solid #000; }
   .prose { max-width: none; font-size: 11pt; }
   .prose a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.85em; }
   .prose pre, .prose :not(pre) > code { background: none; border: 1px solid #ccc; }

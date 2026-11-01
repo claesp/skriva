@@ -39,8 +39,12 @@ type Node struct {
 	// AccessPathID identifies the cached access path of the node. The
 	// permissions for the node depend only on it. See Access.
 	AccessPathID int64
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// ClassificationID and Classification are the information
+	// classification of a document. A folder has none.
+	ClassificationID int64
+	Classification   string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 	// UpdatedBy is the name of the last author. It is empty if the user
 	// does not exist now.
 	UpdatedBy string
@@ -66,12 +70,14 @@ func (n *NodeSummary) IsFolder() bool { return n.Kind == KindFolder }
 
 // Revision is one saved version of a node.
 type Revision struct {
-	Version   int
-	Title     string
-	Body      string
-	Author    string
-	Comment   string
-	CreatedAt time.Time
+	Version int
+	Title   string
+	Body    string
+	Author  string
+	Comment string
+	// Classification is the name of the classification of the version.
+	Classification string
+	CreatedAt      time.Time
 }
 
 // emptyBody is the body of a folder.
@@ -103,6 +109,9 @@ type NewNode struct {
 	Content
 	Comment  string
 	AuthorID int64
+	// ClassificationID is the classification of a document. 0 gives the
+	// default classification of the tenant.
+	ClassificationID int64
 }
 
 // NodeUpdate contains the data for a new version of a node.
@@ -117,6 +126,9 @@ type NodeUpdate struct {
 	// RestoredFrom is the old version that the author restored, or 0.
 	// The audit log records a restored version.
 	RestoredFrom int
+	// ClassificationID is the classification of a document. 0 keeps the
+	// current classification.
+	ClassificationID int64
 }
 
 // addFileRefs records that a node uses files.
@@ -215,11 +227,14 @@ func (s *Store) Node(ctx context.Context, spaceID int64, publicID string) (*Node
 	err := s.pool.QueryRow(ctx, `
 		SELECT n.id, n.public_id, n.space_id, n.parent_id, n.kind, n.title, n.slug, n.body,
 		       n.version, n.default_role, n.access_path_id, n.created_at, n.updated_at,
-		       COALESCE(NULLIF(u.display_name, ''), u.username, '')
+		       COALESCE(NULLIF(u.display_name, ''), u.username, ''),
+		       COALESCE(c.id, 0), COALESCE(c.name, '')
 		FROM nodes n LEFT JOIN users u ON u.id = n.updated_by
+		LEFT JOIN classifications c ON c.id = n.classification_id
 		WHERE n.space_id = $1 AND n.public_id = $2 AND n.deleted_at IS NULL`, spaceID, publicID,
 	).Scan(&n.ID, &n.PublicID, &n.SpaceID, &n.ParentID, &n.Kind, &n.Title, &n.Slug, &n.Body,
-		&n.Version, &n.DefaultRole, &n.AccessPathID, &n.CreatedAt, &n.UpdatedAt, &n.UpdatedBy)
+		&n.Version, &n.DefaultRole, &n.AccessPathID, &n.CreatedAt, &n.UpdatedAt, &n.UpdatedBy,
+		&n.ClassificationID, &n.Classification)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -322,17 +337,26 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 		if err != nil {
 			return err
 		}
+		var classID *int64
+		var className string
+		if nn.Kind == KindDocument {
+			cid, name, err := classificationFor(ctx, tx, spaceID, nn.ClassificationID)
+			if err != nil {
+				return err
+			}
+			classID, className = &cid, name
+		}
 		now := s.now()
 		var id int64
 		// A new node has no own access settings. Thus it gets the access
 		// path of its parent.
 		err = tx.QueryRow(ctx, `
 			INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug, body, plain_text, version,
-			                   created_by, updated_by, created_at, updated_at, access_path_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $9, $10, $10, $11)
+			                   created_by, updated_by, created_at, updated_at, access_path_id, classification_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $9, $10, $10, $11, $12)
 			RETURNING id`,
 			publicID, spaceID, parentID, nn.Kind, nn.Title, nn.Slug, nn.Body, nn.PlainText,
-			nullID(nn.AuthorID), now, pathID).Scan(&id)
+			nullID(nn.AuthorID), now, pathID, classID).Scan(&id)
 		if err != nil {
 			return err
 		}
@@ -340,8 +364,8 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 			return err
 		}
 		_, err = tx.Exec(ctx, `
-			INSERT INTO revisions (node_id, version, title, body, author_id, comment, created_at)
-			VALUES ($1, 1, $2, $3, $4, $5, $6)`, id, nn.Title, nn.Body, nullID(nn.AuthorID), nn.Comment, now)
+			INSERT INTO revisions (node_id, version, title, body, author_id, comment, classification, created_at)
+			VALUES ($1, 1, $2, $3, $4, $5, $6, $7)`, id, nn.Title, nn.Body, nullID(nn.AuthorID), nn.Comment, className, now)
 		if err != nil {
 			return err
 		}
@@ -362,20 +386,38 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 		u.Content = Content{Body: emptyBody}
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var newClass *int64
+		if u.ClassificationID != 0 {
+			cid, _, err := classificationFor(ctx, tx, spaceID, u.ClassificationID)
+			if err != nil {
+				return err
+			}
+			newClass = &cid
+		}
+		// The old classification, for the audit log.
+		var oldClass string
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(c.name, '') FROM nodes n LEFT JOIN classifications c ON c.id = n.classification_id
+			WHERE n.space_id = $1 AND n.public_id = $2`, spaceID, publicID).Scan(&oldClass); err != nil {
+			return notFound(err)
+		}
 		now := s.now()
 		var id int64
 		var version int
-		var body string
+		var body, className string
 		var folder bool
 		err := tx.QueryRow(ctx, `
-			UPDATE nodes SET title = $4, slug = $5,
+			UPDATE nodes n SET title = $4, slug = $5,
 			                 body = CASE WHEN kind = 'folder' THEN $9::jsonb ELSE $6::jsonb END,
 			                 plain_text = CASE WHEN kind = 'folder' THEN '' ELSE $7 END,
+			                 classification_id = CASE WHEN kind = 'folder' THEN NULL
+			                                          ELSE COALESCE($11, classification_id) END,
 			                 version = version + 1, updated_by = $8, updated_at = $10
 			WHERE space_id = $1 AND public_id = $2 AND version = $3 AND deleted_at IS NULL
-			RETURNING id, version, body, kind = 'folder'`,
+			RETURNING id, version, body, kind = 'folder',
+			          COALESCE((SELECT name FROM classifications WHERE id = n.classification_id), '')`,
 			spaceID, publicID, u.BaseVersion, u.Title, u.Slug, u.Body, u.PlainText, nullID(u.AuthorID),
-			emptyBody, now).Scan(&id, &version, &body, &folder)
+			emptyBody, now, newClass).Scan(&id, &version, &body, &folder, &className)
 		if errors.Is(err, pgx.ErrNoRows) {
 			var exists bool
 			if err := tx.QueryRow(ctx, `
@@ -392,10 +434,16 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 			return err
 		}
 		_, err = tx.Exec(ctx, `
-			INSERT INTO revisions (node_id, version, title, body, author_id, comment, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)`, id, version, u.Title, body, nullID(u.AuthorID), u.Comment, now)
+			INSERT INTO revisions (node_id, version, title, body, author_id, comment, classification, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, id, version, u.Title, body, nullID(u.AuthorID), u.Comment, className, now)
 		if err != nil {
 			return err
+		}
+		if oldClass != className {
+			if err := s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodeClassify, Target: u.Title,
+				TargetID: publicID, Details: "From " + oldClass + " to " + className + "."}); err != nil {
+				return err
+			}
 		}
 		if u.RestoredFrom > 0 {
 			if err := s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodeRevert, Target: u.Title,
@@ -717,11 +765,11 @@ func (s *Store) Revision(ctx context.Context, nodeID int64, version int) (*Revis
 	var r Revision
 	err := s.pool.QueryRow(ctx, `
 		SELECT r.version, r.title, r.body, COALESCE(NULLIF(u.display_name, ''), u.username, ''),
-		       r.comment, r.created_at
+		       r.comment, r.classification, r.created_at
 		FROM revisions r
 		LEFT JOIN users u ON u.id = r.author_id
 		WHERE r.node_id = $1 AND r.version = $2`, nodeID, version,
-	).Scan(&r.Version, &r.Title, &r.Body, &r.Author, &r.Comment, &r.CreatedAt)
+	).Scan(&r.Version, &r.Title, &r.Body, &r.Author, &r.Comment, &r.Classification, &r.CreatedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}

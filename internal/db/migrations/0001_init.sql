@@ -24,6 +24,32 @@ CREATE TABLE tenants (
 -- Only one tenant can be the default tenant.
 CREATE UNIQUE INDEX tenants_one_default_idx ON tenants (is_default) WHERE is_default;
 
+-- The levels of information classification of a tenant. Each document
+-- has one level. "position" gives the order of the levels, from the
+-- lowest to the highest. One level is the default for new documents.
+CREATE TABLE classifications (
+    id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id   bigint  NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
+    name        text    NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+    description text    NOT NULL DEFAULT '',
+    position    integer NOT NULL DEFAULT 0,
+    is_default  boolean NOT NULL DEFAULT false,
+    UNIQUE (tenant_id, name)
+);
+-- Only one level of a tenant can be the default.
+CREATE UNIQUE INDEX classifications_one_default_idx ON classifications (tenant_id) WHERE is_default;
+
+-- add_default_classifications gives a tenant the default levels.
+CREATE FUNCTION add_default_classifications(tenant bigint) RETURNS void
+LANGUAGE sql AS $$
+    INSERT INTO classifications (tenant_id, name, description, position, is_default) VALUES
+        (tenant, 'Unclassified', 'The information has no classification.', 1, true),
+        (tenant, 'Public',       'Everybody can read the information.', 2, false),
+        (tenant, 'Restricted',   'Only the persons that need the information can read it.', 3, false),
+        (tenant, 'Secret',       'Disclosure can cause serious damage.', 4, false),
+        (tenant, 'Top Secret',   'Disclosure can cause very serious damage.', 5, false);
+$$;
+
 -- A space is a tree of folders and documents in a tenant.
 CREATE TABLE spaces (
     id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -134,6 +160,12 @@ CREATE TABLE nodes (
     -- no default role.
     default_role   text,
     access_path_id bigint      NOT NULL REFERENCES access_paths (id),
+    -- The information classification of a document. A folder has none.
+    -- The store makes sure that the level belongs to the tenant of the
+    -- space. A level that documents use cannot be deleted. The check is
+    -- at the end of the transaction. Thus the deletion of a tenant can
+    -- remove the levels and the documents in one statement.
+    classification_id bigint   REFERENCES classifications (id) DEFERRABLE INITIALLY DEFERRED,
     created_by     bigint      REFERENCES users (id) ON DELETE SET NULL,
     updated_by     bigint      REFERENCES users (id) ON DELETE SET NULL,
     created_at     timestamptz NOT NULL DEFAULT now(),
@@ -152,7 +184,8 @@ CREATE TABLE nodes (
     CONSTRAINT nodes_parent_fkey
         FOREIGN KEY (space_id, parent_id) REFERENCES nodes (space_id, id) ON DELETE CASCADE,
     CHECK (parent_id <> id),
-    CHECK ((deleted_at IS NULL) = (trash_id IS NULL))
+    CHECK ((deleted_at IS NULL) = (trash_id IS NULL)),
+    CHECK ((kind = 'document') = (classification_id IS NOT NULL))
 );
 CREATE INDEX nodes_search_idx ON nodes USING gin (search);
 CREATE INDEX nodes_parent_idx ON nodes (space_id, parent_id);
@@ -160,6 +193,7 @@ CREATE INDEX nodes_slug_idx ON nodes (space_id, slug);
 CREATE INDEX nodes_space_updated_idx ON nodes (space_id, updated_at DESC);
 CREATE INDEX nodes_access_path_idx ON nodes (access_path_id);
 CREATE INDEX nodes_default_role_idx ON nodes (space_id) WHERE default_role IS NOT NULL;
+CREATE INDEX nodes_classification_idx ON nodes (classification_id);
 CREATE INDEX nodes_trash_idx ON nodes (trash_id) WHERE trash_id IS NOT NULL;
 -- The items in the trash: the nodes that the users deleted.
 CREATE INDEX nodes_trash_root_idx ON nodes (space_id, deleted_at) WHERE trash_id = id;
@@ -172,6 +206,8 @@ CREATE TABLE revisions (
     body       jsonb       NOT NULL,
     author_id  bigint      REFERENCES users (id) ON DELETE SET NULL,
     comment    text        NOT NULL DEFAULT '',
+    -- The name of the classification at the time of the version.
+    classification text    NOT NULL DEFAULT '',
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (node_id, version)
 );
@@ -340,6 +376,7 @@ $$;
 
 -- The default installation: the tenant "dflt" with the space "default0".
 INSERT INTO tenants (code, name, is_default) VALUES ('dflt', 'Default', true);
+SELECT add_default_classifications(id) FROM tenants WHERE is_default;
 INSERT INTO spaces (tenant_id, slug, name)
 SELECT id, 'default0', 'Default' FROM tenants WHERE is_default;
 

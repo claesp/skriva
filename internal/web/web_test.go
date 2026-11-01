@@ -1614,3 +1614,63 @@ func TestAdminMenuShowsAllItems(t *testing.T) {
 		t.Fatalf("menu has a link to the users:\n%s", menu)
 	}
 }
+
+func TestClassification(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	bob := e.login("bob")
+	levels, _ := e.st.Classifications(ctx, e.dft.ID)
+	byName := map[string]string{}
+	for _, c := range levels {
+		byName[c.Name] = strconv.FormatInt(c.ID, 10)
+	}
+
+	// The form of a new document selects the default level, and the bar
+	// shows it.
+	b := readBody(t, bob.get(sp+"/new?kind=document"))
+	if !strings.Contains(b, `<option value="`+byName["Unclassified"]+`" selected>Unclassified</option>`) ||
+		!strings.Contains(b, `This document is classified <strong data-classbar-level>UNCLASSIFIED</strong>`) {
+		t.Fatalf("form of a new document:\n%s", b)
+	}
+	// A folder has no level.
+	if b := readBody(t, bob.get(sp+"/new?kind=folder")); strings.Contains(b, "classbar") || strings.Contains(b, `name="classification"`) {
+		t.Fatalf("form of a new folder:\n%s", b)
+	}
+
+	resp := bob.post(sp+"/new", url.Values{
+		"kind": {"document"}, "title": {"Plan"}, "body": {docBody("x")}, "classification": {byName["Top Secret"]},
+	})
+	wantStatus(t, resp, http.StatusSeeOther)
+	b = readBody(t, bob.get(resp.Header.Get("Location")))
+	if !strings.Contains(b, `This document is classified <strong data-classbar-level>TOP SECRET</strong>`) {
+		t.Fatalf("page of the document:\n%s", b)
+	}
+	id := strings.Split(resp.Header.Get("Location"), "/")[4]
+	if b := readBody(t, bob.get(sp+"/history/"+id)); !strings.Contains(b, "TOP SECRET") {
+		t.Fatalf("history page has no bar:\n%s", b)
+	}
+	// A level that does not exist is refused.
+	wantStatus(t, bob.post(sp+"/edit/"+id, url.Values{
+		"title": {"Plan"}, "body": {docBody("x")}, "version": {"1"}, "classification": {"999999"},
+	}), http.StatusBadRequest)
+
+	// The administration of the levels.
+	wantStatus(t, bob.get("/dflt/admin/classifications"), http.StatusForbidden)
+	b = readBody(t, alice.get("/dflt/admin/classifications"))
+	if !strings.Contains(b, "Top Secret") || !strings.Contains(b, `title="Delete (not available)"`) {
+		t.Fatalf("list of levels:\n%s", b)
+	}
+	wantStatus(t, alice.post("/dflt/admin/classifications", url.Values{"name": {""}, "position": {"9"}}), http.StatusUnprocessableEntity)
+	wantStatus(t, alice.post("/dflt/admin/classifications", url.Values{"name": {"Public"}, "position": {"9"}}), http.StatusUnprocessableEntity)
+	wantStatus(t, alice.post("/dflt/admin/classifications", url.Values{"name": {"Internal"}, "position": {"2"}, "default": {"on"}}), http.StatusSeeOther)
+	if b := readBody(t, bob.get(sp+"/new?kind=document")); !strings.Contains(b, `selected>Internal</option>`) {
+		t.Fatalf("new default is not selected:\n%s", b)
+	}
+	// A level in use and the default cannot be deleted.
+	wantStatus(t, alice.post("/dflt/admin/classifications/"+byName["Top Secret"]+"/delete", nil), http.StatusConflict)
+	wantStatus(t, alice.post("/dflt/admin/classifications/"+byName["Public"]+"/delete", nil), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/classifications/"+byName["Public"]+"/delete", nil), http.StatusNotFound)
+	if b := readBody(t, alice.get("/dflt/admin/audit")); !strings.Contains(b, "Made a classification") || !strings.Contains(b, "Deleted a classification") {
+		t.Fatalf("audit log:\n%s", b)
+	}
+}

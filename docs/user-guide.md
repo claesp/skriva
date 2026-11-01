@@ -112,6 +112,24 @@ You can also make a document from a wiki link. Write `[[Title of new
 document]]` in a document and save it. Click the link. Then click **New
 document**.
 
+## Information classification
+
+Each document has an information classification, for example
+"Restricted". The administrators of the tenant define the levels. All
+spaces of the tenant use the same levels. The default levels are
+Unclassified, Public, Restricted, Secret and Top Secret. A new document
+gets the default level (Unclassified).
+
+Below the toolbar, each page of a document shows the bar "This document
+is classified RESTRICTED". The page of an old version shows the
+classification of that version. A printed document also shows the bar.
+
+To change the classification, open the document with **Edit** and
+select the level in **Classification**, below the title. The bar
+changes when you select a level. Click **Save**. The history keeps the
+classification of each version, and the audit log records the change.
+Folders do not have a classification.
+
 ## Edit a document
 
 1. Click **Edit** (pencil) in the toolbar.

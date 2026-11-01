@@ -202,6 +202,9 @@ type nodePage struct {
 	// NewKind is the kind of the item on the form of a new item, or "".
 	// The toolbar then shows the buttons of that kind.
 	NewKind string
+	// Classification is the information classification of the document,
+	// or "" for a folder. The page shows it in a bar below the toolbar.
+	Classification string
 }
 
 // loadNodePage loads the path and the tree for a page of node n. It also
@@ -218,7 +221,7 @@ func (s *Server) loadNodePage(r *http.Request, n *store.Node, tab, crumb string)
 	reqInfoFrom(r.Context()).New = &newTarget{Parent: n.PublicID, Folder: n.IsFolder()}
 	return nodePage{
 		Node: n, Tab: tab, Crumb: crumb, CloseURL: docPath(base(r), n.PublicID, n.Slug),
-		Ancestors: readableOnly(r, ancestors), Tree: tree,
+		Ancestors: readableOnly(r, ancestors), Tree: tree, Classification: n.Classification,
 	}, nil
 }
 
@@ -331,7 +334,11 @@ type nodeForm struct {
 	Version int
 	// RestoredFrom is the old version that the form restores, or 0.
 	RestoredFrom int
-	Error        string
+	// ClassificationID is the selected classification of a document, or
+	// 0 for the default. Classifications are the levels of the tenant.
+	ClassificationID int64
+	Classifications  []store.Classification
+	Error            string
 	// UploadURL is the address for uploaded images.
 	UploadURL string
 	// EditorURL is the address of the script of the editor.
@@ -410,6 +417,8 @@ func readNodeForm(r *http.Request, f *nodeForm) {
 	f.Title = strings.TrimSpace(r.PostFormValue("title"))
 	f.Body = r.PostFormValue("body")
 	f.Comment = strings.TrimSpace(r.PostFormValue("comment"))
+	// The store checks that the level belongs to the tenant.
+	f.ClassificationID, _ = strconv.ParseInt(r.PostFormValue("classification"), 10, 64)
 	if f.IsFolder() {
 		f.Body = ""
 	}
@@ -475,6 +484,7 @@ func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
 	id, err := s.store.CreateNode(r.Context(), ri.Space.ID, store.NewNode{
 		ParentPublicID: f.ParentID, Kind: f.Kind, Title: f.Title, Slug: sl,
 		Content: f.content, Comment: f.Comment, AuthorID: ri.Session.User.ID,
+		ClassificationID: f.ClassificationID,
 	})
 	if !s.storeResult(w, r, err) {
 		return
@@ -515,6 +525,23 @@ func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status i
 	}
 	f.Editor = !f.IsFolder()
 	f.SaveForm = "nodeform"
+	f.Classification = ""
+	if f.Editor {
+		if f.Classifications, err = s.store.Classifications(r.Context(), reqInfoFrom(r.Context()).Tenant.ID); err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		// The form shows the selected level, the level of the document,
+		// or the default level of the tenant.
+		if f.ClassificationID == 0 && f.Node != nil {
+			f.ClassificationID = f.Node.ClassificationID
+		}
+		for _, c := range f.Classifications {
+			if c.ID == f.ClassificationID || (f.ClassificationID == 0 && c.IsDefault) {
+				f.ClassificationID, f.Classification = c.ID, c.Name
+			}
+		}
+	}
 	if f.Editor {
 		// The upload checks the permission for the node, or for the
 		// parent of a new node.
@@ -593,6 +620,7 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Nod
 	err := s.store.UpdateNode(r.Context(), ri.Space.ID, n.PublicID, store.NodeUpdate{
 		BaseVersion: version, Title: f.Title, Slug: sl, Content: f.content,
 		Comment: f.Comment, AuthorID: ri.Session.User.ID, RestoredFrom: f.RestoredFrom,
+		ClassificationID: f.ClassificationID,
 	})
 	if errors.Is(err, store.ErrConflict) {
 		f.Error = "A different user changed this item after you started to edit it. " +
@@ -846,6 +874,10 @@ func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store
 		return
 	}
 	page.CloseURL = base(r) + "/history/" + n.PublicID
+	// The bar shows the classification of the version.
+	if rev.Classification != "" {
+		page.Classification = rev.Classification
+	}
 	s.render(w, r, http.StatusOK, "revision", rev.Title+" (version "+strconv.Itoa(version)+")", struct {
 		nodePage
 		Revision *store.Revision

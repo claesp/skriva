@@ -97,6 +97,7 @@ var funcs = template.FuncMap{
 	"add":     func(a, b int) int { return a + b },
 	"sub":     func(a, b int) int { return a - b },
 	"docpath": docPath,
+	"upper":   strings.ToUpper,
 	"tree":    func(base string, nodes []*store.TreeNode) treeArgs { return treeArgs{base, nodes} },
 	"tool":    func(href, icon, label string) toolArgs { return toolArgs{Href: href, Icon: icon, Label: label} },
 	"tab": func(href, icon, label string, current bool) toolArgs {

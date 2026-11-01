@@ -14,6 +14,11 @@
   <label class="title"><span class="vh">Title</span>
     <input name="title" value="{{.Title}}" required maxlength="200" placeholder="Title" autofocus></label>
   {{if not .IsFolder}}
+  <label class="classification">Classification
+    <select name="classification">
+      {{range .Classifications}}<option value="{{.ID}}"{{if eq .ID $.Data.ClassificationID}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
+  </label>
   <input type="hidden" name="body" value="{{.Body}}" data-editor-body>
   <div class="wysiwyg" data-upload="{{.UploadURL}}" data-links="{{$.SpacePath}}/link-targets" data-csrf="{{$.CSRF}}">
     {{template "editortoolbar"}}

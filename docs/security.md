@@ -229,6 +229,16 @@ All queries use parameters. No query contains text from a user.
 The container image contains only the program and CA certificates. The
 program runs as user 65532, not as root.
 
+## Information classification
+
+- A document can have only a level of its own tenant. The store checks
+  the level with a join on the space of the document.
+- The classification does not change the permissions. It is a label
+  for the readers. Use the access settings to control who can read a
+  document.
+- The audit log records each change of the classification of a
+  document and each change to the levels.
+
 ## Audit log
 
 The audit log records the changes to access rights (users, groups,

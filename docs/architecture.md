@@ -139,7 +139,8 @@ space `default0` ("Default").
 | `spaces`           | Spaces. Each space belongs to one tenant. A space can have its own default role. |
 | `nodes`            | Folders and documents. `parent_id` makes the tree. An item can have its own default role. `access_path_id` points to the cached access path. `deleted_at` and `trash_id` mark the items in the trash. |
 | `access_paths`     | A cache: the access paths of the items of each space. See [Access control](access-control.md). |
-| `revisions`        | All versions of each node. |
+| `revisions`        | All versions of each node, with the name of the classification of each version. |
+| `classifications`  | The levels of information classification of each tenant. `nodes.classification_id` gives the level of a document. |
 | `files`            | Uploaded images. The data is in the table. |
 | `file_refs`        | The nodes that use each file, in one or more versions. |
 | `node_links`       | The links in the current version of each node: the target node of a `doc:` link, or the slug of a wiki link. |
@@ -275,6 +276,19 @@ the title, because the target can be made later. The page of a node
 shows the nodes that link to it: the rows with the node as target, and
 the rows with the current slug of the node. The query uses two indexes:
 one for each type of row.
+
+### Information classification
+
+Each tenant has its levels in `classifications`. The function
+`add_default_classifications` gives a new tenant the default levels.
+Each document has one level (`nodes.classification_id`); a folder has
+none (a check constraint). The table `nodes` has no tenant column, thus
+a foreign key cannot make sure that the level belongs to the tenant of
+the space. The store makes this check: it finds the level with a join
+on the space (`classificationFor`). The foreign key to the level is
+deferred to the end of the transaction. Thus the deletion of a tenant
+removes the levels and the documents in one statement, and the deletion
+of a level that documents use fails.
 
 ### Audit log
 
