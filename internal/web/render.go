@@ -44,6 +44,9 @@ type toolArgs struct {
 	Icon    string
 	Label   string
 	Current bool
+	// Disabled shows the button without a link. The toolbar of a new
+	// item uses it: the buttons stay at their places.
+	Disabled bool
 }
 
 // postArgs is the argument of the "post" template: an icon button that
@@ -120,6 +123,8 @@ var funcs = template.FuncMap{
 	// ntool is a button in the toolbar of a node. The button of the
 	// current tab is marked and opens closeURL. Thus a second click ends
 	// the mode, for example the editor.
+	// dtool is a disabled button in a toolbar.
+	"dtool": func(icon, label string) toolArgs { return toolArgs{Icon: icon, Label: label, Disabled: true} },
 	"ntool": func(currentTab, tab, href, closeURL, icon, label string) toolArgs {
 		if currentTab == tab {
 			return toolArgs{Href: closeURL, Icon: icon, Label: label + " (close)", Current: true}

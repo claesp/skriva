@@ -1531,3 +1531,34 @@ func TestAuditLog(t *testing.T) {
 		t.Fatalf("older events:\n%s", b)
 	}
 }
+
+func TestToolbarModes(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob")
+	id := bob.create("document", "", "Plan", "text")
+	// toolbar returns the toolbar of the bar at the top.
+	toolbar := func(page string) string {
+		i := strings.Index(page, `<nav class="toolbar"`)
+		if i < 0 {
+			return ""
+		}
+		return page[i : i+strings.Index(page[i:], "</nav>")]
+	}
+	// The form of a new document shows the same buttons, but disabled.
+	// The Save button comes first.
+	b := toolbar(readBody(t, bob.get(sp+"/new?kind=document")))
+	save, edit := strings.Index(b, `class="save"`), strings.Index(b, `aria-label="New document (close)"`)
+	if save < 0 || edit < 0 || save > edit || !strings.Contains(b, `class="tool disabled" role="link" aria-disabled="true" title="History (not available)"`) {
+		t.Fatalf("toolbar of a new document:\n%s", b)
+	}
+	// The edit form has the same buttons, with links.
+	b = toolbar(readBody(t, bob.get(sp+"/edit/"+id)))
+	if save, edit := strings.Index(b, `class="save"`), strings.Index(b, `aria-label="Edit (close)"`); save < 0 || save > edit ||
+		strings.Contains(b, "disabled") || !strings.Contains(b, sp+"/history/"+id) {
+		t.Fatalf("toolbar of the edit form:\n%s", b)
+	}
+	// The page has no Save button.
+	if b = toolbar(readBody(t, bob.get(sp+"/d/"+id+"/plan"))); strings.Contains(b, `class="save"`) {
+		t.Fatalf("toolbar of the page:\n%s", b)
+	}
+}

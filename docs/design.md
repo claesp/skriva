@@ -75,13 +75,17 @@ and these guidelines for long-form text:
   programs can read the time from the `datetime` attribute.
 - In a table, a date column is the last data column. The text in it is
   right-aligned.
-- The **Save** button of the form for a folder or a document is in the
-  toolbar of the page, next to the current button of the form (**Edit**,
-  **Rename**, or **New document** for a new item). The current button
-  goes back without a save, and the other buttons of the toolbar stay.
-  The toolbar is sticky, thus the button is always visible. The button
-  is outside the form and uses the `form` attribute. This needs no
-  script.
+- The toolbar of a folder or a document has the same buttons at the
+  same places in all modes: the page, the forms and the form of a new
+  item. The user does not have to look for a button. On the form of a
+  new item, the buttons that need a saved item are disabled (gray, no
+  link), and the pencil button is the current button. It goes back
+  without a save.
+- The **Save** button of a form is at the left side of the toolbar, in
+  its own group. The toolbar is right-aligned, thus the other buttons
+  do not move. The toolbar is sticky, thus the button is always
+  visible. The button is outside the form and uses the `form`
+  attribute. This needs no script.
 - The toolbar of the editor uses the same icon buttons as the toolbar
   of a page. It stays below the bar of the page when the user scrolls.
   The buttons for tables are visible only when the cursor is in a table.

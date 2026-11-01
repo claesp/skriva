@@ -199,9 +199,9 @@ type nodePage struct {
 	// SaveForm is the ID of the form of the page, or "". The bar at the
 	// top then has the Save button of the form.
 	SaveForm string
-	// NewIcon is the icon of the current button on the form of a new
-	// item.
-	NewIcon string
+	// NewKind is the kind of the item on the form of a new item, or "".
+	// The toolbar then shows the buttons of that kind.
+	NewKind string
 }
 
 // loadNodePage loads the path and the tree for a page of node n. It also
@@ -511,7 +511,7 @@ func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status i
 	}
 	if f.IsNew {
 		f.Crumb = "New " + f.Kind
-		f.NewIcon = "new-" + f.Kind
+		f.NewKind = f.Kind
 	}
 	f.Editor = !f.IsFolder()
 	f.SaveForm = "nodeform"

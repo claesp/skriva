@@ -716,7 +716,10 @@ h1 .i { margin-right: 0.4em; width: 0.9em; height: 0.9em; }
 .toolbar .group + .group { padding-left: 0.25rem; border-left: 1px solid var(--line); }
 /* The Save button of a form in the bar at the top. It has the height of
    the tool buttons. */
-.toolbar .save { height: 2.25rem; margin-left: 0.25rem; padding: 0 1rem; font-size: var(--ui-size); }
+.toolbar .save { height: 2.25rem; padding: 0 1rem; font-size: var(--ui-size); }
+/* A button that is not available in this mode, for example History on
+   the form of a new item. It stays at its place. */
+.tool.disabled, .tool.disabled:hover { background: none; color: var(--muted); opacity: 0.35; cursor: default; }
 .tool {
   display: inline-flex;
   align-items: center;

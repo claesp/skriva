@@ -56,6 +56,10 @@ for.
 | Lock         | Access       | Change the permissions of the item. |
 | Box          | Trash        | On the space page: show the deleted items. See [The trash](#the-trash). |
 
+The buttons are at the same places on the page of an item, on its
+forms and on the form of a new item. On a form, **Save** is at the left
+side of the toolbar, separate from the other buttons.
+
 **Edit**, **History**, **Move**, **Delete** and **Access** open a page
 with the same tree, path and toolbar. On that page, the button has a
 line below it. Click the button again to go back to the document. From
@@ -95,11 +99,12 @@ moves. Only users with access to the tenant can open them.
 2. Click **New** in the page header, then **Document** or **Folder**.
 3. Type the title.
 4. For a document, type the text in the editor. See [The editor](#the-editor).
-5. Click **Save** in the toolbar.
+5. Click **Save** at the left side of the toolbar.
 
-On the form of a new item, the toolbar has the button **New document**
-(or **New folder**) with a line below it, and **Save** next to it. To
-stop without a save, click **New document** or **New folder**.
+The form of a new item shows the same toolbar as a document page. The
+buttons that need a saved item (for example **History**) are gray and
+do nothing. The pencil button has a line below it. To stop without a
+save, click the pencil.
 
 The new item is in the folder or the document that you opened. A folder
 cannot be in a document.
@@ -113,7 +118,7 @@ document**.
 1. Click **Edit** (pencil) in the toolbar.
 2. Change the title or the text.
 3. Optionally, type a comment about the change in **Comment**.
-4. Click **Save** in the toolbar, next to **Edit**.
+4. Click **Save** at the left side of the toolbar.
 
 The edit page has the same tree, path and toolbar as the page of the
 document. The **Edit** button has a line below it. To stop without a
