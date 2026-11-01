@@ -121,7 +121,7 @@ Unclassified, Public, Restricted, Secret and Top Secret. A new document
 gets the default level (Unclassified).
 
 Below the toolbar, each page of a document shows the bar "This document
-is classified RESTRICTED". The page of an old version shows the
+is classified RESTRICTED". The bar stays visible when you scroll. The page of an old version shows the
 classification of that version. A printed document also shows the bar.
 
 To change the classification, open the document with **Edit** and

@@ -86,7 +86,10 @@ and these guidelines for long-form text:
   bar covers the width of the window without the column at the left
   side. It has a faint background in the accent color and a bottom
   border in the accent color. On a small window, the bar is directly
-  below the toolbar. A printed document keeps the bar.
+  below the toolbar. The bar is sticky: it stays below the toolbar when
+  the user scrolls. It has a fixed height (one line), thus the sticky
+  toolbar of the editor and the headings that a link opens go exactly
+  below it (`--classbar-h`). A printed document keeps the bar.
 - The accent color (`--accent`) is the color of the folder icons, the
   links and the main buttons. Change the color in one place: the
   tokens at the top of `style.css`, for light and dark mode.

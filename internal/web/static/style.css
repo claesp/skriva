@@ -158,6 +158,9 @@
   --measure: clamp(40rem, 75vw, 90rem);
   /* The height of the bar with the path and the toolbar. */
   --topbar-h: 3rem;
+  /* The space of the classification bar of a document, with the bottom
+     border of the toolbar above it. It is 0 on pages without the bar. */
+  --classbar-h: 0rem;
   /* The size of the interface text: menus, tree, toolbars and notes. */
   --ui-size: 0.8125rem;
   color-scheme: light dark;
@@ -436,7 +439,7 @@ form.editor label.title input {
 .wysiwyg { border: 1px solid var(--line); border-radius: 4px; background: var(--bg); }
 .editor-toolbar {
   position: sticky;
-  top: var(--topbar-h);
+  top: calc(var(--topbar-h) + var(--classbar-h));
   z-index: 1;
   display: flex;
   flex-wrap: wrap;
@@ -581,7 +584,7 @@ main > .reading { max-width: var(--measure); }
   font-weight: 400;
   line-height: 1.25;
   text-wrap: balance;
-  scroll-margin-top: 4.5rem;
+  scroll-margin-top: calc(4.5rem + var(--classbar-h));
 }
 .prose .level-1 { font-size: 1.6em; line-height: 1.15; margin: 1.6em 0 0.5em; }
 .prose .level-2 { font-size: 1.35em; font-style: italic; margin-top: 1.6em; }
@@ -672,9 +675,21 @@ main:has(.with-sidebar) { max-width: none; padding: 0; }
    toolbar and covers the main column: the width of the window without
    the column at the left side. */
 .classbar {
+  position: sticky;
+  /* Below the bottom border of the toolbar (1px). */
+  top: calc(var(--topbar-h) + 1px);
+  z-index: 1;
   grid-column: 2;
   grid-row: 2;
-  padding: 0.5rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  box-sizing: border-box;
+  height: calc(var(--classbar-h) - 1px);
+  padding: 0 1.5rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   background: color-mix(in srgb, var(--accent) 10%, var(--bg));
   border-bottom: 2px solid var(--accent);
   font-size: var(--ui-size);
@@ -684,6 +699,10 @@ main:has(.with-sidebar) { max-width: none; padding: 0; }
 /* The row of the bar has the height of the bar. The column at the left
    side covers the row of the bar and the row of the text. */
 .with-sidebar:has(> .topbar.wide):has(> .classbar) { grid-template-rows: auto auto 1fr; }
+/* The bar stays below the toolbar when the user scrolls. The sticky
+   toolbar of the editor and the headings that a link opens go below the
+   bar. */
+.with-sidebar:has(> .classbar) { --classbar-h: calc(2.375rem + 1px); }
 .with-sidebar:has(> .topbar.wide):has(> .classbar) > .sidebar { grid-row: 2 / span 2; }
 .with-sidebar:has(> .topbar.wide):has(> .classbar) > .main { grid-row: 3; }
 form.editor label.classification { flex-direction: row; align-items: center; gap: 0.5rem; font-size: var(--ui-size); }
@@ -805,7 +824,7 @@ td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
   .with-sidebar { grid-template-columns: minmax(0, 1fr); }
   .with-sidebar:has(> .topbar.wide) > .main { grid-column: 1; grid-row: 3; }
   /* On a small window, the bar is directly below the toolbar. */
-  .classbar { grid-column: 1; grid-row: 2; padding: 0.5rem 1rem; }
+  .classbar { grid-column: 1; grid-row: 2; padding: 0 1rem; }
   .with-sidebar:has(> .topbar.wide):has(> .classbar) { grid-template-rows: none; }
   .with-sidebar:has(> .topbar.wide):has(> .classbar) > .sidebar { grid-row: 3; }
   .with-sidebar:has(> .topbar.wide):has(> .classbar) > .main { grid-row: 4; }
@@ -841,7 +860,7 @@ td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
   .topbar { position: static; border: 0; }
   body { background: #fff; color: #000; }
   /* The printed document keeps its classification. */
-  .classbar { margin-bottom: 1rem; padding: 0.25rem 0; background: none; border-bottom: 1px solid #000; }
+  .classbar { position: static; height: auto; margin-bottom: 1rem; padding: 0.25rem 0; background: none; border-bottom: 1px solid #000; }
   .prose { max-width: none; font-size: 11pt; }
   .prose a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.85em; }
   .prose pre, .prose :not(pre) > code { background: none; border: 1px solid #ccc; }
