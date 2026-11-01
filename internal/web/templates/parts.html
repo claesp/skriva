@@ -199,6 +199,30 @@
 <div class="main reading">
 {{end}}
 
+{{/* The start of the pages of a space: the space page and the trash.
+   The argument is a spaceTopArgs. The data of the view embeds a
+   spacePage. The page ends with the template "nodefoot". */}}
+{{define "spacetop"}}
+{{$v := .V}}
+<div class="with-sidebar">
+<div class="topbar wide">
+  <nav class="breadcrumbs" aria-label="Path"><a href="{{$v.TenantPath}}/">Spaces</a> /
+    {{if .Tab}}<a href="{{$v.SpacePath}}/">{{$v.Space.Name}}</a> / Trash{{else}}{{$v.Space.Name}}{{end}}</nav>
+  {{if or $v.Data.Trash ($v.Can "tenant.manage")}}<nav class="toolbar" aria-label="Tools">
+    {{if $v.Data.Trash}}<span class="group">
+      {{template "tool" (ntool .Tab "trash" (print $v.SpacePath "/trash") (print $v.SpacePath "/") "trash" "Trash")}}
+    </span>{{end}}
+    {{if $v.Can "tenant.manage"}}<span class="group">
+      {{template "tool" (tool (print $v.TenantPath "/admin/spaces/" $v.Space.Slug "/access") "access" "Access")}}
+    </span>{{end}}
+  </nav>{{end}}
+</div>
+<aside class="sidebar" aria-label="Contents">
+  {{template "tree" (tree $v.SpacePath $v.Data.Tree)}}
+</aside>
+<div class="main reading">
+{{end}}
+
 {{define "nodefoot"}}
 </div>
 </div>

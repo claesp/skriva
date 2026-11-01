@@ -144,7 +144,7 @@ func (s *Store) ReadableSpaces(ctx context.Context, tenantID, userID int64) ([]i
 		        SELECT 1 FROM nodes n
 		        JOIN roles r ON r.name = n.default_role AND `+rolesOfTenant+`
 		        JOIN role_permissions rp ON rp.role_id = r.id AND rp.permission = 'doc.read'
-		        WHERE n.space_id = sp.id)
+		        WHERE n.space_id = sp.id AND n.deleted_at IS NULL)
 		    -- A folder binding that can read.
 		    OR EXISTS (
 		        SELECT 1 FROM role_permissions rp
@@ -320,4 +320,18 @@ func union(a, b rbac.Set) rbac.Set {
 		out[p] = struct{}{}
 	}
 	return out
+}
+
+// Any reports whether the user has permission p at the top level of the
+// space or for at least one access path of the space.
+func (a *Access) Any(p rbac.Permission) bool {
+	if a.Root().Has(p) {
+		return true
+	}
+	for id := range a.paths {
+		if a.Can(id, p) {
+			return true
+		}
+	}
+	return false
 }

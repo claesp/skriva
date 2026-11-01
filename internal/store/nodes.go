@@ -129,7 +129,7 @@ func (s *Store) Node(ctx context.Context, spaceID int64, publicID string) (*Node
 		       n.version, n.default_role, n.access_path_id, n.created_at, n.updated_at,
 		       COALESCE(NULLIF(u.display_name, ''), u.username, '')
 		FROM nodes n LEFT JOIN users u ON u.id = n.updated_by
-		WHERE n.space_id = $1 AND n.public_id = $2`, spaceID, publicID,
+		WHERE n.space_id = $1 AND n.public_id = $2 AND n.deleted_at IS NULL`, spaceID, publicID,
 	).Scan(&n.ID, &n.PublicID, &n.SpaceID, &n.ParentID, &n.Kind, &n.Title, &n.Slug, &n.Body,
 		&n.Version, &n.DefaultRole, &n.AccessPathID, &n.CreatedAt, &n.UpdatedAt, &n.UpdatedBy)
 	if err != nil {
@@ -165,7 +165,9 @@ func parentFor(ctx context.Context, tx pgx.Tx, spaceID int64, parentPublicID, ki
 	}
 	var id, pathID int64
 	var parentKind string
-	err := tx.QueryRow(ctx, "SELECT id, kind, access_path_id FROM nodes WHERE space_id = $1 AND public_id = $2",
+	err := tx.QueryRow(ctx, `
+		SELECT id, kind, access_path_id FROM nodes
+		WHERE space_id = $1 AND public_id = $2 AND deleted_at IS NULL`,
 		spaceID, parentPublicID).Scan(&id, &parentKind, &pathID)
 	if err != nil {
 		return nil, 0, notFound(err)
@@ -279,13 +281,14 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 			                 body = CASE WHEN kind = 'folder' THEN $9::jsonb ELSE $6::jsonb END,
 			                 plain_text = CASE WHEN kind = 'folder' THEN '' ELSE $7 END,
 			                 version = version + 1, updated_by = $8, updated_at = $10
-			WHERE space_id = $1 AND public_id = $2 AND version = $3
+			WHERE space_id = $1 AND public_id = $2 AND version = $3 AND deleted_at IS NULL
 			RETURNING id, version, body, kind = 'folder'`,
 			spaceID, publicID, u.BaseVersion, u.Title, u.Slug, u.Body, u.PlainText, nullID(u.AuthorID),
 			emptyBody, now).Scan(&id, &version, &body, &folder)
 		if errors.Is(err, pgx.ErrNoRows) {
 			var exists bool
-			if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM nodes WHERE space_id = $1 AND public_id = $2)",
+			if err := tx.QueryRow(ctx, `
+				SELECT EXISTS (SELECT 1 FROM nodes WHERE space_id = $1 AND public_id = $2 AND deleted_at IS NULL)`,
 				spaceID, publicID).Scan(&exists); err != nil {
 				return err
 			}
@@ -317,7 +320,8 @@ func (s *Store) MoveNode(ctx context.Context, spaceID int64, publicID, newParent
 		}
 		var id int64
 		var kind string
-		if err := tx.QueryRow(ctx, "SELECT id, kind FROM nodes WHERE space_id = $1 AND public_id = $2",
+		if err := tx.QueryRow(ctx, `
+			SELECT id, kind FROM nodes WHERE space_id = $1 AND public_id = $2 AND deleted_at IS NULL`,
 			spaceID, publicID).Scan(&id, &kind); err != nil {
 			return notFound(err)
 		}
@@ -333,7 +337,7 @@ func (s *Store) MoveNode(ctx context.Context, spaceID int64, publicID, newParent
 				WITH RECURSIVE sub(id) AS (
 					SELECT $1::bigint
 					UNION
-					SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id
+					SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id WHERE n.deleted_at IS NULL
 				)
 				SELECT EXISTS (SELECT 1 FROM sub WHERE id = $2)`, id, *parentID).Scan(&inSubtree)
 			if err != nil {
@@ -371,6 +375,7 @@ func (s *Store) SetNodeDefaultRole(ctx context.Context, tenantID, spaceID int64,
 			UPDATE nodes n SET default_role = $4
 			FROM spaces sp
 			WHERE sp.id = n.space_id AND sp.tenant_id = $1 AND n.space_id = $2 AND n.public_id = $3
+			  AND n.deleted_at IS NULL
 			RETURNING n.id`, tenantID, spaceID, publicID, role).Scan(&id)
 		if err != nil {
 			return notFound(err)
@@ -379,31 +384,14 @@ func (s *Store) SetNodeDefaultRole(ctx context.Context, tenantID, spaceID int64,
 	})
 }
 
-// DeleteNode removes a node and its subtree with all revisions.
-func (s *Store) DeleteNode(ctx context.Context, spaceID int64, publicID string) error {
-	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if err := lockSpace(ctx, tx, spaceID); err != nil {
-			return err
-		}
-		tag, err := tx.Exec(ctx, "DELETE FROM nodes WHERE space_id = $1 AND public_id = $2", spaceID, publicID)
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 0 {
-			return ErrNotFound
-		}
-		return deleteUnusedPaths(ctx, tx, spaceID)
-	})
-}
-
 // SubtreePaths returns the IDs of the access paths of the descendants of
 // a node.
 func (s *Store) SubtreePaths(ctx context.Context, nodeID int64) ([]int64, error) {
 	rows, err := s.pool.Query(ctx, `
 		WITH RECURSIVE sub(id) AS (
-			SELECT id FROM nodes WHERE parent_id = $1
+			SELECT id FROM nodes WHERE parent_id = $1 AND deleted_at IS NULL
 			UNION
-			SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id
+			SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id WHERE n.deleted_at IS NULL
 		)
 		SELECT DISTINCT n.access_path_id FROM nodes n JOIN sub ON sub.id = n.id`, nodeID)
 	if err != nil {
@@ -427,9 +415,9 @@ func (s *Store) CountDescendants(ctx context.Context, nodeID int64) (int, error)
 	var n int
 	err := s.pool.QueryRow(ctx, `
 		WITH RECURSIVE sub(id) AS (
-			SELECT id FROM nodes WHERE parent_id = $1
+			SELECT id FROM nodes WHERE parent_id = $1 AND deleted_at IS NULL
 			UNION
-			SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id
+			SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id WHERE n.deleted_at IS NULL
 		)
 		SELECT count(*) FROM sub`, nodeID).Scan(&n)
 	return n, err
@@ -444,7 +432,7 @@ const MaxTreeNodes = 10000
 func (s *Store) SpaceNodes(ctx context.Context, spaceID int64) ([]NodeSummary, error) {
 	return s.summaries(ctx, `
 		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
-		WHERE space_id = $1
+		WHERE space_id = $1 AND deleted_at IS NULL
 		ORDER BY kind = 'document', lower(title), id
 		LIMIT $2`, spaceID, MaxTreeNodes)
 }
@@ -454,7 +442,7 @@ func (s *Store) SpaceNodes(ctx context.Context, spaceID int64) ([]NodeSummary, e
 func (s *Store) Children(ctx context.Context, spaceID int64, parentID *int64) ([]NodeSummary, error) {
 	return s.summaries(ctx, `
 		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
-		WHERE space_id = $1 AND parent_id IS NOT DISTINCT FROM $2
+		WHERE space_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL
 		ORDER BY kind = 'document', lower(title), id`, spaceID, parentID)
 }
 
@@ -480,7 +468,7 @@ func (s *Store) Ancestors(ctx context.Context, nodeID int64) ([]NodeSummary, err
 func (s *Store) NodesBySlug(ctx context.Context, spaceID int64, slug string) ([]NodeSummary, error) {
 	return s.summaries(ctx, `
 		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
-		WHERE space_id = $1 AND slug = $2
+		WHERE space_id = $1 AND slug = $2 AND deleted_at IS NULL
 		ORDER BY kind = 'folder', created_at, id LIMIT 50`, spaceID, slug)
 }
 
@@ -499,7 +487,7 @@ func (s *Store) RecentChanges(ctx context.Context, tenantID int64, limit int) ([
 		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id,
 		       sp.id, sp.slug, sp.name
 		FROM nodes n JOIN spaces sp ON sp.id = n.space_id
-		WHERE sp.tenant_id = $1 AND n.kind = 'document'
+		WHERE sp.tenant_id = $1 AND n.kind = 'document' AND n.deleted_at IS NULL
 		ORDER BY n.updated_at DESC LIMIT $2`, tenantID, limit)
 	if err != nil {
 		return nil, err
@@ -560,7 +548,7 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 		FROM nodes n
 		JOIN spaces sp ON sp.id = n.space_id,
 		     websearch_to_tsquery('simple', $3) q
-		WHERE sp.tenant_id = $1 AND sp.id = ANY($2) AND n.search @@ q
+		WHERE sp.tenant_id = $1 AND sp.id = ANY($2) AND n.search @@ q AND n.deleted_at IS NULL
 		ORDER BY ts_rank(n.search, q) DESC, n.updated_at DESC
 		LIMIT $4`, tenantID, spaceIDs, query, limit)
 	if err != nil {
@@ -711,7 +699,7 @@ const FullTreeLimit = 2000
 func (s *Store) IsLargeSpace(ctx context.Context, spaceID int64) (bool, error) {
 	var n int
 	err := s.pool.QueryRow(ctx, `
-		SELECT count(*) FROM (SELECT 1 FROM nodes WHERE space_id = $1 LIMIT $2) x`,
+		SELECT count(*) FROM (SELECT 1 FROM nodes WHERE space_id = $1 AND deleted_at IS NULL LIMIT $2) x`,
 		spaceID, FullTreeLimit+1).Scan(&n)
 	return n > FullTreeLimit, err
 }
@@ -725,7 +713,7 @@ func (s *Store) PathTreeNodes(ctx context.Context, spaceID int64, nodeIDs []int6
 	}
 	return s.summaries(ctx, `
 		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
-		WHERE space_id = $1 AND (parent_id IS NULL OR parent_id = ANY($2))
+		WHERE space_id = $1 AND (parent_id IS NULL OR parent_id = ANY($2)) AND deleted_at IS NULL
 		ORDER BY kind = 'document', lower(title), id
 		LIMIT $3`, spaceID, nodeIDs, MaxTreeNodes)
 }

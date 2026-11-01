@@ -47,6 +47,10 @@ func (s *Server) spaceRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRoleForm))
 	mux.Handle("POST "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRole))
 	mux.Handle("GET "+p+"/w/{slug}", s.require("", s.handleWikiLink))
+	mux.Handle("GET "+p+"/trash", s.require("", s.handleTrash))
+	mux.Handle("POST "+p+"/trash/{id}/restore", s.trashed(rbac.DocDelete, s.handleRestore))
+	mux.Handle("GET "+p+"/trash/{id}/delete", s.trashed(rbac.SpaceManage, s.handlePurgeForm))
+	mux.Handle("POST "+p+"/trash/{id}/delete", s.trashed(rbac.SpaceManage, s.handlePurge))
 	mux.Handle("GET "+p+"/search", s.require("", s.handleSearch))
 	mux.Handle("POST "+p+"/files", s.require("", s.handleUpload))
 	mux.Handle("GET "+p+"/files/{id}", s.require("", s.handleFile))
@@ -167,7 +171,14 @@ func (s *Server) handleSpaceHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ri.New = &newTarget{Folder: true}
-	s.render(w, r, http.StatusOK, "space", ri.Space.Name, tree)
+	s.render(w, r, http.StatusOK, "space", ri.Space.Name, spacePage{Tree: tree, Trash: ri.Access.Any(rbac.DocDelete)})
+}
+
+// spacePage is the data that the pages of a space show: the tree, and
+// whether the toolbar has the button of the trash.
+type spacePage struct {
+	Tree  []*store.TreeNode
+	Trash bool
 }
 
 // nodePage is the data that all pages of a node show: the path, the
@@ -723,7 +734,8 @@ func (s *Server) handleDeleteForm(w http.ResponseWriter, r *http.Request, n *sto
 		nodePage
 		Descendants int
 		Permitted   bool
-	}{page, count, permitted})
+		TrashDays   int
+	}{page, count, permitted, store.TrashDays})
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, n *store.Node) {
@@ -742,11 +754,11 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, n *store.N
 		s.serverError(w, r, err)
 		return
 	}
-	if !s.storeResult(w, r, s.store.DeleteNode(r.Context(), n.SpaceID, n.PublicID)) {
+	ri := reqInfoFrom(r.Context())
+	if !s.storeResult(w, r, s.store.TrashNode(r.Context(), n.SpaceID, n.PublicID, ri.Session.User.ID)) {
 		return
 	}
-	ri := reqInfoFrom(r.Context())
-	s.log.Info("node deleted", "tenant", ri.Tenant.Code, "space", ri.Space.Slug,
+	s.log.Info("node moved to the trash", "tenant", ri.Tenant.Code, "space", ri.Space.Slug,
 		"node", n.PublicID, "user_id", ri.Session.User.ID)
 	target := base(r) + "/"
 	if a := readableOnly(r, ancestors); len(a) > 0 {

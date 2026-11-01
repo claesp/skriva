@@ -33,6 +33,11 @@ This document describes the security controls of Skriva.
   search do not show the titles of items that the user cannot read.
 - A deletion also removes the subtree. Thus the server requires
   `doc.delete` for each item in the subtree.
+- A deleted item goes into the trash. The item keeps its access path.
+  Thus the trash uses the permissions of the old place. A restored item
+  goes back to its old place only. If the old parent is in the trash,
+  the server refuses the restore. Thus a restore cannot give an item
+  different permissions.
 - A move requires `doc.create` at the new place. Thus a user cannot move
   an item into a folder where the user cannot make items.
 

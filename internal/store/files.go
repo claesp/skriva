@@ -40,7 +40,7 @@ func (s *Store) File(ctx context.Context, spaceID int64, publicID string) (*File
 	err := s.pool.QueryRow(ctx, `
 		SELECT f.id, f.public_id, f.content_type, f.data, f.created_by, f.created_at,
 		       ARRAY(SELECT DISTINCT n.access_path_id FROM file_refs r JOIN nodes n ON n.id = r.node_id
-		             WHERE r.file_id = f.id)
+		             WHERE r.file_id = f.id AND n.deleted_at IS NULL)
 		FROM files f WHERE f.space_id = $1 AND f.public_id = $2`, spaceID, publicID,
 	).Scan(&f.ID, &f.PublicID, &f.ContentType, &f.Data, &createdBy, &f.CreatedAt, &f.AccessPaths)
 	if err != nil {

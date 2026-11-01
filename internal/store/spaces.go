@@ -28,8 +28,8 @@ type Space struct {
 func (s *Store) Spaces(ctx context.Context, tenantID int64) ([]Space, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT sp.id, sp.tenant_id, sp.slug, sp.name, sp.description, sp.default_role, sp.created_at,
-		       (SELECT count(*) FROM nodes n WHERE n.space_id = sp.id),
-		       (SELECT max(n.updated_at) FROM nodes n WHERE n.space_id = sp.id)
+		       (SELECT count(*) FROM nodes n WHERE n.space_id = sp.id AND n.deleted_at IS NULL),
+		       (SELECT max(n.updated_at) FROM nodes n WHERE n.space_id = sp.id AND n.deleted_at IS NULL)
 		FROM spaces sp WHERE sp.tenant_id = $1
 		ORDER BY lower(sp.name), sp.slug`, tenantID)
 	if err != nil {

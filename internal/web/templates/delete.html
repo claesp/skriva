@@ -2,9 +2,9 @@
 {{template "nodehead" .}}
 {{with .Data}}
 <div class="pagehead"><h1>Delete {{.Node.Kind}} "{{.Node.Title}}"</h1></div>
-<p>Do you want to delete the {{.Node.Kind}} and all its history?
-{{if .Descendants}}This also deletes <strong>{{.Descendants}}</strong> items in it.{{end}}
-You cannot undo this.</p>
+<p>Do you want to delete the {{.Node.Kind}}?
+{{if .Descendants}}This also deletes the <strong>{{.Descendants}}</strong> items in it.{{end}}
+The {{.Node.Kind}} goes into the <a href="{{$.SpacePath}}/trash">trash</a>. You can restore it from the trash for {{.TrashDays}} days.</p>
 {{if .Permitted}}
 <form action="{{$.SpacePath}}/delete/{{.Node.PublicID}}" method="post">
   {{template "csrf" $.CSRF}}

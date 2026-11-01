@@ -52,8 +52,9 @@ for.
 | Clock        | History      | Show the old versions of the document. |
 | `< >`        | Source       | Show the text of the document in Markdown. See [Source](#source). |
 | Folder with arrow | Move    | Move the item to a different place. |
-| Waste bin    | Delete       | Delete the item and the items in it. |
+| Waste bin    | Delete       | Move the item and the items in it into the trash. |
 | Lock         | Access       | Change the permissions of the item. |
+| Box          | Trash        | On the space page: show the deleted items. See [The trash](#the-trash). |
 
 **Edit**, **History**, **Move**, **Delete** and **Access** open a page
 with the same tree, path and toolbar. On that page, the button has a
@@ -130,7 +131,26 @@ folder, the list shows only folders.
 2. Read the number of items in it. The wiki also deletes these items.
 3. Click **Delete**.
 
-You cannot undo this.
+The item and the items in it go into the trash of the space. After 30
+days in the trash, the wiki deletes them permanently.
+
+## The trash
+
+To open the trash, click **Trash** (box) in the toolbar of the space
+page. The button is there only if you have permission to delete items.
+The trash shows the items that you can delete. Each row shows the old
+place of the item, who deleted it and when.
+
+- To restore an item, click **Restore** (arrow in a circle). The item
+  goes back to its old place, with the items in it and all its history.
+- If the old folder of an item is also in the trash, restore the folder
+  first. Thus an item cannot go to a place with different permissions.
+- An administrator of the space can click **Delete permanently** (waste
+  bin). You cannot undo this. This also deletes the items that were in
+  the item, also if they are separate items in the trash.
+
+While an item is in the trash, nobody can open it. The search, the tree
+and the wiki links do not show it.
 
 ## Restore an old version
 

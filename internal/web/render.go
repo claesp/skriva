@@ -109,8 +109,9 @@ var funcs = template.FuncMap{
 	"crumb3": func(rootURL, rootLabel, parentURL, parentLabel, title, icon string) crumbArgs {
 		return crumbArgs{rootURL, rootLabel, parentURL, parentLabel, title, icon}
 	},
-	"items":  func(base string, nodes any) itemsArgs { return itemsArgs{base, nodes} },
-	"source": groupSource,
+	"items":    func(base string, nodes any) itemsArgs { return itemsArgs{base, nodes} },
+	"spacetop": func(v *view, tab string) spaceTopArgs { return spaceTopArgs{v, tab} },
+	"source":   groupSource,
 	// ebtn gives the data of a button in the toolbar of the editor.
 	"ebtn": func(command, icon, label string) toolArgs {
 		return toolArgs{Href: command, Icon: icon, Label: label}
@@ -166,6 +167,13 @@ func loadTemplates() (*templates, error) {
 		t.versions[name] = hex.EncodeToString(sum[:8])
 	}
 	return t, nil
+}
+
+// spaceTopArgs is the argument of the template "spacetop". Tab is the
+// current button in the toolbar, or "" on the space page.
+type spaceTopArgs struct {
+	V   *view
+	Tab string
 }
 
 // view is the data for all templates.

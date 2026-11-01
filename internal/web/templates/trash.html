@@ -1,0 +1,42 @@
+{{define "content"}}
+{{template "spacetop" (spacetop . "trash")}}
+{{with .Data}}
+{{if .Confirm}}
+{{with .Confirm}}
+<div class="pagehead"><h1>Delete {{.Kind}} "{{.Title}}" permanently</h1></div>
+<p>Do you want to delete the {{.Kind}} and all its history permanently?
+{{if .Descendants}}This also deletes the <strong>{{.Descendants}}</strong> items in it.{{end}}
+You cannot undo this.</p>
+<form action="{{$.SpacePath}}/trash/{{.PublicID}}/delete" method="post">
+  {{template "csrf" $.CSRF}}
+  <div class="buttons"><button type="submit" class="danger">Delete permanently</button> <a href="{{$.SpacePath}}/trash">Cancel</a></div>
+</form>
+{{end}}
+{{else}}
+<div class="pagehead"><h1>Trash</h1></div>
+<p>Deleted folders and documents stay in the trash for {{.Days}} days. Then the wiki deletes them permanently. A restored item goes back to its old place.</p>
+{{if .Items}}
+<table class="items">
+  <thead><tr><th>Name</th><th>Old place</th><th>Deleted by</th><th class="date">Deleted</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <tbody>
+  {{range .Items}}
+  <tr>
+    <td>{{template "icon" .Kind}}{{.Title}}{{if .Descendants}} <small>and {{.Descendants}} items in it</small>{{end}}</td>
+    <td>{{if .ParentInTrash}}In the trash: {{.ParentTitle}}{{else}}{{or .ParentTitle "Top level"}}{{end}}</td>
+    <td>{{.DeletedBy}}</td>
+    <td class="date">{{date .DeletedAt}}</td>
+    <td class="actions">
+      {{if .ParentInTrash}}<small>Restore the folder first</small>{{else}}{{template "post" (post (print $.SpacePath "/trash/" .PublicID "/restore") "restore" "Restore" $.CSRF "")}}{{end}}
+      {{if .CanPurge}}{{template "tool" (tool (print $.SpacePath "/trash/" .PublicID "/delete") "delete" "Delete permanently")}}{{end}}
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<p>The trash is empty.</p>
+{{end}}
+{{end}}
+{{end}}
+{{template "nodefoot"}}
+{{end}}

@@ -1,24 +1,13 @@
 {{define "content"}}
-<div class="with-sidebar">
-<div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path"><a href="{{.TenantPath}}/">Spaces</a> / {{.Space.Name}}</nav>
-  {{if .Can "tenant.manage"}}<nav class="toolbar" aria-label="Tools"><span class="group">
-    {{template "tool" (tool (print .TenantPath "/admin/spaces/" .Space.Slug "/access") "access" "Access")}}
-  </span></nav>{{end}}
-</div>
-<aside class="sidebar" aria-label="Contents">
-  {{template "tree" (tree .SpacePath .Data)}}
-</aside>
-<div class="main reading">
+{{template "spacetop" (spacetop . "")}}
 <div class="pagehead">
   <h1>{{.Space.Name}}</h1>
 </div>
 {{with .Space.Description}}<p class="lead">{{.}}</p>{{end}}
-{{with .Data}}
+{{with .Data.Tree}}
 {{template "itemtable" (items $.SpacePath .)}}
 {{else}}
 <p>This space is empty.{{if .Can "doc.create"}} Use <strong>New</strong> in the page header to make the first document.{{end}}</p>
 {{end}}
-</div>
-</div>
+{{template "nodefoot"}}
 {{end}}

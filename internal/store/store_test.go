@@ -577,12 +577,12 @@ func TestNodeTree(t *testing.T) {
 		t.Fatalf("tree = %+v", tree)
 	}
 
-	// Delete removes the subtree.
+	// Delete moves the subtree into the trash.
 	f, _ := st.Node(ctx, sp.ID, folder)
 	if cnt, _ := st.CountDescendants(ctx, f.ID); cnt != 2 {
 		t.Fatalf("descendants = %d", cnt)
 	}
-	if err := st.DeleteNode(ctx, sp.ID, folder); err != nil {
+	if err := st.TrashNode(ctx, sp.ID, folder, 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.Node(ctx, sp.ID, doc); !errors.Is(err, store.ErrNotFound) {
@@ -1053,9 +1053,7 @@ func TestNodePermissions(t *testing.T) {
 	if !found {
 		t.Fatalf("no node binding in the list: %+v", bindings)
 	}
-	if err := st.DeleteNode(ctx, sp.ID, hr); err != nil {
-		t.Fatal(err)
-	}
+	purge(t, st, sp.ID, hr)
 	bindings, _ = st.Bindings(ctx, tn.ID)
 	for _, b := range bindings {
 		if b.NodeID != 0 {
@@ -1221,11 +1219,126 @@ func TestFiles(t *testing.T) {
 	if _, err := st.File(ctx, sp.ID, used); err != nil {
 		t.Fatalf("used file: %v", err)
 	}
-	// The deletion of the node also removes the reference.
-	if err := st.DeleteNode(ctx, sp.ID, id); err != nil {
+	// A node in the trash does not give access to the file.
+	if err := st.TrashNode(ctx, sp.ID, id, 0); err != nil {
 		t.Fatal(err)
 	}
 	if f, _ := st.File(ctx, sp.ID, used); len(f.AccessPaths) != 0 {
 		t.Fatalf("access paths after delete = %v", f.AccessPaths)
 	}
+}
+
+// purge moves a node into the trash and deletes it permanently.
+func purge(t *testing.T, st *store.Store, spaceID int64, publicID string) {
+	t.Helper()
+	if err := st.TrashNode(ctx, spaceID, publicID, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PurgeNode(ctx, spaceID, publicID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTrash(t *testing.T) {
+	st := newStore(t)
+	tn := defaultTenant(t, st)
+	sp := defaultSpace(t, st, tn)
+	mk := func(parent, kind, title string) string {
+		t.Helper()
+		id, err := st.CreateNode(ctx, sp.ID, store.NewNode{ParentPublicID: parent, Kind: kind, Title: title, Slug: title})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	folder := mk("", store.KindFolder, "guides")
+	doc := mk(folder, store.KindDocument, "install")
+	sub := mk(doc, store.KindDocument, "linux")
+	other := mk("", store.KindDocument, "home")
+
+	// The sub-document goes into the trash first. It stays a separate
+	// item when its folder goes into the trash.
+	if err := st.TrashNode(ctx, sp.ID, sub, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.TrashNode(ctx, sp.ID, folder, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.TrashNode(ctx, sp.ID, folder, 0); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("second delete: %v", err)
+	}
+	items, err := st.Trash(ctx, sp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].PublicID != folder || items[0].Descendants != 1 ||
+		items[1].PublicID != sub || !items[1].ParentInTrash || items[1].ParentTitle != "install" {
+		t.Fatalf("trash = %+v", items)
+	}
+	// The live queries do not show items in the trash.
+	if nodes, _ := st.SpaceNodes(ctx, sp.ID); len(nodes) != 1 || nodes[0].PublicID != other {
+		t.Fatalf("space nodes = %+v", nodes)
+	}
+	if nodes, _ := st.NodesBySlug(ctx, sp.ID, "install"); len(nodes) != 0 {
+		t.Fatalf("slug finds a node in the trash: %+v", nodes)
+	}
+	if err := st.UpdateNode(ctx, sp.ID, doc, store.NodeUpdate{BaseVersion: 1, Title: "x"}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("update in the trash: %v", err)
+	}
+	if err := st.MoveNode(ctx, sp.ID, other, folder); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("move into the trash: %v", err)
+	}
+
+	// The sub-document cannot go back before its parent.
+	if err := st.RestoreNode(ctx, sp.ID, sub); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("restore with parent in the trash: %v", err)
+	}
+	if err := st.RestoreNode(ctx, sp.ID, doc); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("restore of an item in a deleted folder: %v", err)
+	}
+	if err := st.RestoreNode(ctx, sp.ID, folder); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Node(ctx, sp.ID, doc); err != nil {
+		t.Fatalf("document after restore: %v", err)
+	}
+	if _, err := st.Node(ctx, sp.ID, sub); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("separate item came back: %v", err)
+	}
+	if err := st.RestoreNode(ctx, sp.ID, sub); err != nil {
+		t.Fatal(err)
+	}
+
+	// A permanent deletion removes the subtree, also the separate items
+	// in the trash.
+	if err := st.TrashNode(ctx, sp.ID, sub, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PurgeNode(ctx, sp.ID, doc); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("purge of a live node: %v", err)
+	}
+	purge(t, st, sp.ID, folder)
+	if items, _ := st.Trash(ctx, sp.ID); len(items) != 0 {
+		t.Fatalf("trash after purge = %+v", items)
+	}
+
+	// DeleteExpired removes old items only.
+	if err := st.TrashNode(ctx, sp.ID, other, 0); err != nil {
+		t.Fatal(err)
+	}
+	st.SetNow(func() time.Time { return time.Now().AddDate(0, 0, store.TrashDays-1) })
+	if err := st.DeleteExpired(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if items, _ := st.Trash(ctx, sp.ID); len(items) != 1 {
+		t.Fatalf("trash after %d days = %+v", store.TrashDays-1, items)
+	}
+	st.SetNow(func() time.Time { return time.Now().AddDate(0, 0, store.TrashDays+1) })
+	if err := st.DeleteExpired(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if items, _ := st.Trash(ctx, sp.ID); len(items) != 0 {
+		t.Fatalf("trash after %d days = %+v", store.TrashDays+1, items)
+	}
+	checkAccessCache(t, st, sp.ID)
 }

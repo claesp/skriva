@@ -138,6 +138,12 @@ CREATE TABLE nodes (
     updated_by     bigint      REFERENCES users (id) ON DELETE SET NULL,
     created_at     timestamptz NOT NULL DEFAULT now(),
     updated_at     timestamptz NOT NULL DEFAULT now(),
+    -- A node in the trash has a value in deleted_at. trash_id is the node
+    -- that the user deleted: the node itself, or an ancestor of the node.
+    -- The subtree of a deleted node goes into the trash with it.
+    deleted_at     timestamptz,
+    deleted_by     bigint      REFERENCES users (id) ON DELETE SET NULL,
+    trash_id       bigint,
     search         tsvector GENERATED ALWAYS AS (
         setweight(to_tsvector('simple', title), 'A') ||
         setweight(to_tsvector('simple', plain_text), 'B')
@@ -145,7 +151,8 @@ CREATE TABLE nodes (
     UNIQUE (space_id, id),
     CONSTRAINT nodes_parent_fkey
         FOREIGN KEY (space_id, parent_id) REFERENCES nodes (space_id, id) ON DELETE CASCADE,
-    CHECK (parent_id <> id)
+    CHECK (parent_id <> id),
+    CHECK ((deleted_at IS NULL) = (trash_id IS NULL))
 );
 CREATE INDEX nodes_search_idx ON nodes USING gin (search);
 CREATE INDEX nodes_parent_idx ON nodes (space_id, parent_id);
@@ -153,6 +160,9 @@ CREATE INDEX nodes_slug_idx ON nodes (space_id, slug);
 CREATE INDEX nodes_space_updated_idx ON nodes (space_id, updated_at DESC);
 CREATE INDEX nodes_access_path_idx ON nodes (access_path_id);
 CREATE INDEX nodes_default_role_idx ON nodes (space_id) WHERE default_role IS NOT NULL;
+CREATE INDEX nodes_trash_idx ON nodes (trash_id) WHERE trash_id IS NOT NULL;
+-- The items in the trash: the nodes that the users deleted.
+CREATE INDEX nodes_trash_root_idx ON nodes (space_id, deleted_at) WHERE trash_id = id;
 
 -- Each saved version of a node.
 CREATE TABLE revisions (

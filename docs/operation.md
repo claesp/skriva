@@ -69,8 +69,9 @@ The logs do not contain session tokens, ID tokens or secrets.
 ## Maintenance
 
 The server deletes expired sessions and login data every 10 minutes.
-At the same time, it deletes uploaded images that no document uses
-after one day.
+At the same time, it permanently deletes the items that are in the
+trash for more than 30 days, and the uploaded images that no document
+uses after one day.
 
 ## Backup
 

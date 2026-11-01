@@ -586,6 +586,37 @@ func TestTreeAndDocuments(t *testing.T) {
 	wantStatus(t, mary.get(sp+"/d/"+install), http.StatusNotFound)
 	wantStatus(t, mary.get(sp+"/d/"+linux+"/install-on-linux"), http.StatusOK)
 
+	// The folder is in the trash. Editors cannot see the trash. A
+	// maintainer can restore the folder, but only an administrator can
+	// delete it permanently.
+	wantStatus(t, bob.get(sp+"/trash"), http.StatusForbidden)
+	if b := readBody(t, bob.get(sp+"/")); strings.Contains(b, sp+"/trash") {
+		t.Fatalf("editor sees the trash button:\n%s", b)
+	}
+	if b := readBody(t, mary.get(sp+"/")); !strings.Contains(b, sp+"/trash") {
+		t.Fatalf("no trash button for the maintainer:\n%s", b)
+	}
+	b := readBody(t, mary.get(sp+"/trash"))
+	if !strings.Contains(b, "Guides") || !strings.Contains(b, "and 2 items in it") ||
+		!strings.Contains(b, sp+"/trash/"+guides+"/restore") || strings.Contains(b, sp+"/trash/"+guides+"/delete") {
+		t.Fatalf("trash of the maintainer:\n%s", b)
+	}
+	wantStatus(t, bob.post(sp+"/trash/"+guides+"/restore", nil), http.StatusNotFound)
+	wantStatus(t, mary.get(sp+"/trash/"+guides+"/delete"), http.StatusForbidden)
+	wantStatus(t, mary.post(sp+"/trash/"+guides+"/delete", nil), http.StatusForbidden)
+	wantStatus(t, mary.post(sp+"/trash/"+guides+"/restore", nil), http.StatusSeeOther)
+	wantStatus(t, mary.get(sp+"/d/"+install), http.StatusFound)
+	wantStatus(t, mary.post(sp+"/trash/"+guides+"/restore", nil), http.StatusNotFound)
+	wantStatus(t, mary.post(sp+"/delete/"+guides, nil), http.StatusSeeOther)
+	admin := e.login("alice")
+	if b := readBody(t, admin.get(sp+"/trash/"+guides+"/delete")); !strings.Contains(b, "Delete permanently") {
+		t.Fatalf("confirm page:\n%s", b)
+	}
+	wantStatus(t, admin.post(sp+"/trash/"+guides+"/delete", nil), http.StatusSeeOther)
+	if b := readBody(t, admin.get(sp+"/trash")); !strings.Contains(b, "The trash is empty.") {
+		t.Fatalf("trash after the permanent deletion:\n%s", b)
+	}
+
 	// Recent changes are in the administration. They show only documents
 	// that the user can read.
 	wantStatus(t, bob.get("/dflt/admin/recent"), http.StatusForbidden)
@@ -604,7 +635,7 @@ func TestTreeAndDocuments(t *testing.T) {
 
 	// The page header has a drop-down for new items. A document can
 	// contain only documents.
-	b := readBody(t, bob.get(sp+"/d/"+linux+"/install-on-linux"))
+	b = readBody(t, bob.get(sp+"/d/"+linux+"/install-on-linux"))
 	if !strings.Contains(b, "new?kind=document&amp;parent="+linux) || strings.Contains(b, "kind=folder") {
 		t.Fatalf("header buttons on a document page:\n%s", b)
 	}

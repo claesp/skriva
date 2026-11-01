@@ -59,6 +59,7 @@ These rules apply to the tree:
 | `/{tenant}/{space}/d/{id}/{slug}` | One folder or document. |
 | `/{tenant}/{space}/d/{id}` | Short link. It goes to the full link. |
 | `/{tenant}/{space}/w/{slug}` | The target of a wiki link. |
+| `/{tenant}/{space}/trash` | The trash of the space. |
 | `/{tenant}/{space}/files/{id}` | An uploaded image. A `POST` to `/{tenant}/{space}/files` uploads an image. |
 
 - The tenant code has exactly 4 characters from `a-z` and `0-9`, for
@@ -133,7 +134,7 @@ space `default0` ("Default").
 |--------------------|----------|
 | `tenants`          | Tenants and their settings. The client secret is encrypted. |
 | `spaces`           | Spaces. Each space belongs to one tenant. A space can have its own default role. |
-| `nodes`            | Folders and documents. `parent_id` makes the tree. An item can have its own default role. `access_path_id` points to the cached access path. |
+| `nodes`            | Folders and documents. `parent_id` makes the tree. An item can have its own default role. `access_path_id` points to the cached access path. `deleted_at` and `trash_id` mark the items in the trash. |
 | `access_paths`     | A cache: the access paths of the items of each space. See [Access control](access-control.md). |
 | `revisions`        | All versions of each node. |
 | `files`            | Uploaded images. The data is in the table. |
@@ -173,7 +174,24 @@ operations on the tree of one space cannot run at the same time. This
 prevents a cycle when two users move two folders into each other at the
 same time. A move checks the subtree with a recursive query.
 
-The deletion of a folder or a document also deletes its subtree.
+### Trash
+
+A deletion moves a node and its subtree into the trash. The server sets
+`deleted_at`, `deleted_by` and `trash_id` on each node of the subtree.
+`trash_id` is the node that the user deleted. Thus one trash item is
+one node with `trash_id = id`, and a restore clears the columns of all
+nodes with that `trash_id`. A node of the subtree that was in the trash
+already keeps its own `trash_id`. Thus it stays a separate trash item.
+
+All queries for the tree, the pages, the search, the wiki links and the
+files use only nodes with `deleted_at IS NULL`. The nodes in the trash
+keep their revisions, their files and their access paths.
+
+A restore puts the nodes back at their old place. If the parent is in
+the trash, the server refuses the restore. A permanent deletion removes
+the node. The foreign keys then remove the subtree, the revisions and
+the file references. The cleanup task permanently deletes the trash
+items that are older than 30 days (`store.TrashDays`).
 
 ### Document format
 

@@ -185,7 +185,9 @@ The server uses these permissions:
 | Make an item | `doc.create` for the new parent (or for the top level of the space) |
 | Edit or rename an item | `doc.edit` for the item |
 | Move an item | `doc.edit` for the item, and `doc.create` for the new parent |
-| Delete an item | `doc.delete` for the item and for each item in it |
+| Delete an item (move it into the trash) | `doc.delete` for the item and for each item in it |
+| See an item in the trash, or restore it | `doc.read` and `doc.delete` for the item at its old place |
+| Delete an item in the trash permanently | `doc.read`, `doc.delete` and `space.manage` for the item at its old place |
 | Change the access to an item | `tenant.manage` |
 
 If a user cannot read an item, the server shows "not found". Thus the
