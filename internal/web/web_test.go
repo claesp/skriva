@@ -1583,3 +1583,34 @@ func TestToolbarModes(t *testing.T) {
 		t.Fatalf("toolbar of the page:\n%s", b)
 	}
 }
+
+func TestAdminMenuShowsAllItems(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	wantStatus(t, alice.post("/dflt/admin/roles", url.Values{"name": {"spaces"}, "permission": {"doc.read", "space.manage"}}), http.StatusSeeOther)
+	dave := e.login("dave")
+	users, _ := e.st.Users(ctx, e.dft.ID)
+	for _, u := range users {
+		if u.Username == "dave" {
+			wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+				"role": {"spaces"}, "subject": {"user:" + strconv.FormatInt(u.ID, 10)},
+			}), http.StatusSeeOther)
+		}
+	}
+	// Dave can manage spaces only. The menu shows all items, and the
+	// items of the tenant administration are disabled.
+	b := readBody(t, dave.get("/dflt/admin/spaces"))
+	i := strings.Index(b, `<nav class="menu">`)
+	menu := b[i : i+strings.Index(b[i:], "</nav>")]
+	for _, want := range []string{
+		`title="Users (not available)"`, `title="Audit log (not available)"`,
+		`href="/dflt/admin/spaces" aria-current="page"`,
+	} {
+		if !strings.Contains(menu, want) {
+			t.Fatalf("menu does not contain %q:\n%s", want, menu)
+		}
+	}
+	if strings.Contains(menu, `href="/dflt/admin/users"`) {
+		t.Fatalf("menu has a link to the users:\n%s", menu)
+	}
+}

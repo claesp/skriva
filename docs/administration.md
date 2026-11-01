@@ -18,9 +18,11 @@ document, on the two levels:
 
 - The bar below the page header covers the full width. It shows the
   path at the left side and the toolbar of the item at the right side.
-- The menu at the left side shows the main sections, for example
-  **Users**, **Groups**, **Roles**, **Role bindings**, **Recent
-  changes** and **Spaces**.
+- The menu at the left side shows the main sections: **Users**,
+  **Groups**, **Roles**, **Role bindings**, **Recent changes**, **Audit
+  log** and **Spaces**. The menu always shows all sections. A section
+  that you do not have permission for is gray and has no link. For
+  example, a user with only `space.manage` can open **Spaces** only.
 - Each page has one function: a list, the data of one item, or one
   form.
 - The page of an item shows its data in a table. A section, for example

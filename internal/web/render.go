@@ -132,6 +132,9 @@ var funcs = template.FuncMap{
 		}
 		return t
 	},
+	"menuitem": func(enabled bool, href, icon, label string, current bool) menuArgs {
+		return menuArgs{enabled, href, icon, label, current}
+	},
 	// dtool is a disabled button in a toolbar.
 	"dtool": func(icon, label string) toolArgs { return toolArgs{Icon: icon, Label: label, Disabled: true} },
 	"ntool": func(currentTab, tab, href, closeURL, icon, label string) toolArgs {
@@ -181,6 +184,15 @@ func loadTemplates() (*templates, error) {
 		t.versions[name] = hex.EncodeToString(sum[:8])
 	}
 	return t, nil
+}
+
+// menuArgs is the argument of the template "menuitem".
+type menuArgs struct {
+	Enabled bool
+	Href    string
+	Icon    string
+	Label   string
+	Current bool
 }
 
 // spaceTopArgs is the argument of the template "spacetop". Tab is the

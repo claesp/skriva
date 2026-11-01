@@ -150,24 +150,25 @@
 <nav class="menu">
   <ul>
   {{if eq .Menu "system"}}
-    <li><a href="/admin/"{{if eq .Section "tenants"}} aria-current="page"{{end}}>{{template "icon" "tenant"}}Tenants</a></li>
-    <li><a href="/admin/audit"{{if eq .Section "audit"}} aria-current="page"{{end}}>{{template "icon" "audit"}}Audit log</a></li>
+    {{template "menuitem" (menuitem true "/admin/" "tenant" "Tenants" (eq .Section "tenants"))}}
+    {{template "menuitem" (menuitem true "/admin/audit" "audit" "Audit log" (eq .Section "audit"))}}
   {{else}}
-    {{if .Can "tenant.manage"}}
-    <li><a href="{{.TenantPath}}/admin/users"{{if eq .Section "users"}} aria-current="page"{{end}}>{{template "icon" "user"}}Users</a></li>
-    <li><a href="{{.TenantPath}}/admin/groups"{{if eq .Section "groups"}} aria-current="page"{{end}}>{{template "icon" "group"}}Groups</a></li>
-    <li><a href="{{.TenantPath}}/admin/roles"{{if eq .Section "roles"}} aria-current="page"{{end}}>{{template "icon" "role"}}Roles</a></li>
-    <li><a href="{{.TenantPath}}/admin/bindings"{{if eq .Section "bindings"}} aria-current="page"{{end}}>{{template "icon" "binding"}}Role bindings</a></li>
-    <li><a href="{{.TenantPath}}/admin/recent"{{if eq .Section "recent"}} aria-current="page"{{end}}>{{template "icon" "history"}}Recent changes</a></li>
-    <li><a href="{{.TenantPath}}/admin/audit"{{if eq .Section "audit"}} aria-current="page"{{end}}>{{template "icon" "audit"}}Audit log</a></li>
-    {{end}}
-    {{if .Can "space.manage"}}
-    <li><a href="{{.TenantPath}}/admin/spaces"{{if eq .Section "spaces"}} aria-current="page"{{end}}>{{template "icon" "space"}}Spaces</a></li>
-    {{end}}
+    {{$t := .Can "tenant.manage"}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/users") "user" "Users" (eq .Section "users"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/groups") "group" "Groups" (eq .Section "groups"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/roles") "role" "Roles" (eq .Section "roles"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/bindings") "binding" "Role bindings" (eq .Section "bindings"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/recent") "history" "Recent changes" (eq .Section "recent"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/audit") "audit" "Audit log" (eq .Section "audit"))}}
+    {{template "menuitem" (menuitem (.Can "space.manage") (print .TenantPath "/admin/spaces") "space" "Spaces" (eq .Section "spaces"))}}
   {{end}}
   </ul>
 </nav>
 {{end}}
+{{/* One item of the administration menu. The menu shows all items. An
+   item for a page that the user does not have permission for is
+   disabled: it has no link. The argument is a menuArgs. */}}
+{{define "menuitem"}}<li>{{if .Enabled}}<a href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{template "icon" .Icon}}{{.Label}}</a>{{else}}<span class="disabled" aria-disabled="true" title="{{.Label}} (not available)">{{template "icon" .Icon}}{{.Label}}</span>{{end}}</li>{{end}}
 {{define "tree"}}
 <ul class="tree">
   {{range .Nodes}}

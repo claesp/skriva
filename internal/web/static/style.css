@@ -749,7 +749,7 @@ td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
 /* The administration menu at the left side. */
 .menu ul { list-style: none; margin: 0; padding: 0; }
 .menu li { margin: 0.125rem 0; }
-.menu a {
+.menu a, .menu .disabled {
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -762,6 +762,9 @@ td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
 .menu a:hover { background: var(--panel); color: var(--accent); }
 .menu a[aria-current] { background: var(--panel); color: var(--accent); font-weight: 600; }
 .menu a[aria-current] .i { color: var(--accent); }
+/* A menu item for a page that the user does not have permission for. */
+.menu .disabled { color: var(--muted); opacity: 0.45; cursor: default; }
+.menu .disabled .i { width: 1.1rem; height: 1.1rem; }
 
 @media (max-width: 50rem) {
   .with-sidebar { grid-template-columns: minmax(0, 1fr); }

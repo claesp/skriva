@@ -81,7 +81,9 @@ and these guidelines for long-form text:
   a link, with "(not available)" in its name. It is not hidden. This
   applies to the toolbars of the space, of the administration pages and
   of the tables (for example the built-in roles, the OIDC groups and the
-  old versions). The template function `when` disables a button.
+  old versions). The template function `when` disables a button. The
+  menus of the administration also show all items. An item for a page
+  that the user does not have permission for is gray and has no link.
 - The toolbar of a folder or a document has the same buttons at the
   same places in all modes (the page, the forms and the form of a new
   item) and for all users. The user does not have to look for a button.
