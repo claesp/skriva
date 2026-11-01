@@ -199,6 +199,9 @@ type nodePage struct {
 	// SaveForm is the ID of the form of the page, or "". The bar at the
 	// top then has the Save button of the form.
 	SaveForm string
+	// NewIcon is the icon of the current button on the form of a new
+	// item.
+	NewIcon string
 }
 
 // loadNodePage loads the path and the tree for a page of node n. It also
@@ -500,6 +503,7 @@ func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status i
 	default:
 		reqInfoFrom(r.Context()).New = &newTarget{Folder: true}
 		f.Tree, err = s.tree(r, 0, nil)
+		f.CloseURL = base(r) + "/"
 	}
 	if err != nil {
 		s.serverError(w, r, err)
@@ -507,6 +511,7 @@ func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status i
 	}
 	if f.IsNew {
 		f.Crumb = "New " + f.Kind
+		f.NewIcon = "new-" + f.Kind
 	}
 	f.Editor = !f.IsFolder()
 	f.SaveForm = "nodeform"

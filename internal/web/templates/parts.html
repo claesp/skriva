@@ -190,10 +190,12 @@
     {{with .Data.Crumb}} / {{.}}{{end}}
   </nav>
   <nav class="toolbar" aria-label="Tools">
-    {{if .Data.Node}}{{template "nodetools" .}}{{end}}
-    {{/* The Save button of a form stays visible in the sticky bar. The
-       form attribute connects it to the form. */}}
-    {{with .Data.SaveForm}}<span class="group"><button type="submit" form="{{.}}" class="save">Save</button></span>{{end}}
+    {{if .Data.Node}}{{template "nodetools" .}}
+    {{else if .Data.SaveForm}}{{/* The form of a new item: the current
+       button goes back without a save. */}}<span class="group">
+      {{template "tool" (tab .Data.CloseURL .Data.NewIcon (print .Data.Crumb " (close)") true)}}
+      {{template "savebtn" .Data.SaveForm}}
+    </span>{{end}}
   </nav>
 </div>
 <aside class="sidebar" aria-label="Contents">
@@ -250,6 +252,12 @@
 <div class="main reading">
 {{end}}
 
+{{/* The Save button of a form in the sticky bar. It is next to the
+   current button of the form: that button goes back without a save. The
+   form attribute connects the button to the form. The argument is the
+   ID of the form. */}}
+{{define "savebtn"}}<button type="submit" form="{{.}}" class="save">Save</button>{{end}}
+
 {{define "nodefoot"}}
 </div>
 </div>
@@ -264,6 +272,7 @@
 {{$c := .Data.CloseURL}}
 {{if .Can "doc.edit"}}<span class="group">
   {{template "tool" (ntool $t "edit" (print .SpacePath "/edit/" $id) $c "edit" (or (and .Data.Node.IsFolder "Rename") "Edit"))}}
+  {{with .Data.SaveForm}}{{template "savebtn" .}}{{end}}
 </span>{{end}}
 {{if not .Data.Node.IsFolder}}<span class="group">
   {{template "tool" (ntool $t "history" (print .SpacePath "/history/" $id) $c "history" "History")}}
