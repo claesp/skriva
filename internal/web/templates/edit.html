@@ -22,9 +22,6 @@
   </div>
   {{end}}
   <label>Comment <input name="comment" value="{{.Comment}}" maxlength="500"></label>
-  <div class="buttons">
-    <button type="submit" name="action" value="save">Save</button>
-  </div>
 </form>
 {{if not .IsFolder}}<script src="{{.EditorURL}}" defer></script>{{end}}
 {{end}}

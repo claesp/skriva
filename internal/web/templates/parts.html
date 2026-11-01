@@ -191,6 +191,9 @@
   </nav>
   <nav class="toolbar" aria-label="Tools">
     {{if .Data.Node}}{{template "nodetools" .}}{{end}}
+    {{/* The Save button of a form stays visible in the sticky bar. The
+       form attribute connects it to the form. */}}
+    {{with .Data.SaveForm}}<span class="group"><button type="submit" form="{{.}}" class="save">Save</button></span>{{end}}
   </nav>
 </div>
 <aside class="sidebar" aria-label="Contents">

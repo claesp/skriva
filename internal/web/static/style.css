@@ -652,6 +652,9 @@ h1 .i { margin-right: 0.4em; width: 0.9em; height: 0.9em; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .toolbar .group { display: flex; gap: 0.125rem; }
 .toolbar .group + .group { padding-left: 0.25rem; border-left: 1px solid var(--line); }
+/* The Save button of a form in the bar at the top. It has the height of
+   the tool buttons. */
+.toolbar .save { height: 2.25rem; padding: 0 1rem; font-size: var(--ui-size); }
 .tool {
   display: inline-flex;
   align-items: center;

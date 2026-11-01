@@ -194,6 +194,9 @@ type nodePage struct {
 	Tree      []*store.TreeNode
 	// Editor is true on the form of a document.
 	Editor bool
+	// SaveForm is the ID of the form of the page, or "". The bar at the
+	// top then has the Save button of the form.
+	SaveForm string
 }
 
 // loadNodePage loads the path and the tree for a page of node n. It also
@@ -492,6 +495,7 @@ func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status i
 		f.Crumb = "New " + f.Kind
 	}
 	f.Editor = !f.IsFolder()
+	f.SaveForm = "nodeform"
 	if f.Editor {
 		// The upload checks the permission for the node, or for the
 		// parent of a new node.

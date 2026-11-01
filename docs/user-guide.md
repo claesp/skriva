@@ -87,7 +87,7 @@ moves. Only users with access to the tenant can open them.
 2. Click **New** in the page header, then **Document** or **Folder**.
 3. Type the title.
 4. For a document, type the text in the editor. See [The editor](#the-editor).
-5. Click **Save**.
+5. Click **Save** at the right side of the toolbar.
 
 The new item is in the folder or the document that you opened. A folder
 cannot be in a document.
@@ -101,11 +101,12 @@ document**.
 1. Click **Edit** (pencil) in the toolbar.
 2. Change the title or the text.
 3. Optionally, type a comment about the change in **Comment**.
-4. Click **Save**.
+4. Click **Save** at the right side of the toolbar.
 
 The edit page has the same tree, path and toolbar as the page of the
 document. The **Edit** button has a line below it. To stop without a
-save, click **Edit** again.
+save, click **Edit** again. The toolbar stays at the top when you
+scroll. Thus the **Save** button is always visible.
 
 If a different user saved the document after you started, the wiki does
 not save your text. Copy your text. Then open the document again and add
