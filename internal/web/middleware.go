@@ -26,8 +26,8 @@ type reqInfo struct {
 	// Access contains the permissions for the nodes of the space. It is
 	// nil outside a space and for anonymous requests.
 	Access *store.Access
-	// New is the place for the "New document" and "New folder" buttons
-	// in the page header. It is nil on pages without these buttons.
+	// New is the place for the items of the "New" drop-down
+	// in the page header. It is nil on pages without the drop-down.
 	New *newTarget
 }
 

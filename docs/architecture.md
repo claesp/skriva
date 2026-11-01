@@ -200,7 +200,7 @@ attributes:
 
 | Item | Permitted |
 |------|-----------|
-| Blocks | Paragraph, heading (levels 1 to 3), quotation, code block, horizontal line, bulleted list, numbered list, task list, image, table |
+| Blocks | Paragraph, heading (levels 1 to 8), quotation, code block, horizontal line, bulleted list, numbered list, task list, image, table |
 | Text formats (marks) | Bold, italic, underline, strikethrough, code, link |
 | Attributes | Alignment (center, right) of paragraphs and headings, language of a code block, start of a numbered list, checked state of a task, the source and the descriptions of an image, the number of columns and rows that a table cell covers |
 | Link destinations | `http`, `https`, `mailto`, `wiki:Title#Heading`, paths that start with one `/`, fragments |
@@ -214,8 +214,12 @@ nodes. The size limit of the tenant applies to the JSON text.
 The package converts a checked document to:
 
 - **HTML** for the document page. Alignment becomes a CSS class, for
-  example `align-center`, not an inline style. Headings of levels 1 to 3
-  become `h2` to `h4`, because the title of the page is the `h1`. The
+  example `align-center`, not an inline style. Headings of levels 1 to 5
+  become `h2` to `h6`, because the title of the page is the `h1`. HTML
+  has no `h7` to `h9` elements. Thus headings of levels 6 to 8 become
+  `p` elements with `role="heading"` and `aria-level` 7 to 9. Screen
+  readers know the level from these attributes. Each heading has the
+  class `level-1` to `level-8`, and the style sheet uses the class. The
   IDs of the headings use the slug algorithm. Thus `wiki:Title#Install &
   Run` and `wiki:Title#install & run` both go to the heading "Install &
   Run". After the conversion,

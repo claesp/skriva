@@ -44,8 +44,10 @@ const (
 	MaxNodes = 200000
 	// MaxHeadingLevel is the largest heading level. The page shows a
 	// heading of level n as an HTML heading of level n+1, because the
-	// title of the page is the h1 element.
-	MaxHeadingLevel = 3
+	// title of the page is the h1 element. HTML has no h7 to h9
+	// elements, thus levels 6 to 8 are paragraphs with the role
+	// "heading". See Links.HTML.
+	MaxHeadingLevel = 8
 	maxAttrText     = 500
 	maxCells        = 100
 )

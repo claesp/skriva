@@ -29,10 +29,15 @@
     {{if or (.Can "tenant.manage") (.Can "space.manage")}}<a href="{{.TenantPath}}/admin/{{if not (.Can "tenant.manage")}}spaces{{end}}">Administration</a>{{end}}
   </nav>
   {{if and .New .Space (.Can "doc.create")}}
-  <nav class="toolbar new" aria-label="New">
-    {{template "tool" (tool (print .SpacePath "/new" (.New.Query "document")) "new-document" "New document")}}
-    {{if .New.Folder}}{{template "tool" (tool (print .SpacePath "/new" (.New.Query "folder")) "new-folder" "New folder")}}{{end}}
-  </nav>
+  {{/* A drop-down for new items. The details element opens and closes
+     the list without JavaScript. */}}
+  <details class="newmenu">
+    <summary>{{template "icon" "new"}}New{{template "icon" "chevron-down"}}</summary>
+    <ul aria-label="New">
+      <li><a href="{{.SpacePath}}/new{{.New.Query "document"}}">{{template "icon" "new-document"}}<span>Document<small>A page with text, images and tables</small></span></a></li>
+      {{if .New.Folder}}<li><a href="{{.SpacePath}}/new{{.New.Query "folder"}}">{{template "icon" "new-folder"}}<span>Folder<small>A group of documents and folders</small></span></a></li>{{end}}
+    </ul>
+  </details>
   {{end}}
   <form class="search" action="{{if .Space}}{{.SpacePath}}{{else}}{{.TenantPath}}{{end}}/search" method="get" role="search">
     <input type="search" name="q" placeholder="Search{{if .Space}} in {{.Space.Name}}{{end}}" aria-label="Search" maxlength="200">
@@ -111,6 +116,7 @@
   <symbol id="i-header-row" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12M15 9v12M3 15h18"/><path d="M4 4h16v4H4z" fill="currentColor"/></symbol>
   <symbol id="i-table-remove" viewBox="0 0 24 24"><path d="M11 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 9h18M9 3v18M15 15l5 5M20 15l-5 5"/></symbol>
   <symbol id="i-new" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
   <symbol id="i-remove" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
   <symbol id="i-new-user" viewBox="0 0 24 24"><circle cx="10" cy="8" r="4"/><path d="M3 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/></symbol>

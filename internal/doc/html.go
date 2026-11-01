@@ -47,8 +47,11 @@ func (l Links) Src(src string) string {
 // policy is a second layer of protection after the HTML converter.
 var policy = func() *bluemonday.Policy {
 	p := bluemonday.UGCPolicy()
-	p.AllowAttrs("id").Matching(regexp.MustCompile(`^[a-z0-9-]+$`)).OnElements("h2", "h3", "h4")
-	p.AllowAttrs("class").Matching(regexp.MustCompile(`^align-(center|right)$`)).OnElements("p", "h2", "h3", "h4")
+	p.AllowAttrs("id").Matching(regexp.MustCompile(`^[a-z0-9-]+$`)).OnElements("p", "h2", "h3", "h4", "h5", "h6")
+	p.AllowAttrs("class").Matching(regexp.MustCompile(`^(level-[1-8] )?align-(center|right)$|^level-[1-8]$`)).
+		OnElements("p", "h2", "h3", "h4", "h5", "h6")
+	p.AllowAttrs("role").Matching(regexp.MustCompile(`^heading$`)).OnElements("p")
+	p.AllowAttrs("aria-level").Matching(regexp.MustCompile(`^[7-9]$`)).OnElements("p")
 	p.AllowAttrs("class").Matching(regexp.MustCompile(`^language-[a-zA-Z0-9+#_-]+$`)).OnElements("code")
 	p.AllowAttrs("class").Matching(regexp.MustCompile(`^tasks$`)).OnElements("ul")
 	p.AllowAttrs("class").Matching(regexp.MustCompile(`^task( done)?$`)).OnElements("li")
@@ -101,13 +104,36 @@ func alignClass(n *Node) string {
 	return ""
 }
 
+// htmlHeadingLevels is the number of heading levels that have an HTML
+// element. The title of the page is the h1 element, thus levels 1 to 5
+// are h2 to h6.
+const htmlHeadingLevels = 5
+
+// heading writes a heading of level n as an h(n+1) element. HTML has no
+// elements for levels 6 to 8. They are paragraphs with the role
+// "heading" and an aria-level, thus screen readers know the level. The
+// class "level-n" gives the style of each level.
+func (h *htmlWriter) heading(n *Node) {
+	level := n.level()
+	class := "level-" + strconv.Itoa(level)
+	if a := n.align(); a != "" {
+		class += " align-" + a
+	}
+	attrs := ` id="` + h.headingID(plainInline(n)) + `" class="` + class + `"`
+	tag := "h" + strconv.Itoa(level+1)
+	if level > htmlHeadingLevels {
+		tag = "p"
+		attrs += ` role="heading" aria-level="` + strconv.Itoa(level+1) + `"`
+	}
+	h.wrap(tag, attrs, n)
+}
+
 func (h *htmlWriter) node(n *Node) {
 	switch n.Type {
 	case "paragraph":
 		h.wrap("p", alignClass(n), n)
 	case "heading":
-		tag := "h" + strconv.Itoa(n.level()+1)
-		h.wrap(tag, ` id="`+h.headingID(plainInline(n))+`"`+alignClass(n), n)
+		h.heading(n)
 	case "text":
 		h.text(n)
 	case "hardBreak":

@@ -37,7 +37,8 @@ func (m *mdWriter) block(n *Node, first, prefix string) {
 	case "paragraph":
 		m.lines(first, prefix, m.inline(n))
 	case "heading":
-		m.lines(first, prefix, strings.Repeat("#", n.level())+" "+strings.ReplaceAll(m.inline(n), "\n", " "))
+		// Markdown has six heading levels. Levels 7 and 8 become level 6.
+		m.lines(first, prefix, strings.Repeat("#", min(n.level(), 6))+" "+strings.ReplaceAll(m.inline(n), "\n", " "))
 	case "horizontalRule":
 		m.lines(first, prefix, "---")
 	case "blockquote":

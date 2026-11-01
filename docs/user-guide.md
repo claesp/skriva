@@ -28,13 +28,14 @@ Click the small arrow at the left of an item to open or close it in the
 tree. The page of a space and the page of a folder show their items in a
 table.
 
-## Buttons for new items
+## The New button
 
-The page header contains **New document** (page with +) and **New
-folder** (folder with +), at the left of the search field. The new item
-goes into the space, the folder or the document that you have open.
-**New folder** is not available on a document page, because a folder
-cannot be in a document.
+The page header contains the blue **New** button, at the left of the
+search field. Click it to open a list of the items that you can make:
+**Document** and **Folder**. The new item goes into the space, the
+folder or the document that you have open. **Folder** is not in the
+list on a document page, because a folder cannot be in a document.
+Click **New** again to close the list.
 
 ## Toolbar
 
@@ -82,7 +83,7 @@ moves. Only users with access to the tenant can open them.
 ## Make a document or a folder
 
 1. Open the space, a folder or a document.
-2. Click **New document** or **New folder** in the page header.
+2. Click **New** in the page header, then **Document** or **Folder**.
 3. Type the title.
 4. For a document, type the text in the editor. See [The editor](#the-editor).
 5. Click **Save**.
@@ -153,7 +154,7 @@ a format that applies at the cursor has a gray background.
 | Button | Action |
 |--------|--------|
 | Undo, Redo | Undo or redo a change. |
-| Type of text | Normal text, or a heading of level 1, 2 or 3. |
+| Type of text | Normal text, or a heading of level 1 to 8. |
 | Bold, Italic, Underline, Strikethrough, Code | Format the selected text. |
 | Align left, Align center, Align right | Align the paragraph or the heading. |
 | Bulleted list, Numbered list, Task list | Start or stop a list. Tab and Shift+Tab change the level of an item. |
@@ -177,7 +178,7 @@ You can also use the keyboard and some Markdown syntax:
 | Ctrl+B, Ctrl+I, Ctrl+U | Bold, italic, underline. |
 | Ctrl+K | Add or change a link. |
 | Ctrl+Z, Ctrl+Shift+Z | Undo, redo. |
-| `#`, `##` or `###` and a space at the start of a line | A heading. |
+| `#` to `########` and a space at the start of a line | A heading of level 1 to 8. |
 | `-` or `*` and a space | A bulleted list. |
 | `1.` and a space | A numbered list. |
 | `[ ]` and a space | A task list. |
@@ -187,6 +188,26 @@ You can also use the keyboard and some Markdown syntax:
 | `[[Title]]` | A wiki link. |
 
 On a Mac, use Cmd in place of Ctrl.
+
+### Headings
+
+There are eight heading levels. Use level 1 for the main parts of a
+document, and the next levels for the parts in them. Do not skip a
+level. Screen readers use the levels to show the structure.
+
+| Level | Style |
+|-------|-------|
+| 1 | Large |
+| 2 | Medium, italic |
+| 3 | Small, semibold |
+| 4 | Text size, bold |
+| 5 | Text size, bold and italic |
+| 6 | Capitals, bold, with letter spacing |
+| 7 | Capitals, normal weight, with more letter spacing |
+| 8 | Text size, italic, gray |
+
+The Markdown source has six heading levels. Levels 7 and 8 show as
+level 6 in the source.
 
 ### Links
 

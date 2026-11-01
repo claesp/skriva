@@ -602,14 +602,14 @@ func TestTreeAndDocuments(t *testing.T) {
 		t.Fatalf("redirect to %q", loc)
 	}
 
-	// The page header has the buttons for new items. A document can
+	// The page header has a drop-down for new items. A document can
 	// contain only documents.
 	b := readBody(t, bob.get(sp+"/d/"+linux+"/install-on-linux"))
 	if !strings.Contains(b, "new?kind=document&amp;parent="+linux) || strings.Contains(b, "kind=folder") {
 		t.Fatalf("header buttons on a document page:\n%s", b)
 	}
 	b = readBody(t, bob.get(sp+"/"))
-	if !strings.Contains(b, `new?kind=document"`) || !strings.Contains(b, `new?kind=folder"`) {
+	if !strings.Contains(b, `<details class="newmenu">`) || !strings.Contains(b, `new?kind=document"`) || !strings.Contains(b, `new?kind=folder"`) {
 		t.Fatalf("header buttons on the space page:\n%s", b)
 	}
 

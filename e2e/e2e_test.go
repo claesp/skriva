@@ -110,7 +110,7 @@ func TestTenantDocumentsAndRBAC(t *testing.T) {
 		"title": {"E2E doc " + stamp}, "action": {"save"},
 		"body": {`{"type":"doc","content":[{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"From the e2e test"}]}]}`}})
 	wantCode(t, resp, body, http.StatusOK)
-	if !strings.Contains(body, `<h2 id="from-the-e2e-test">From the e2e test</h2>`) || !strings.Contains(body, "E2E folder "+stamp) {
+	if !strings.Contains(body, `<h2 id="from-the-e2e-test" class="level-1">From the e2e test</h2>`) || !strings.Contains(body, "E2E folder "+stamp) {
 		t.Fatalf("document page:\n%s", body)
 	}
 	doc := docIDRE.FindStringSubmatch(resp.Request.URL.Path)[1]

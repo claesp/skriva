@@ -19,13 +19,23 @@ and these guidelines for long-form text:
 | Font | Source Serif 4. The fallback fonts are Charter, Sitka Text, Cambria, Palatino and Georgia. | Tufte CSS uses a serif font for the text. The server supplies the font, thus all systems show the same font. See [Fonts](fonts.md). |
 | Size | 18 px on small screens to 22 px on large screens (1.125rem to 1.375rem). | Butterick recommends 15 to 25 px on the web. |
 | Line height | 1.6 | WCAG 1.4.8 recommends at least 1.5. |
-| Line length | 40rem to 64rem. The width increases with the width of the window. This is approximately 40 characters on a telephone, 75 characters on a 1440 px screen and up to 90 characters on very large screens. | The guidelines recommend 45 to 75 characters, and WCAG 1.4.8 permits a maximum of 80. Large screens use more of the width, by decision of the project. |
+| Line length | 75% of the window, from 40rem to 90rem. On a small window, the text uses all of the column. This is approximately 40 characters on a telephone and 125 characters on a 1440 px screen. | By decision of the project: the text uses most of the width on large screens. The guidelines recommend 45 to 75 characters, and WCAG 1.4.8 permits a maximum of 80. |
 | Paragraph space | 1.25em below each paragraph. | The space between paragraphs must be larger than the space between lines. |
 | Alignment | Left. No justification. | WCAG 1.4.8 does not permit justified text. |
-| Headings | Levels 1 and 2: normal weight, italic. Level 3: bold. The editor shows the headings with the same styles. | As in Tufte CSS. |
+| Headings | Eight levels. Levels 1 to 3 are larger than the text: normal weight (1), italic (2), semibold (3). Levels 4 to 8 are not smaller than the text, or they use capitals: bold (4), bold italic (5), bold capitals with letter spacing (6), normal capitals with more letter spacing (7), gray italic (8). The editor shows the headings with the same styles. | Size, weight, italic, capitals and spacing make each level different. Small headings are difficult to see, thus levels 4 to 8 do not use a smaller size. The fonts do not contain small capitals. |
 | Links | The color of the text, with a thin underline. | The underline identifies the link. The color does not interrupt the reading. |
 | Tables | Sans-serif font, smaller size. | As in Tufte CSS. |
 | Colors | Text `#111111` on `#fffff8`. Dark mode: `#dddddd` on `#151515`. | High contrast, as in Tufte CSS. |
+
+## Rules for the interface
+
+- The interface text is one step smaller than the browser size: 15 px
+  for the normal text and 13 px for menus, the tree, toolbars and notes
+  (at the default browser size of 16 px). The document text and the
+  title of a document do not change.
+- The **New** button in the page header has the accent color. It opens
+  a list of the items that the user can make. The list is a `details`
+  element, thus it does not need JavaScript.
 
 ## Other rules
 

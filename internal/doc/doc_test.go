@@ -2,6 +2,7 @@ package doc
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -40,11 +41,11 @@ func TestParseRemovesItemsThatAreNotPermitted(t *testing.T) {
 		`{"type":"text","text":"b"},` +
 		`{"type":"text","marks":[{"type":"link","attrs":{"href":"https://example.com"}}],"text":"c"}]},` +
 		`{"type":"image","attrs":{"alt":"x","src":"file:0123456789abcd"}},` +
-		`{"type":"heading","attrs":{"level":3}},` +
+		`{"type":"heading","attrs":{"level":8}},` +
 		`{"type":"table","content":[{"type":"tableRow","content":[{"type":"tableCell","attrs":{"colspan":2}}]}]}]}`
 	// The heading keeps its text.
-	want = strings.Replace(want, `{"type":"heading","attrs":{"level":3}}`,
-		`{"type":"heading","attrs":{"level":3},"content":[{"type":"text","text":"H"}]}`, 1)
+	want = strings.Replace(want, `{"type":"heading","attrs":{"level":8}}`,
+		`{"type":"heading","attrs":{"level":8},"content":[{"type":"text","text":"H"}]}`, 1)
 	if got != want {
 		t.Fatalf("Parse:\n got %s\nwant %s", got, want)
 	}
@@ -135,17 +136,54 @@ const sample = `{"type":"doc","content":[
 func TestHTML(t *testing.T) {
 	got := string(mustParse(t, sample).HTML(links))
 	for _, want := range []string{
-		`<h2 id="intro">Intro</h2>`,
+		`<h2 id="intro" class="level-1">Intro</h2>`,
 		`<p class="align-right">Plain <strong>bold</strong> and <a href="/t/s/w/start" rel="nofollow noreferrer">Start</a> &lt;x&gt; <u>u</u></p>`,
 		`<ul><li><p>one</p><ol start="3"><li><p>two</p></li></ol></li></ul>`,
 		`<ul class="tasks"><li class="task done"><input type="checkbox" disabled="" checked=""><p>done</p></li></ul>`,
 		`<pre><code class="language-go">a &lt; b</code></pre>`,
 		`<img src="/t/s/files/0123456789abcd" alt="Logo" loading="lazy">`,
 		`<div class="table"><table><tbody><tr><th colspan="2"><p>H|1</p></th></tr>`,
-		`<h3 id="intro-1">Intro</h3>`,
+		`<h3 id="intro-1" class="level-2">Intro</h3>`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("HTML does not contain\n%s\nin\n%s", want, got)
+		}
+	}
+}
+
+// TestHeadingLevels checks the HTML and the Markdown of all heading
+// levels. Levels 6 to 8 have no HTML element.
+func TestHeadingLevels(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"type":"doc","content":[`)
+	for level := 1; level <= 8; level++ {
+		if level > 1 {
+			b.WriteString(",")
+		}
+		align := ""
+		if level == 7 {
+			align = `,"textAlign":"center"`
+		}
+		fmt.Fprintf(&b, `{"type":"heading","attrs":{"level":%d%s},"content":[{"type":"text","text":"L%d"}]}`, level, align, level)
+	}
+	b.WriteString("]}")
+	d := mustParse(t, b.String())
+	got := string(d.HTML(links))
+	for _, want := range []string{
+		`<h2 id="l1" class="level-1">L1</h2>`,
+		`<h6 id="l5" class="level-5">L5</h6>`,
+		`<p id="l6" class="level-6" role="heading" aria-level="7">L6</p>`,
+		`<p id="l7" class="level-7 align-center" role="heading" aria-level="8">L7</p>`,
+		`<p id="l8" class="level-8" role="heading" aria-level="9">L8</p>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("HTML does not contain\n%s\nin\n%s", want, got)
+		}
+	}
+	md := d.Markdown(links)
+	for _, want := range []string{"# L1\n", "\n###### L6\n", "\n###### L8\n"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("Markdown does not contain %q in\n%s", want, md)
 		}
 	}
 }

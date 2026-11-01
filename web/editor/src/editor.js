@@ -49,18 +49,40 @@ const Align = Extension.create({
 
 // SkrivaHeading shows a heading with the element of the document page.
 // The title of the page is the h1 element. Thus heading level 1 is an
-// h2 element, level 2 is h3 and level 3 is h4. The editor then uses the
-// same styles as the page. Pasted headings h1 to h6 become levels 1 to 3.
-const HEADING_TAGS = { h1: 1, h2: 1, h3: 2, h4: 3, h5: 3, h6: 3 }
+// h2 element and level 5 is h6. HTML has no h7 to h9 elements, thus
+// levels 6 to 8 are paragraphs with the role "heading". The class
+// "level-n" gives the style. The editor then uses the same styles as the
+// page. See internal/doc/html.go.
+const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8]
+const HTML_LEVELS = 5
+// Pasted headings h1 to h6 become levels 1 to 5.
+const HEADING_TAGS = { h1: 1, h2: 1, h3: 2, h4: 3, h5: 4, h6: 5 }
 const SkrivaHeading = Heading.extend({
   parseHTML() {
-    return Object.entries(HEADING_TAGS).map(([tag, level]) => ({ tag, attrs: { level } }))
+    return [
+      ...Object.entries(HEADING_TAGS).map(([tag, level]) => ({ tag, attrs: { level } })),
+      {
+        tag: 'p[role="heading"]',
+        priority: 60,
+        getAttrs: (el) => {
+          const level = Number(el.getAttribute('aria-level')) - 1
+          return LEVELS.includes(level) && level > HTML_LEVELS ? { level } : false
+        },
+      },
+    ]
   },
   renderHTML({ node, HTMLAttributes }) {
-    const level = this.options.levels.includes(node.attrs.level) ? node.attrs.level : this.options.levels[0]
-    return ['h' + (level + 1), mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), 0]
+    const level = LEVELS.includes(node.attrs.level) ? node.attrs.level : 1
+    const attrs = { class: 'level-' + level }
+    let tag = 'h' + (level + 1)
+    if (level > HTML_LEVELS) {
+      tag = 'p'
+      attrs.role = 'heading'
+      attrs['aria-level'] = String(level + 1)
+    }
+    return [tag, mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, attrs), 0]
   },
-}).configure({ levels: [1, 2, 3] })
+}).configure({ levels: LEVELS })
 
 // KeptSelection shows the selected text while the focus is in a field
 // out of the editor, for example the link bar. The browser does not show
@@ -348,7 +370,7 @@ function start(root) {
       if (commands[name]) btn.disabled = !commands[name](editor.can().chain().focus()).run()
     }
     tableGroup.hidden = !editor.isActive('table')
-    const level = [1, 2, 3].find((l) => editor.isActive('heading', { level: l }))
+    const level = LEVELS.find((l) => editor.isActive('heading', { level: l }))
     block.value = level ? String(level) : 'paragraph'
   }
 
