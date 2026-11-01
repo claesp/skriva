@@ -22,8 +22,13 @@ type Config struct {
 	ListenAddr  string
 	BaseURL     *url.URL
 	DatabaseURL string
-	// EncryptionKey encrypts the OIDC client secrets of the tenants.
+	// EncryptionKey is the key encryption key (KEK). It encrypts the OIDC
+	// client secrets of the tenants and the keys of the tenants.
 	EncryptionKey []byte
+	// PreviousEncryptionKey is the old KEK after a change of the KEK, or
+	// nil. At start, the server encrypts all keys and secrets of the old
+	// KEK again with the new KEK.
+	PreviousEncryptionKey []byte
 
 	// The OIDC provider for system administrators. At the first start,
 	// the default tenant also gets these settings.
@@ -95,6 +100,14 @@ func load(getenv func(string) string) (*Config, error) {
 	default:
 		if c.EncryptionKey, err = secret.ParseKey(keyText); err != nil {
 			errs = append(errs, fmt.Errorf("SKRIVA_ENCRYPTION_KEY: %w", err))
+		}
+	}
+	switch prevText, err := fromEnvOrFile(getenv, "SKRIVA_ENCRYPTION_KEY_PREVIOUS"); {
+	case err != nil:
+		errs = append(errs, err)
+	case prevText != "":
+		if c.PreviousEncryptionKey, err = secret.ParseKey(prevText); err != nil {
+			errs = append(errs, fmt.Errorf("SKRIVA_ENCRYPTION_KEY_PREVIOUS: %w", err))
 		}
 	}
 

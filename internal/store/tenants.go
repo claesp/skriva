@@ -3,10 +3,13 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/clpe/skriva/internal/secret"
 )
 
 // Tenant is the main organizational unit. Each tenant has its own
@@ -276,6 +279,42 @@ func checkRole(ctx context.Context, q querier, tenantID int64, name string) erro
 	}
 	if !ok {
 		return ErrInvalid
+	}
+	return nil
+}
+
+// rewrapClientSecrets encrypts the client secrets that use the previous
+// key again with the current key.
+func (s *Store) rewrapClientSecrets(ctx context.Context, tx pgx.Tx, previous *secret.Box) error {
+	rows, err := tx.Query(ctx, "SELECT id, code, oidc_client_secret FROM tenants WHERE oidc_client_secret IS NOT NULL FOR UPDATE")
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id   int64
+		code string
+		data []byte
+	}
+	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
+		var x row
+		err := r.Scan(&x.id, &x.code, &x.data)
+		return x, err
+	})
+	if err != nil {
+		return err
+	}
+	for _, x := range list {
+		if _, err := s.box.Open(x.data, secretContext(x.code)); err == nil {
+			continue
+		}
+		plain, err := previous.Open(x.data, secretContext(x.code))
+		if err != nil {
+			return fmt.Errorf("client secret of tenant %s: %w", x.code, err)
+		}
+		if _, err := tx.Exec(ctx, "UPDATE tenants SET oidc_client_secret = $2 WHERE id = $1",
+			x.id, s.box.Seal(plain, secretContext(x.code))); err != nil {
+			return err
+		}
 	}
 	return nil
 }

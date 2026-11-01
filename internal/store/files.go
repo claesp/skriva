@@ -23,9 +23,17 @@ type File struct {
 // of the file. The caller must check the content type and the size.
 func (s *Store) CreateFile(ctx context.Context, spaceID int64, contentType string, data []byte, userID int64) (string, error) {
 	publicID := NewPublicID()
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO files (space_id, public_id, content_type, data, created_by, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`, spaceID, publicID, contentType, data, nullID(userID), s.now())
+	tenantID, err := s.tenantOfSpace(ctx, spaceID)
+	if err != nil {
+		return "", err
+	}
+	sealed, version, err := s.seal(ctx, tenantID, filePlace(spaceID, publicID), data)
+	if err != nil {
+		return "", err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO files (space_id, public_id, content_type, data, key_version, created_by, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`, spaceID, publicID, contentType, sealed, version, nullID(userID), s.now())
 	if err != nil {
 		return "", err
 	}
@@ -48,6 +56,9 @@ func (s *Store) File(ctx context.Context, spaceID int64, publicID string) (*File
 	}
 	if createdBy != nil {
 		f.CreatedBy = *createdBy
+	}
+	if f.Data, err = s.openBytes(ctx, spaceID, filePlace(spaceID, f.PublicID), f.Data); err != nil {
+		return nil, err
 	}
 	return &f, nil
 }

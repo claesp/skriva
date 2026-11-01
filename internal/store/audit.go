@@ -41,6 +41,7 @@ const (
 	AuditTenantCreate         = "tenant.create"
 	AuditTenantUpdate         = "tenant.update"
 	AuditTenantDelete         = "tenant.delete"
+	AuditTenantKeyRotate      = "tenant.key_rotate"
 )
 
 type actorKey struct{}

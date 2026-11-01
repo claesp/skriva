@@ -78,6 +78,26 @@ At the same time, it permanently deletes the items that are in the
 trash for more than 30 days, the audit events that are older than 365
 days, and the uploaded images that no document uses after one day.
 
+## Encryption keys
+
+The content of the documents is encrypted with keys of the tenants. The
+keys are encrypted with `SKRIVA_ENCRYPTION_KEY`. See
+[Security: encryption at rest](security.md#encryption-at-rest).
+
+- **Keep the key safe.** Without the key, nobody can read the documents,
+  also not from a backup. Keep a copy of the key in a safe place, apart
+  from the backups.
+- **New data key for a tenant.** Open the system administration, the
+  tenant, then **Make a new data key** in **Encryption**. The cleanup
+  task (every 10 minutes) encrypts the old values again. The tenant page
+  shows the number of values that still use an old key.
+- **New key encryption key.** Make a new key (`openssl rand -base64 32`).
+  Set it in `SKRIVA_ENCRYPTION_KEY`, and the old key in
+  `SKRIVA_ENCRYPTION_KEY_PREVIOUS`. Start the server. The log tells when
+  the server wrapped the keys again. Then remove
+  `SKRIVA_ENCRYPTION_KEY_PREVIOUS` and destroy the old key. With more than
+  one server, start one server with both keys first.
+
 ## Backup
 
 All data is in PostgreSQL, also the uploaded images. Also make a backup of the encryption key.

@@ -37,6 +37,7 @@ var auditActions = map[string]string{
 	store.AuditClassificationUpdate: "Changed a classification",
 	store.AuditClassificationDelete: "Deleted a classification",
 	store.AuditNodeClassify:         "Changed the classification of a document",
+	store.AuditTenantKeyRotate:      "Made a new data key",
 	store.AuditTenantCreate:         "Made a tenant",
 	store.AuditTenantUpdate:         "Changed a tenant",
 	store.AuditTenantDelete:         "Deleted a tenant",

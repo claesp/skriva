@@ -29,13 +29,14 @@ func BenchmarkAccessLargeSpace(b *testing.B) {
 	if _, err := pool.Exec(ctx, `
 		WITH root AS (SELECT id FROM access_paths WHERE space_id = $1 AND path = '{}'),
 		folders AS (
-			INSERT INTO nodes (public_id, space_id, kind, title, slug, body, access_path_id)
-			SELECT 'F' || lpad(g::text, 11, '0'), $1, 'folder', 'Folder ' || g, 'folder-' || g, '', (SELECT id FROM root)
+			INSERT INTO nodes (public_id, space_id, kind, title, slug, body, plain_text, key_version, access_path_id)
+			SELECT 'f' || lpad(g::text, 13, '0'), $1, 'folder', 'Folder ' || g, 'folder-' || g, '', '', 1, (SELECT id FROM root)
 			FROM generate_series(1, 100) g RETURNING id, public_id)
-		INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug, body, access_path_id)
-		SELECT 'D' || lpad((f.id * 1000 + g)::text, 11, '0'), $1, f.id, 'document', 'Doc ' || g, 'doc-' || g, 'text',
-		       (SELECT id FROM root)
-		FROM folders f, generate_series(1, 499) g`, sp.ID); err != nil {
+		INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug, body, plain_text, key_version,
+		                   access_path_id, classification_id)
+		SELECT 'd' || lpad((f.id * 1000 + g)::text, 13, '0'), $1, f.id, 'document', 'Doc ' || g, 'doc-' || g, '', '', 1,
+		       (SELECT id FROM root), (SELECT id FROM classifications WHERE tenant_id = $2 AND is_default)
+		FROM folders f, generate_series(1, 499) g`, sp.ID, tn.ID); err != nil {
 		b.Fatal(err)
 	}
 	// Each folder gets its own default role. Then the cache has 101 paths.
@@ -46,13 +47,11 @@ func BenchmarkAccessLargeSpace(b *testing.B) {
 	if err := st.RebuildAccessPaths(ctx, sp.ID); err != nil {
 		b.Fatal(err)
 	}
-	var docID string
-	if err := pool.QueryRow(ctx, `SELECT public_id FROM nodes
-		WHERE space_id = $1 AND kind = 'document' LIMIT 1`, sp.ID).Scan(&docID); err != nil {
-		b.Fatal(err)
-	}
-	n, err := st.Node(ctx, sp.ID, docID)
-	if err != nil {
+	// The nodes have no encrypted content. The benchmark needs only the
+	// access path of a document.
+	var pathID int64
+	if err := pool.QueryRow(ctx, `SELECT access_path_id FROM nodes
+		WHERE space_id = $1 AND kind = 'document' LIMIT 1`, sp.ID).Scan(&pathID); err != nil {
 		b.Fatal(err)
 	}
 
@@ -62,7 +61,7 @@ func BenchmarkAccessLargeSpace(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if !a.Can(n.AccessPathID, rbac.DocEdit) {
+		if !a.Can(pathID, rbac.DocEdit) {
 			b.Fatal("the folder default role does not apply")
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -224,6 +225,7 @@ var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 // Node returns the node with the given public ID in a space.
 func (s *Store) Node(ctx context.Context, spaceID int64, publicID string) (*Node, error) {
 	var n Node
+	var body []byte
 	err := s.pool.QueryRow(ctx, `
 		SELECT n.id, n.public_id, n.space_id, n.parent_id, n.kind, n.title, n.slug, n.body,
 		       n.version, n.default_role, n.access_path_id, n.created_at, n.updated_at,
@@ -232,13 +234,77 @@ func (s *Store) Node(ctx context.Context, spaceID int64, publicID string) (*Node
 		FROM nodes n LEFT JOIN users u ON u.id = n.updated_by
 		LEFT JOIN classifications c ON c.id = n.classification_id
 		WHERE n.space_id = $1 AND n.public_id = $2 AND n.deleted_at IS NULL`, spaceID, publicID,
-	).Scan(&n.ID, &n.PublicID, &n.SpaceID, &n.ParentID, &n.Kind, &n.Title, &n.Slug, &n.Body,
+	).Scan(&n.ID, &n.PublicID, &n.SpaceID, &n.ParentID, &n.Kind, &n.Title, &n.Slug, &body,
 		&n.Version, &n.DefaultRole, &n.AccessPathID, &n.CreatedAt, &n.UpdatedAt, &n.UpdatedBy,
 		&n.ClassificationID, &n.Classification)
 	if err != nil {
 		return nil, notFound(err)
 	}
+	if n.Body, err = s.openText(ctx, spaceID, bodyPlace(spaceID, publicID), body); err != nil {
+		return nil, err
+	}
 	return &n, nil
+}
+
+// The places of the encrypted values, for the associated data. They must
+// agree with the queries of ReencryptBatch.
+func bodyPlace(spaceID int64, publicID string) string {
+	return "nodes.body:" + strconv.FormatInt(spaceID, 10) + ":" + publicID
+}
+
+func plainTextPlace(spaceID int64, publicID string) string {
+	return "nodes.plain_text:" + strconv.FormatInt(spaceID, 10) + ":" + publicID
+}
+
+func revisionPlace(spaceID int64, publicID string, version int) string {
+	return "revisions.body:" + strconv.FormatInt(spaceID, 10) + ":" + publicID + ":" + strconv.Itoa(version)
+}
+
+func filePlace(spaceID int64, publicID string) string {
+	return "files.data:" + strconv.FormatInt(spaceID, 10) + ":" + publicID
+}
+
+// openText decrypts a text value of a space.
+func (s *Store) openText(ctx context.Context, spaceID int64, place string, data []byte) (string, error) {
+	plain, err := s.openBytes(ctx, spaceID, place, data)
+	return string(plain), err
+}
+
+// openBytes decrypts a value of a space.
+func (s *Store) openBytes(ctx context.Context, spaceID int64, place string, data []byte) ([]byte, error) {
+	tenantID, err := s.tenantOfSpace(ctx, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	return s.open(ctx, tenantID, place, data)
+}
+
+// sealedContent is the encrypted content of a version of a node.
+type sealedContent struct {
+	body, plainText, revision []byte
+	version                   int
+	tokens                    []int64
+}
+
+// sealContent encrypts the content of version v of a node and makes the
+// search index from the title and the plain text.
+func (s *Store) sealContent(ctx context.Context, spaceID int64, publicID string, v int, title string, c Content) (*sealedContent, error) {
+	tenantID, err := s.tenantOfSpace(ctx, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	tk, err := s.tenantKeys(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	aead := tk.data[tk.current]
+	return &sealedContent{
+		body:      sealWith(aead, tk.current, tenantID, bodyPlace(spaceID, publicID), []byte(c.Body)),
+		plainText: sealWith(aead, tk.current, tenantID, plainTextPlace(spaceID, publicID), []byte(c.PlainText)),
+		revision:  sealWith(aead, tk.current, tenantID, revisionPlace(spaceID, publicID, v), []byte(c.Body)),
+		version:   tk.current,
+		tokens:    searchTokens(tk.search, title+"\n"+c.PlainText),
+	}, nil
 }
 
 // nullID returns nil for 0. The author columns use NULL for "no user".
@@ -329,7 +395,11 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 		nn.Content = Content{Body: emptyBody}
 	}
 	publicID := NewPublicID()
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	sealed, err := s.sealContent(ctx, spaceID, publicID, 1, nn.Title, nn.Content)
+	if err != nil {
+		return "", err
+	}
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		if err := lockSpace(ctx, tx, spaceID); err != nil {
 			return err
 		}
@@ -351,12 +421,13 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 		// A new node has no own access settings. Thus it gets the access
 		// path of its parent.
 		err = tx.QueryRow(ctx, `
-			INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug, body, plain_text, version,
-			                   created_by, updated_by, created_at, updated_at, access_path_id, classification_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $9, $10, $10, $11, $12)
+			INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug, body, plain_text, key_version,
+			                   search_tokens, version, created_by, updated_by, created_at, updated_at,
+			                   access_path_id, classification_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $11, $12, $12, $13, $14)
 			RETURNING id`,
-			publicID, spaceID, parentID, nn.Kind, nn.Title, nn.Slug, nn.Body, nn.PlainText,
-			nullID(nn.AuthorID), now, pathID, classID).Scan(&id)
+			publicID, spaceID, parentID, nn.Kind, nn.Title, nn.Slug, sealed.body, sealed.plainText, sealed.version,
+			sealed.tokens, nullID(nn.AuthorID), now, pathID, classID).Scan(&id)
 		if err != nil {
 			return err
 		}
@@ -364,8 +435,9 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 			return err
 		}
 		_, err = tx.Exec(ctx, `
-			INSERT INTO revisions (node_id, version, title, body, author_id, comment, classification, created_at)
-			VALUES ($1, 1, $2, $3, $4, $5, $6, $7)`, id, nn.Title, nn.Body, nullID(nn.AuthorID), nn.Comment, className, now)
+			INSERT INTO revisions (node_id, version, title, body, key_version, author_id, comment, classification, created_at)
+			VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8)`,
+			id, nn.Title, sealed.revision, sealed.version, nullID(nn.AuthorID), nn.Comment, className, now)
 		if err != nil {
 			return err
 		}
@@ -394,30 +466,40 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 			}
 			newClass = &cid
 		}
-		// The old classification, for the audit log.
+		// The old classification, for the audit log. A folder has no
+		// content.
 		var oldClass string
+		var folder bool
 		if err := tx.QueryRow(ctx, `
-			SELECT COALESCE(c.name, '') FROM nodes n LEFT JOIN classifications c ON c.id = n.classification_id
-			WHERE n.space_id = $1 AND n.public_id = $2`, spaceID, publicID).Scan(&oldClass); err != nil {
+			SELECT COALESCE(c.name, ''), n.kind = 'folder'
+			FROM nodes n LEFT JOIN classifications c ON c.id = n.classification_id
+			WHERE n.space_id = $1 AND n.public_id = $2`, spaceID, publicID).Scan(&oldClass, &folder); err != nil {
 			return notFound(err)
+		}
+		if folder {
+			u.Content = Content{Body: emptyBody}
+		}
+		// The new version is BaseVersion+1: the update applies only to
+		// that version.
+		sealed, err := s.sealContent(ctx, spaceID, publicID, u.BaseVersion+1, u.Title, u.Content)
+		if err != nil {
+			return err
 		}
 		now := s.now()
 		var id int64
 		var version int
-		var body, className string
-		var folder bool
-		err := tx.QueryRow(ctx, `
-			UPDATE nodes n SET title = $4, slug = $5,
-			                 body = CASE WHEN kind = 'folder' THEN $9::jsonb ELSE $6::jsonb END,
-			                 plain_text = CASE WHEN kind = 'folder' THEN '' ELSE $7 END,
+		var className string
+		err = tx.QueryRow(ctx, `
+			UPDATE nodes n SET title = $4, slug = $5, body = $6, plain_text = $7, key_version = $11,
+			                 search_tokens = $12,
 			                 classification_id = CASE WHEN kind = 'folder' THEN NULL
-			                                          ELSE COALESCE($11, classification_id) END,
-			                 version = version + 1, updated_by = $8, updated_at = $10
+			                                          ELSE COALESCE($10, classification_id) END,
+			                 version = version + 1, updated_by = $8, updated_at = $9
 			WHERE space_id = $1 AND public_id = $2 AND version = $3 AND deleted_at IS NULL
-			RETURNING id, version, body, kind = 'folder',
+			RETURNING id, version,
 			          COALESCE((SELECT name FROM classifications WHERE id = n.classification_id), '')`,
-			spaceID, publicID, u.BaseVersion, u.Title, u.Slug, u.Body, u.PlainText, nullID(u.AuthorID),
-			emptyBody, now, newClass).Scan(&id, &version, &body, &folder, &className)
+			spaceID, publicID, u.BaseVersion, u.Title, u.Slug, sealed.body, sealed.plainText, nullID(u.AuthorID),
+			now, newClass, sealed.version, sealed.tokens).Scan(&id, &version, &className)
 		if errors.Is(err, pgx.ErrNoRows) {
 			var exists bool
 			if err := tx.QueryRow(ctx, `
@@ -434,8 +516,9 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 			return err
 		}
 		_, err = tx.Exec(ctx, `
-			INSERT INTO revisions (node_id, version, title, body, author_id, comment, classification, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, id, version, u.Title, body, nullID(u.AuthorID), u.Comment, className, now)
+			INSERT INTO revisions (node_id, version, title, body, key_version, author_id, comment, classification, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			id, version, u.Title, sealed.revision, sealed.version, nullID(u.AuthorID), u.Comment, className, now)
 		if err != nil {
 			return err
 		}
@@ -701,38 +784,61 @@ type SearchResult struct {
 	Snippet string
 }
 
-// Search does a full text search in the documents of the given spaces of
-// a tenant. The caller must give only the spaces that the user can read.
-// The query uses the syntax of the PostgreSQL function
-// websearch_to_tsquery.
+// Search finds the folders and documents of the given spaces of a tenant
+// with all words of the query in the title or in the text. A word with
+// "-" at the start excludes the documents with that word. The caller
+// must give only the spaces that the user can read. The text is
+// encrypted, thus the search uses the index of keyed hashes of the words
+// (search_tokens). It finds whole words only. Results with the words in
+// the title come first.
 func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, query string, limit int) ([]SearchResult, error) {
 	if len(spaceIDs) == 0 {
 		return nil, nil
 	}
-	rows, err := s.pool.Query(ctx, `
-		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id,
-		       sp.id, sp.slug, sp.name,
-		       ts_headline('simple', n.plain_text, q, 'StartSel=«, StopSel=», MaxFragments=2, MaxWords=20, MinWords=5')
-		FROM nodes n
-		JOIN spaces sp ON sp.id = n.space_id,
-		     websearch_to_tsquery('simple', $3) q
-		WHERE sp.tenant_id = $1 AND sp.id = ANY($2) AND n.search @@ q AND n.deleted_at IS NULL
-		ORDER BY ts_rank(n.search, q) DESC, n.updated_at DESC
-		LIMIT $4`, tenantID, spaceIDs, query, limit)
+	include, exclude := parseSearchQuery(query)
+	if len(include) == 0 {
+		return nil, nil
+	}
+	tk, err := s.tenantKeys(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []SearchResult
-	for rows.Next() {
-		var r SearchResult
-		if err := rows.Scan(&r.ID, &r.PublicID, &r.ParentID, &r.Kind, &r.Title, &r.Slug, &r.UpdatedAt,
-			&r.AccessPathID, &r.SpaceID, &r.SpaceSlug, &r.SpaceName, &r.Snippet); err != nil {
+	incTokens, excTokens := tokensOf(tk.search, include), tokensOf(tk.search, exclude)
+	rows, err := s.pool.Query(ctx, `
+		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id,
+		       sp.id, sp.slug, sp.name, n.plain_text
+		FROM nodes n
+		JOIN spaces sp ON sp.id = n.space_id
+		WHERE sp.tenant_id = $1 AND sp.id = ANY($2) AND n.deleted_at IS NULL
+		  AND n.search_tokens @> $3 AND NOT (n.search_tokens && $4)
+		ORDER BY to_tsvector('simple', n.title) @@ plainto_tsquery('simple', $5) DESC, n.updated_at DESC
+		LIMIT $6`, tenantID, spaceIDs, incTokens, excTokens, strings.Join(include, " "), limit)
+	if err != nil {
+		return nil, err
+	}
+	type found struct {
+		SearchResult
+		plainText []byte
+	}
+	list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (found, error) {
+		var r found
+		err := row.Scan(&r.ID, &r.PublicID, &r.ParentID, &r.Kind, &r.Title, &r.Slug, &r.UpdatedAt,
+			&r.AccessPathID, &r.SpaceID, &r.SpaceSlug, &r.SpaceName, &r.plainText)
+		return r, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SearchResult, 0, len(list))
+	for _, r := range list {
+		plain, err := s.open(ctx, tenantID, plainTextPlace(r.SpaceID, r.PublicID), r.plainText)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, r)
+		r.Snippet = snippet(string(plain), include)
+		out = append(out, r.SearchResult)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // Revisions returns all revisions of a node, newest first. The Body field
@@ -763,15 +869,22 @@ func (s *Store) Revisions(ctx context.Context, nodeID int64) ([]Revision, error)
 // Revision returns one revision of a node.
 func (s *Store) Revision(ctx context.Context, nodeID int64, version int) (*Revision, error) {
 	var r Revision
+	var body []byte
+	var spaceID int64
+	var publicID string
 	err := s.pool.QueryRow(ctx, `
 		SELECT r.version, r.title, r.body, COALESCE(NULLIF(u.display_name, ''), u.username, ''),
-		       r.comment, r.classification, r.created_at
+		       r.comment, r.classification, r.created_at, n.space_id, n.public_id
 		FROM revisions r
+		JOIN nodes n ON n.id = r.node_id
 		LEFT JOIN users u ON u.id = r.author_id
 		WHERE r.node_id = $1 AND r.version = $2`, nodeID, version,
-	).Scan(&r.Version, &r.Title, &r.Body, &r.Author, &r.Comment, &r.Classification, &r.CreatedAt)
+	).Scan(&r.Version, &r.Title, &body, &r.Author, &r.Comment, &r.Classification, &r.CreatedAt, &spaceID, &publicID)
 	if err != nil {
 		return nil, notFound(err)
+	}
+	if r.Body, err = s.openText(ctx, spaceID, revisionPlace(spaceID, publicID, r.Version), body); err != nil {
+		return nil, err
 	}
 	return &r, nil
 }

@@ -34,12 +34,17 @@ type Store struct {
 	pool *pgxpool.Pool
 	box  *secret.Box
 	now  func() time.Time
+	// kek wraps the keys of the tenants. keys keeps the unwrapped keys
+	// in memory.
+	kek  KEK
+	keys *keyring
 }
 
-// New makes a Store that uses pool. box encrypts the secrets of the
+// New makes a Store that uses pool. box encrypts the client secrets of
+// the tenants, and it is the key encryption key (KEK) of the keys of the
 // tenants.
 func New(pool *pgxpool.Pool, box *secret.Box) *Store {
-	return &Store{pool: pool, box: box, now: time.Now}
+	return &Store{pool: pool, box: box, now: time.Now, kek: localKEK{box}, keys: newKeyring()}
 }
 
 // Ping makes sure that the database responds.

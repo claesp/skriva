@@ -41,5 +41,17 @@
     <tr><th scope="row">Maximum document size</th><td>{{.MaxDocKiB}} KiB</td></tr>
   </tbody>
 </table>
+{{with .Keys}}
+<h2 id="encryption">Encryption</h2>
+<p>The documents and the files of the tenant are encrypted with the data key of the tenant. A new key replaces the current key at once. The server then encrypts the old documents and files again with the new key, in the background.</p>
+<div class="tablebar"><nav class="toolbar" aria-label="Actions"><span class="group">{{template "post" (post (print "/admin/tenants/" $.Data.Code "/rotate-key") "key" "Make a new data key" $.CSRF "")}}</span></nav></div>
+<table class="settings">
+  <tbody>
+    <tr><th scope="row">Data key</th><td>Version {{.Version}}, made {{date .CreatedAt}}</td></tr>
+    <tr><th scope="row">Key encryption key</th><td><code>{{.KEKID}}</code></td></tr>
+    <tr><th scope="row">Old keys</th><td>{{if .Retired}}{{.Retired}}. {{.OldItems}} items still use an old key.{{else}}None{{end}}</td></tr>
+  </tbody>
+</table>
+{{end}}
 {{end}}
 {{end}}

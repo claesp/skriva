@@ -1715,3 +1715,29 @@ func TestDrawioUpload(t *testing.T) {
 		t.Fatalf("document does not show the diagram:\n%s", page)
 	}
 }
+
+func TestTenantKeyRotation(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob")
+	id := bob.create("document", "", "Plan", "secret text")
+	root := e.loginAt("/admin", "root")
+	b := readBody(t, root.get("/admin/tenants/dflt"))
+	if !strings.Contains(b, `id="encryption"`) || !strings.Contains(b, "Version 1") {
+		t.Fatalf("tenant page:\n%s", b)
+	}
+	// Only a system administrator can make a new key.
+	wantStatus(t, bob.post("/admin/tenants/dflt/rotate-key", nil), http.StatusUnauthorized)
+	wantStatus(t, root.post("/admin/tenants/dflt/rotate-key", nil), http.StatusSeeOther)
+	b = readBody(t, root.get("/admin/tenants/dflt"))
+	if !strings.Contains(b, "Version 2") || !strings.Contains(b, "items still use an old key") {
+		t.Fatalf("tenant page after rotation:\n%s", b)
+	}
+	// The document is still readable, and a save uses the new key.
+	if b := readBody(t, bob.get(sp+"/d/"+id+"/plan")); !strings.Contains(b, "secret text") {
+		t.Fatalf("document after rotation:\n%s", b)
+	}
+	wantStatus(t, bob.save(id, "Plan", "new text", 1), http.StatusSeeOther)
+	if b := readBody(t, bob.get(sp+"/search?q=new")); !strings.Contains(b, "Plan") {
+		t.Fatalf("search after rotation:\n%s", b)
+	}
+}

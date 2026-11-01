@@ -74,6 +74,24 @@ you cannot read a folder, it is not in the tree and the search does not
 find its documents. If you have a link to a document that you cannot
 read, the wiki shows "not found".
 
+## Search
+
+Type words in the search field of the page header and press Enter. In a
+space, the search finds the items of that space. Click **Search in all
+spaces** (the space icon) to search in all spaces of the tenant.
+
+- The search finds the items with all the words, in the title or in the
+  text. Upper case and lower case are the same.
+- The search finds whole words only. "install" does not find
+  "installation".
+- Type `-word` to exclude the items with that word.
+- Items with the words in the title come first.
+- The results show only the items that you can read.
+
+The text of the documents is encrypted in the database. Thus the search
+uses an index of keyed hashes of the words, not the words. See
+[Security](security.md#encryption-at-rest).
+
 ## Links to this page
 
 Below the text, a page shows the list **Links to this page**: the pages

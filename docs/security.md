@@ -49,7 +49,8 @@ This document describes the security controls of Skriva.
 ## Client secrets
 
 - The server encrypts the OIDC client secret of each tenant with
-  AES-256-GCM. The key is `SKRIVA_ENCRYPTION_KEY`.
+  AES-256-GCM. The key is `SKRIVA_ENCRYPTION_KEY` (the KEK, see
+  [Encryption at rest](#encryption-at-rest)).
 - The associated data of the encryption contains the tenant code. Thus a
   person who can write to the database cannot move a secret to a
   different tenant.
@@ -270,10 +271,48 @@ the restored versions, the trash actions and the sign-ins. See
 
 ## Encryption at rest
 
-Skriva does not encrypt the documents in the database. Use encrypted
-storage for the database and encrypted backups. See
-[Encryption at rest: research](encryption-at-rest.md) for the methods
-and a recommendation.
+Skriva encrypts the content of the documents in the database (envelope
+encryption). See [Encryption at rest: research](encryption-at-rest.md)
+for the methods that the project compared.
+
+- **Keys.** Each tenant has a data key and a search key: 32 random bytes
+  each. The table `tenant_keys` keeps them encrypted (wrapped) with the
+  key encryption key (KEK), `SKRIVA_ENCRYPTION_KEY`. The KEK is not in
+  the database. The server unwraps the keys of a tenant when it needs
+  them, and keeps them in memory.
+- **Encrypted data.** The text of each document (`nodes.body`), its plain
+  text for the search results (`nodes.plain_text`), all old versions
+  (`revisions.body`) and the uploaded files (`files.data`). The
+  algorithm is AES-256-GCM. The associated data contains the tenant, the
+  table, the column and the row. Thus a person who can write to the
+  database cannot move a value to a different row or tenant.
+- **Search.** The search index contains keyed hashes of the words
+  (HMAC-SHA-256 with the search key, 8 bytes), not the words. The index
+  tells which documents contain the same words, and how frequent a word
+  is, but not the words. The search finds whole words only.
+- **Not encrypted.** The titles, the slugs, the targets of the links
+  between documents, the names of users, groups and spaces, and the
+  audit log. The titles are necessary for the tree, the sort order, the
+  links and the path above the title.
+- **Key rotation.** A system administrator can make a new data key for a
+  tenant (tenant page, **Encryption**). New values use the new key at
+  once. The cleanup task encrypts the old values again, and then deletes
+  the old key. The search key does not change.
+- **KEK change.** Set the new key in `SKRIVA_ENCRYPTION_KEY` and the old
+  key in `SKRIVA_ENCRYPTION_KEY_PREVIOUS`. At start, the server wraps all
+  keys again with the new KEK. Then remove the old key.
+- **Backups.** A backup of the database contains only encrypted content.
+  To restore a backup, you need the KEK of the time of the backup. Keep
+  the KEK in a different place than the backups.
+- **Deletion of a tenant.** The keys of the tenant are deleted. Old
+  backups still contain the wrapped keys. They can be decrypted with the
+  KEK of that time. Change the KEK to make old backups unreadable.
+- **Limits.** The server decrypts the content for each request. Thus an
+  attacker that controls the Skriva process or knows the KEK can read
+  the content. A database administrator without the KEK cannot.
+
+Also use encrypted storage and encrypted backups. They protect the
+metadata that is not encrypted.
 
 ## Known limits
 

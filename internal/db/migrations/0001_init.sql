@@ -24,6 +24,27 @@ CREATE TABLE tenants (
 -- Only one tenant can be the default tenant.
 CREATE UNIQUE INDEX tenants_one_default_idx ON tenants (is_default) WHERE is_default;
 
+-- The keys of a tenant for the encryption of the content (envelope
+-- encryption). Each key is 32 random bytes. The table keeps each key
+-- encrypted with the key encryption key (KEK), which is outside the
+-- database. kek_id identifies the KEK. The purpose "data" encrypts the
+-- documents and the files with AES-256-GCM. The purpose "search" makes
+-- the keyed hashes of the search index. A rotation adds a new version
+-- and retires the old version. The server deletes a retired version
+-- when no data uses it.
+CREATE TABLE tenant_keys (
+    tenant_id  bigint      NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
+    purpose    text        NOT NULL CHECK (purpose IN ('data', 'search')),
+    version    integer     NOT NULL CHECK (version > 0),
+    wrapped    bytea       NOT NULL,
+    kek_id     text        NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    retired_at timestamptz,
+    PRIMARY KEY (tenant_id, purpose, version)
+);
+-- Each tenant has at most one current key for each purpose.
+CREATE UNIQUE INDEX tenant_keys_current_idx ON tenant_keys (tenant_id, purpose) WHERE retired_at IS NULL;
+
 -- The levels of information classification of a tenant. Each document
 -- has one level. "position" gives the order of the levels, from the
 -- lowest to the highest. One level is the default for new documents.
@@ -149,11 +170,17 @@ CREATE TABLE nodes (
     kind           text        NOT NULL CHECK (kind IN ('folder', 'document')),
     title          text        NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
     slug           text        NOT NULL CHECK (slug ~ '^([a-z0-9]+(-[a-z0-9]+)*)?$'),
-    -- The text of a document in the JSON format of the editor. The
-    -- server checks the format before it saves the text.
-    body           jsonb       NOT NULL DEFAULT '{"type":"doc"}',
-    -- The plain text of the body for the search index.
-    plain_text     text        NOT NULL DEFAULT '',
+    -- The text of a document in the JSON format of the editor,
+    -- encrypted with the data key of the tenant (version key_version).
+    -- The server checks the format before it saves the text.
+    body           bytea       NOT NULL,
+    -- The plain text of the body for the parts of the text in the search
+    -- results, encrypted with the same key.
+    plain_text     bytea       NOT NULL,
+    key_version    integer     NOT NULL,
+    -- The search index: keyed hashes (HMAC-SHA-256 with the search key
+    -- of the tenant, 8 bytes) of the words of the title and the text.
+    search_tokens  bigint[]    NOT NULL DEFAULT '{}',
     version        integer     NOT NULL DEFAULT 1,
     -- The default role of the node. NULL means that the node uses the
     -- default role of its parent (or of the space). An empty value means
@@ -176,10 +203,6 @@ CREATE TABLE nodes (
     deleted_at     timestamptz,
     deleted_by     bigint      REFERENCES users (id) ON DELETE SET NULL,
     trash_id       bigint,
-    search         tsvector GENERATED ALWAYS AS (
-        setweight(to_tsvector('simple', title), 'A') ||
-        setweight(to_tsvector('simple', plain_text), 'B')
-    ) STORED,
     UNIQUE (space_id, id),
     CONSTRAINT nodes_parent_fkey
         FOREIGN KEY (space_id, parent_id) REFERENCES nodes (space_id, id) ON DELETE CASCADE,
@@ -187,7 +210,7 @@ CREATE TABLE nodes (
     CHECK ((deleted_at IS NULL) = (trash_id IS NULL)),
     CHECK ((kind = 'document') = (classification_id IS NOT NULL))
 );
-CREATE INDEX nodes_search_idx ON nodes USING gin (search);
+CREATE INDEX nodes_search_idx ON nodes USING gin (search_tokens);
 CREATE INDEX nodes_parent_idx ON nodes (space_id, parent_id);
 CREATE INDEX nodes_slug_idx ON nodes (space_id, slug);
 CREATE INDEX nodes_space_updated_idx ON nodes (space_id, updated_at DESC);
@@ -203,7 +226,9 @@ CREATE TABLE revisions (
     node_id    bigint      NOT NULL REFERENCES nodes (id) ON DELETE CASCADE,
     version    integer     NOT NULL,
     title      text        NOT NULL,
-    body       jsonb       NOT NULL,
+    -- The text, encrypted as nodes.body.
+    body       bytea       NOT NULL,
+    key_version integer    NOT NULL,
     author_id  bigint      REFERENCES users (id) ON DELETE SET NULL,
     comment    text        NOT NULL DEFAULT '',
     -- The name of the classification at the time of the version.
@@ -221,7 +246,9 @@ CREATE TABLE files (
     public_id    text        NOT NULL UNIQUE CHECK (public_id ~ '^[0-9a-z]{14}$'),
     -- image/svg+xml is only for draw.io diagrams. The server checks them.
     content_type text        NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml')),
+    -- The data, encrypted with the data key of the tenant.
     data         bytea       NOT NULL,
+    key_version  integer     NOT NULL,
     created_by   bigint      REFERENCES users (id) ON DELETE SET NULL,
     created_at   timestamptz NOT NULL DEFAULT now(),
     UNIQUE (space_id, id)

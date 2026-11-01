@@ -35,6 +35,7 @@ func (s *Server) systemRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /admin/tenants/{code}/delete", s.requireSystem(s.handleTenantDeleteForm))
 	mux.Handle("POST /admin/tenants/{code}/delete", s.requireSystem(s.handleTenantDelete))
 	mux.Handle("GET /admin/tenants/{code}/spaces", s.requireSystem(s.handleTenantSpaces))
+	mux.Handle("POST /admin/tenants/{code}/rotate-key", s.requireSystem(s.handleTenantRotateKey))
 	mux.Handle("GET /admin/tenants/{code}/spaces/new", s.requireSystem(s.handleTenantSpaceNew))
 	mux.Handle("POST /admin/tenants/{code}/spaces", s.requireSystem(s.handleTenantSpaceCreate))
 }
@@ -62,6 +63,9 @@ type tenantForm struct {
 	LogoutURI   string
 	Roles       []store.Role
 	Error       string
+	// Keys is the state of the data keys of the tenant. Only the page
+	// of the tenant shows it.
+	Keys *store.KeyInfo
 	// Tab and Crumb are the current tab of the tenant pages and its name.
 	Tab   string
 	Crumb string
@@ -247,7 +251,27 @@ func (s *Server) handleTenant(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	if f.Keys, err = s.store.TenantKeyInfo(r.Context(), t.ID); err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-tenant-view", "Tenant "+t.Code, f)
+}
+
+// handleTenantRotateKey makes a new data key for the tenant. The cleanup
+// task encrypts the old values again with the new key.
+func (s *Server) handleTenantRotateKey(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.loadTenant(w, r)
+	if !ok {
+		return
+	}
+	v, err := s.store.RotateDataKey(r.Context(), t.ID)
+	if !s.storeResult(w, r, err) {
+		return
+	}
+	s.log.Info("data key rotated", "tenant", t.Code, "version", v,
+		"user_id", reqInfoFrom(r.Context()).Session.User.ID)
+	http.Redirect(w, r, "/admin/tenants/"+t.Code+"#encryption", http.StatusSeeOther)
 }
 
 func (s *Server) handleTenantForm(w http.ResponseWriter, r *http.Request) {

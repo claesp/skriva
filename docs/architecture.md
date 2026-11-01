@@ -140,6 +140,7 @@ space `default0` ("Default").
 | `nodes`            | Folders and documents. `parent_id` makes the tree. An item can have its own default role. `access_path_id` points to the cached access path. `deleted_at` and `trash_id` mark the items in the trash. |
 | `access_paths`     | A cache: the access paths of the items of each space. See [Access control](access-control.md). |
 | `revisions`        | All versions of each node, with the name of the classification of each version. |
+| `tenant_keys`      | The data key and the search key of each tenant, wrapped with the KEK. |
 | `classifications`  | The levels of information classification of each tenant. `nodes.classification_id` gives the level of a document. |
 | `files`            | Uploaded images. The data is in the table. |
 | `file_refs`        | The nodes that use each file, in one or more versions. |
@@ -372,13 +373,40 @@ in the editor and on the page.
   their own settings. On a development computer, it takes approximately
   2 ms.
 
+### Encryption of the content
+
+The store encrypts the content before it writes it, and decrypts it
+after it reads it (`internal/store/keys.go`). The web package sees only
+plain text.
+
+- An encrypted value has the format: one byte for the format (1), the
+  version of the data key (4 bytes), the nonce of GCM (12 bytes), and
+  the encrypted data with the tag. The column `key_version` of the row
+  repeats the version, thus the re-encryption can find the old values.
+- The associated data is `skriva:<tenant>:<table>.<column>:<space>:<public
+  ID>` (and the version for a revision). It uses public IDs, because the
+  store knows them before the insert.
+- The store makes the keys of a tenant when it needs them for the first
+  time, in its own transaction. Thus a key that encrypted a value is
+  always saved, also if the transaction of the value fails.
+- The keys stay in memory for 5 minutes. Then the store reads the
+  current version again, because a different server can rotate the key.
+  A retired key is deleted only after one hour, when no value uses it.
+- The KEK is an interface (`store.KEK`). The current implementation uses
+  the key from the configuration. A key management system (for example
+  HashiCorp Vault Transit) can implement the same interface.
+
 ### Search
 
-The `nodes.search` column contains a `tsvector`. PostgreSQL calculates it
-from the title and the text. A GIN index makes the search fast. Users can
-search in one space or in all spaces of the tenant. The search uses the
-`simple` text configuration. Thus the search works equally for all
-languages, but it does not find word forms.
+The text is encrypted, thus PostgreSQL cannot search it. The column
+`nodes.search_tokens` (`bigint[]`, with a GIN index) contains a keyed
+hash of each word of the title and the text: the first 8 bytes of
+HMAC-SHA-256 with the search key of the tenant. A word is a sequence of
+letters and digits, in lower case. A search makes the hashes of the
+search words and finds the rows that contain all of them (`@>`). Items
+with the words in the title come first. The store decrypts the plain
+text of the results and makes the parts of the text with the words.
+The search finds whole words only, not word parts or phrases.
 
 ## Migrations
 

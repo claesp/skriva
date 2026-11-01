@@ -79,6 +79,22 @@ func TestBadEncryptionKey(t *testing.T) {
 	}
 }
 
+func TestPreviousEncryptionKey(t *testing.T) {
+	m := validEnv()
+	c, err := load(env(m))
+	if err != nil || c.PreviousEncryptionKey != nil {
+		t.Fatalf("no previous key: %v, %v", c.PreviousEncryptionKey, err)
+	}
+	m["SKRIVA_ENCRYPTION_KEY_PREVIOUS"] = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+	if c, err = load(env(m)); err != nil || len(c.PreviousEncryptionKey) != 32 {
+		t.Fatalf("previous key: %v, %v", c.PreviousEncryptionKey, err)
+	}
+	m["SKRIVA_ENCRYPTION_KEY_PREVIOUS"] = "c2hvcnQ="
+	if _, err := load(env(m)); err == nil {
+		t.Fatal("expected an error for a short previous key")
+	}
+}
+
 func TestBaseURLWithPath(t *testing.T) {
 	m := validEnv()
 	m["SKRIVA_BASE_URL"] = "https://example.com/wiki"

@@ -6,7 +6,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,6 +24,7 @@ var ErrDecrypt = errors.New("cannot decrypt secret")
 // concurrent use.
 type Box struct {
 	aead cipher.AEAD
+	id   string
 }
 
 // New makes a Box. The key must have KeySize bytes.
@@ -37,8 +40,14 @@ func New(key []byte) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Box{aead: aead}, nil
+	// The ID is a part of a hash of the key. It identifies the key, but
+	// it does not tell the key: the key is 32 random bytes.
+	sum := sha256.Sum256(append([]byte("skriva-key-id:"), key...))
+	return &Box{aead: aead, id: hex.EncodeToString(sum[:8])}, nil
 }
+
+// ID identifies the key of the Box.
+func (b *Box) ID() string { return b.id }
 
 // ParseKey decodes a base64 key.
 func ParseKey(s string) ([]byte, error) {

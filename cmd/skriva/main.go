@@ -51,8 +51,24 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	st := store.New(pool, box)
+	if cfg.PreviousEncryptionKey != nil {
+		previous, err := secret.New(cfg.PreviousEncryptionKey)
+		if err != nil {
+			return err
+		}
+		n, err := st.RewrapKeys(ctx, previous)
+		if err != nil {
+			return fmt.Errorf("encrypt the keys with the new SKRIVA_ENCRYPTION_KEY: %w", err)
+		}
+		log.Info("keys encrypted with the new key encryption key; remove SKRIVA_ENCRYPTION_KEY_PREVIOUS", "keys", n)
+	}
 	if err := bootstrap(ctx, st, cfg, log); err != nil {
 		return err
+	}
+	// A problem with the keys stops the server now, and not at the first
+	// save of a document.
+	if err := st.EnsureAllKeys(ctx); err != nil {
+		return fmt.Errorf("keys of the tenants: %w", err)
 	}
 
 	systemAuth := auth.New(auth.Config{
@@ -171,6 +187,33 @@ func bootstrap(ctx context.Context, st *store.Store, cfg *config.Config, log *sl
 	return st.EnsureAdminGroups(ctx)
 }
 
+// reencryptTime is the maximum time of one run of the re-encryption.
+const reencryptTime = 2 * time.Minute
+
+// reencrypt encrypts the values that use a retired data key again with
+// the current key, in batches. A large tenant needs more than one run.
+func reencrypt(ctx context.Context, st *store.Store, log *slog.Logger) {
+	cctx, cancel := context.WithTimeout(ctx, reencryptTime)
+	defer cancel()
+	total := 0
+	for {
+		n, err := st.ReencryptBatch(cctx)
+		total += n
+		if err != nil {
+			if ctx.Err() == nil && cctx.Err() == nil {
+				log.Warn("re-encryption", "error", err)
+			}
+			break
+		}
+		if n == 0 {
+			break
+		}
+	}
+	if total > 0 {
+		log.Info("values encrypted with the current key", "values", total)
+	}
+}
+
 // cleanup removes expired sessions and login states at intervals.
 func cleanup(ctx context.Context, st *store.Store, log *slog.Logger) {
 	t := time.NewTicker(10 * time.Minute)
@@ -181,6 +224,7 @@ func cleanup(ctx context.Context, st *store.Store, log *slog.Logger) {
 			log.Warn("remove expired sessions", "error", err)
 		}
 		cancel()
+		reencrypt(ctx, st, log)
 		select {
 		case <-ctx.Done():
 			return
