@@ -261,50 +261,36 @@
 {{/* The buttons of a folder or a document in the toolbar. The argument
    is the view. The data embeds a nodePage. The button of the current
    tab opens CloseURL. All modes (the page, the forms and the form of a
-   new item) show the same buttons at the same places. On the form of a
-   new item, the buttons that need the item are disabled, and the Edit
-   button is the current button. A form has the Save button at the left
-   side, in its own group. */}}
+   new item) and all users see the same buttons at the same places. A
+   button is disabled if the user does not have the permission, or, on
+   the form of a new item, if it needs a saved item. On that form, the
+   Edit button is the current button. A form has the Save button at the
+   left side, in its own group. Folders have no History and Source. */}}
 {{define "nodetools"}}
 {{$n := .Data.Node}}
 {{$t := .Data.Tab}}
 {{$c := .Data.CloseURL}}
+{{$s := .SpacePath}}
+{{$id := ""}}{{with $n}}{{$id = .PublicID}}{{end}}
 {{$folder := or (and $n $n.IsFolder) (eq .Data.NewKind "folder")}}
 {{$editLabel := or (and $folder "Rename") "Edit"}}
 {{with .Data.SaveForm}}<span class="group">{{template "savebtn" .}}</span>{{end}}
-{{if $n}}
-  {{$id := $n.PublicID}}
-  {{if .Can "doc.edit"}}<span class="group">
-    {{template "tool" (ntool $t "edit" (print .SpacePath "/edit/" $id) $c "edit" $editLabel)}}
-  </span>{{end}}
-  {{if not $folder}}<span class="group">
-    {{template "tool" (ntool $t "history" (print .SpacePath "/history/" $id) $c "history" "History")}}
-    {{template "tool" (tool (print .SpacePath "/raw/" $id) "source" "Source")}}
-  </span>{{end}}
-  {{if or (.Can "doc.edit") (.Can "doc.delete")}}<span class="group">
-    {{if .Can "doc.edit"}}{{template "tool" (ntool $t "move" (print .SpacePath "/move/" $id) $c "move" "Move")}}{{end}}
-    {{if .Can "doc.delete"}}{{template "tool" (ntool $t "delete" (print .SpacePath "/delete/" $id) $c "delete" "Delete")}}{{end}}
-  </span>{{end}}
-  {{if .Can "tenant.manage"}}<span class="group">
-    {{template "tool" (ntool $t "access" (print .SpacePath "/access/" $id) $c "access" "Access")}}
-  </span>{{end}}
-{{else}}
-  {{/* A new item. The current button goes back without a save. */}}
-  <span class="group">
-    {{template "tool" (tab $c "edit" (print .Data.Crumb " (close)") true)}}
-  </span>
-  {{if not $folder}}<span class="group">
-    {{template "tool" (dtool "history" "History")}}
-    {{template "tool" (dtool "source" "Source")}}
-  </span>{{end}}
-  {{if or (.Can "doc.edit") (.Can "doc.delete")}}<span class="group">
-    {{if .Can "doc.edit"}}{{template "tool" (dtool "move" "Move")}}{{end}}
-    {{if .Can "doc.delete"}}{{template "tool" (dtool "delete" "Delete")}}{{end}}
-  </span>{{end}}
-  {{if .Can "tenant.manage"}}<span class="group">
-    {{template "tool" (dtool "access" "Access")}}
-  </span>{{end}}
-{{end}}
+<span class="group">
+  {{if not $n}}{{template "tool" (tab $c "edit" (print .Data.Crumb " (close)") true)}}
+  {{else if .Can "doc.edit"}}{{template "tool" (ntool $t "edit" (print $s "/edit/" $id) $c "edit" $editLabel)}}
+  {{else}}{{template "tool" (dtool "edit" $editLabel)}}{{end}}
+</span>
+{{if not $folder}}<span class="group">
+  {{if $n}}{{template "tool" (ntool $t "history" (print $s "/history/" $id) $c "history" "History")}}{{else}}{{template "tool" (dtool "history" "History")}}{{end}}
+  {{if $n}}{{template "tool" (tool (print $s "/raw/" $id) "source" "Source")}}{{else}}{{template "tool" (dtool "source" "Source")}}{{end}}
+</span>{{end}}
+<span class="group">
+  {{if and $n (.Can "doc.edit")}}{{template "tool" (ntool $t "move" (print $s "/move/" $id) $c "move" "Move")}}{{else}}{{template "tool" (dtool "move" "Move")}}{{end}}
+  {{if and $n (.Can "doc.delete")}}{{template "tool" (ntool $t "delete" (print $s "/delete/" $id) $c "delete" "Delete")}}{{else}}{{template "tool" (dtool "delete" "Delete")}}{{end}}
+</span>
+<span class="group">
+  {{if and $n (.Can "tenant.manage")}}{{template "tool" (ntool $t "access" (print $s "/access/" $id) $c "access" "Access")}}{{else}}{{template "tool" (dtool "access" "Access")}}{{end}}
+</span>
 {{end}}
 
 {{/* A table with one row: the default role of a space or a node, with a

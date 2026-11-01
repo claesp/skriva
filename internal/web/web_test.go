@@ -1551,11 +1551,20 @@ func TestToolbarModes(t *testing.T) {
 	if save < 0 || edit < 0 || save > edit || !strings.Contains(b, `class="tool disabled" role="link" aria-disabled="true" title="History (not available)"`) {
 		t.Fatalf("toolbar of a new document:\n%s", b)
 	}
-	// The edit form has the same buttons, with links.
+	// The edit form has the same buttons, with links. Bob is an editor:
+	// Delete and Access are disabled.
 	b = toolbar(readBody(t, bob.get(sp+"/edit/"+id)))
 	if save, edit := strings.Index(b, `class="save"`), strings.Index(b, `aria-label="Edit (close)"`); save < 0 || save > edit ||
-		strings.Contains(b, "disabled") || !strings.Contains(b, sp+"/history/"+id) {
+		!strings.Contains(b, sp+"/history/"+id) || strings.Contains(b, sp+"/delete/") ||
+		!strings.Contains(b, `title="Delete (not available)"`) || !strings.Contains(b, `title="Access (not available)"`) {
 		t.Fatalf("toolbar of the edit form:\n%s", b)
+	}
+	// A reader sees the same buttons. Edit and Move are disabled.
+	carol := e.login("carol")
+	b = toolbar(readBody(t, carol.get(sp+"/d/"+id+"/plan")))
+	if !strings.Contains(b, `title="Edit (not available)"`) || !strings.Contains(b, `title="Move (not available)"`) ||
+		!strings.Contains(b, sp+"/history/"+id) || strings.Contains(b, sp+"/edit/") {
+		t.Fatalf("toolbar of a reader:\n%s", b)
 	}
 	// The page has no Save button.
 	if b = toolbar(readBody(t, bob.get(sp+"/d/"+id+"/plan"))); strings.Contains(b, `class="save"`) {

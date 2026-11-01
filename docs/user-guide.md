@@ -43,8 +43,8 @@ The toolbar is below the page header. It covers the full width of the
 page. The path to the item is at the left side and the buttons are at
 the right side. The toolbar stays at the top when you scroll. Each button
 is an icon. Put the mouse pointer on a button to see its name. The
-toolbar shows only the buttons for the actions that you have permission
-for.
+toolbar always shows all buttons at the same places. A button for an
+action that you do not have permission for is gray and does nothing.
 
 | Icon         | Name         | Action |
 |--------------|--------------|--------|
@@ -102,8 +102,7 @@ moves. Only users with access to the tenant can open them.
 5. Click **Save** at the left side of the toolbar.
 
 The form of a new item shows the same toolbar as a document page. The
-buttons that need a saved item (for example **History**) are gray and
-do nothing. The pencil button has a line below it. To stop without a
+buttons that need a saved item (for example **History**) are gray. The pencil button has a line below it. To stop without a
 save, click the pencil.
 
 The new item is in the folder or the document that you opened. A folder

@@ -76,11 +76,13 @@ and these guidelines for long-form text:
 - In a table, a date column is the last data column. The text in it is
   right-aligned.
 - The toolbar of a folder or a document has the same buttons at the
-  same places in all modes: the page, the forms and the form of a new
-  item. The user does not have to look for a button. On the form of a
-  new item, the buttons that need a saved item are disabled (gray, no
-  link), and the pencil button is the current button. It goes back
-  without a save.
+  same places in all modes (the page, the forms and the form of a new
+  item) and for all users. The user does not have to look for a button.
+  A button is disabled (gray, no link) if the user does not have the
+  permission, or, on the form of a new item, if it needs a saved item.
+  On the form of a new item, the pencil button is the current button.
+  It goes back without a save. Folders do not have History and Source,
+  because these do not apply to a folder.
 - The **Save** button of a form is at the left side of the toolbar, in
   its own group. The toolbar is right-aligned, thus the other buttons
   do not move. The toolbar is sticky, thus the button is always
