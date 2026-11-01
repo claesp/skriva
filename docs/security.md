@@ -268,6 +268,13 @@ the restored versions, the trash actions and the sign-ins. See
   cleanup task deletes events after 365 days.
 - The log does not contain IP addresses, tokens or secrets.
 
+## Encryption at rest
+
+Skriva does not encrypt the documents in the database. Use encrypted
+storage for the database and encrypted backups. See
+[Encryption at rest: research](encryption-at-rest.md) for the methods
+and a recommendation.
+
 ## Known limits
 
 - The login limit applies to all clients together. Thus a flood of

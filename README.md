@@ -41,6 +41,7 @@ as `root` (password `root`).
 - [Page design](docs/design.md)
 - [WYSIWYG editors: research](docs/wysiwyg-editors.md)
 - [Fonts: research](docs/fonts.md)
+- [Encryption at rest: research](docs/encryption-at-rest.md)
 - [Security](docs/security.md)
 - [Development and tests](docs/development.md)
 - [Operation](docs/operation.md)
