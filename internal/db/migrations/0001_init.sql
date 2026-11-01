@@ -219,7 +219,8 @@ CREATE TABLE files (
     id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     space_id     bigint      NOT NULL REFERENCES spaces (id) ON DELETE CASCADE,
     public_id    text        NOT NULL UNIQUE CHECK (public_id ~ '^[0-9a-z]{14}$'),
-    content_type text        NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg', 'image/gif', 'image/webp')),
+    -- image/svg+xml is only for draw.io diagrams. The server checks them.
+    content_type text        NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml')),
     data         bytea       NOT NULL,
     created_by   bigint      REFERENCES users (id) ON DELETE SET NULL,
     created_at   timestamptz NOT NULL DEFAULT now(),

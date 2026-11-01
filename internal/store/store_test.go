@@ -1175,8 +1175,8 @@ func TestFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	unused, _ := st.CreateFile(ctx, sp.ID, "image/png", []byte("png"), u.ID)
-	if _, err := st.CreateFile(ctx, sp.ID, "image/svg+xml", []byte("<svg/>"), u.ID); err == nil {
-		t.Fatal("the database accepts an SVG file")
+	if _, err := st.CreateFile(ctx, sp.ID, "text/html", []byte("<p>"), u.ID); err == nil {
+		t.Fatal("the database accepts an HTML file")
 	}
 
 	f, err := st.File(ctx, sp.ID, used)

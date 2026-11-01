@@ -157,8 +157,22 @@ apply:
 - The maximum size is 10 MiB. The body limit of the request is larger
   only for uploads.
 - The server finds the type from the data, not from the name or the
-  request. It accepts only PNG, JPEG, GIF and WebP. It does not accept
-  SVG, because an SVG file can contain scripts.
+  request. It accepts PNG, JPEG, GIF and WebP, and draw.io diagrams in
+  SVG format. It does not accept other SVG files, because an SVG file
+  can contain scripts.
+- A draw.io SVG file has three layers of protection:
+  1. The upload check (`checkDrawioSVG`). The file must be well-formed
+     XML with a root `svg` element that contains a draw.io diagram (the
+     `content` attribute with an `mxfile`). The check refuses script,
+     iframe, object, embed and similar elements, all event attributes
+     (`on…`), `javascript:` and `vbscript:` URLs, `data:` URLs that are
+     not raster images, entity definitions, and more than 256 levels.
+  2. The page shows the diagram in an `img` element. A browser does not
+     run scripts and does not load other resources in an image.
+  3. The server sends the file with the policy `default-src 'none';
+     style-src 'unsafe-inline'; img-src data:; font-src data:; sandbox`.
+     Thus a script cannot run also if a user opens the file directly.
+     The diagram can use its inline styles and embedded images.
 - A user can read a file only if the user can read a document that uses
   it. Before a document uses the file, only the user that uploaded it
   can read it. A file that no document uses after one day is deleted.

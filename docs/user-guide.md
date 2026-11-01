@@ -329,7 +329,8 @@ document.
 Click **Image** and select a file. You can also paste an image, or drag
 an image file into the text. The wiki keeps the image with the document.
 
-- The file must be a PNG, JPEG, GIF or WebP image. SVG is not permitted.
+- The file must be a PNG, JPEG, GIF or WebP image, or a draw.io
+  diagram in SVG format (see below). Other SVG files are not permitted.
 - The maximum size is 10 MiB.
 - The name of the file becomes the description of the image (the
   alternative text).
@@ -337,6 +338,27 @@ an image file into the text. The wiki keeps the image with the document.
 
 If you add an image and do not save the document, the wiki deletes the
 image after one day.
+
+### draw.io diagrams
+
+You can add a [draw.io](https://www.drawio.com/) diagram as an image.
+The diagram must contain an image and a copy of the diagram. Thus the
+page can show it, and draw.io can open it again.
+
+1. In draw.io, click **File** > **Export as** > **SVG** (or **PNG**).
+2. Select **Include a copy of my diagram**.
+3. Click **Export** and save the file, for example `flow.drawio.svg`.
+4. In the editor, click **Image** and select the file. You can also drag
+   the file into the text.
+
+To change the diagram later, open the image in the document, save it,
+and open the file in draw.io. Then export it again and replace the
+image in the document.
+
+A `.drawio` file without an image is not permitted: the page cannot
+show it. The wiki shows a message with the steps above. In dark mode,
+images have a white background, because diagrams often have dark lines
+on a transparent background.
 
 ### Source
 

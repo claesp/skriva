@@ -337,6 +337,15 @@ user can read one of the nodes in `file_refs`. Before a node uses a
 file, only the user that uploaded it can read it. The cleanup task
 deletes files that no node uses after one day.
 
+A draw.io diagram is an uploaded file of the type `image/svg+xml`.
+draw.io can export a diagram as SVG with a copy of the diagram in the
+`content` attribute of the root element (a `.drawio.svg` file). Thus
+the browser shows the file as an image, and draw.io can open it again.
+A `.drawio.png` file is a PNG image with the diagram in a text chunk;
+the server accepts it as a normal PNG image. A plain `.drawio` file
+contains only XML. A browser needs the script of draw.io to show it,
+thus the server does not accept it. See [Security](security.md#uploaded-files).
+
 ### Editor
 
 The form of a document contains the JSON of the text in a hidden field,

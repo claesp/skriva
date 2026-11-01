@@ -15,9 +15,11 @@ import (
 // maxUploadBytes is the largest size of an uploaded file.
 const maxUploadBytes = 10 << 20
 
-// imageTypes are the permitted types of uploaded files. The server finds
-// the type from the data, not from the name or the request. SVG is not
-// permitted, because an SVG file can contain scripts.
+// imageTypes are the permitted types of uploaded images. The server finds
+// the type from the data, not from the name or the request. Other SVG
+// files are not permitted, because an SVG file can contain scripts. A
+// draw.io diagram in SVG format is permitted after a check. See
+// checkDrawioSVG.
 var imageTypes = map[string]bool{
 	"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true,
 }
@@ -91,8 +93,22 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	contentType := http.DetectContentType(data)
 	if !imageTypes[contentType] {
-		uploadError(w, http.StatusUnsupportedMediaType, "The file must be a PNG, JPEG, GIF or WebP image.")
-		return
+		switch err := checkDrawioSVG(data); {
+		case err == nil:
+			contentType = svgType
+		case errors.Is(err, errDrawioXML):
+			uploadError(w, http.StatusUnsupportedMediaType, "This draw.io file contains no image. "+
+				"In draw.io, use File > Export as > SVG (or PNG) and select \"Include a copy of my diagram\".")
+			return
+		case errors.Is(err, errNotXML), errors.Is(err, errNotDrawio):
+			uploadError(w, http.StatusUnsupportedMediaType, "The file must be a PNG, JPEG, GIF or WebP image, "+
+				"or a draw.io diagram in SVG format (.drawio.svg).")
+			return
+		default:
+			uploadError(w, http.StatusUnsupportedMediaType, "The SVG file contains items that are not permitted, "+
+				"for example scripts.")
+			return
+		}
 	}
 	fileID, err := s.store.CreateFile(r.Context(), ri.Space.ID, contentType, data, ri.Session.User.ID)
 	if err != nil {
@@ -110,6 +126,12 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 // fileSecurityPolicy applies when a user opens a file directly.
 const fileSecurityPolicy = "default-src 'none'; sandbox"
+
+// fileSVGSecurityPolicy applies to a draw.io diagram in SVG format. The
+// diagram uses inline styles and can contain images and fonts in data:
+// URLs. Scripts and other resources are not permitted, also when a user
+// opens the file directly.
+const fileSVGSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; sandbox"
 
 // handleFile sends an uploaded file. A user can read a file if the user
 // can read a node that uses the file. The user that uploaded a file can
@@ -144,7 +166,11 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 	}
 	h := w.Header()
 	h.Set("Content-Type", f.ContentType)
-	h.Set("Content-Security-Policy", fileSecurityPolicy)
+	if f.ContentType == svgType {
+		h.Set("Content-Security-Policy", fileSVGSecurityPolicy)
+	} else {
+		h.Set("Content-Security-Policy", fileSecurityPolicy)
+	}
 	h.Set("Content-Disposition", "inline")
 	// The data of a file does not change, but the permissions can
 	// change. Thus only the browser keeps a copy, for a short time.

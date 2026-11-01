@@ -1674,3 +1674,44 @@ func TestClassification(t *testing.T) {
 		t.Fatalf("audit log:\n%s", b)
 	}
 }
+
+func TestDrawioUpload(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob")
+	id := bob.create("document", "", "Flow", "x")
+	sample, err := os.ReadFile("testdata/flow.drawio.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A draw.io file without an image gets a message with the export
+	// steps.
+	resp := bob.upload(sp+"/files?node="+id, "flow.drawio", []byte(`<mxfile><diagram id="a">x</diagram></mxfile>`))
+	if b := readBody(t, resp); resp.StatusCode != http.StatusUnsupportedMediaType || !strings.Contains(b, "Include a copy of my diagram") {
+		t.Fatalf("status %d, message: %s", resp.StatusCode, b)
+	}
+	resp = bob.upload(sp+"/files?node="+id, "flow.drawio.svg", sample)
+	wantStatus(t, resp, http.StatusOK)
+	var out struct{ URL string }
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	resp = bob.get(out.URL)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	csp := resp.Header.Get("Content-Security-Policy")
+	if ct := resp.Header.Get("Content-Type"); ct != "image/svg+xml" || !strings.Contains(csp, "sandbox") ||
+		strings.Contains(csp, "script-src") || !strings.HasPrefix(csp, "default-src 'none'") {
+		t.Fatalf("file headers: %q, %q", ct, csp)
+	}
+	if b := readBody(t, resp); b != string(sample) {
+		t.Fatal("the server changed the file")
+	}
+	// The document shows the diagram as an image.
+	body := `{"type":"doc","content":[{"type":"image","attrs":{"src":"` + out.URL + `","alt":"Flow"}}]}`
+	wantStatus(t, bob.save(id, "Flow", body, 1), http.StatusSeeOther)
+	if page := readBody(t, bob.get(sp+"/d/"+id+"/flow")); !strings.Contains(page, `<img src="`+out.URL+`" alt="Flow"`) {
+		t.Fatalf("document does not show the diagram:\n%s", page)
+	}
+}

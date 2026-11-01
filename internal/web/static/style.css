@@ -174,6 +174,9 @@
     --accent-fg: #0d1117;
     --danger: #f28b82;
     --mark: #5c4f00;
+    /* Images with a transparent background, for example draw.io
+       diagrams, have dark lines. They need a light background. */
+    --img-bg: #ffffff;
     --del-bg: #3b1d1b;
     --del-line: #7a2e29;
     --ins-bg: #1b3323;
@@ -608,7 +611,7 @@ main > .reading { max-width: var(--measure); }
 
 .prose blockquote { margin-left: 0; padding-left: 1.2em; border-left: 2px solid var(--line); font-style: italic; }
 .prose hr { margin: 2.5em 0; border: 0; border-top: 1px solid var(--line); }
-.prose img { max-width: 100%; height: auto; }
+.prose img { max-width: 100%; height: auto; background: var(--img-bg, transparent); }
 .prose > img, .ProseMirror > img { display: block; margin: 0 0 1.25em; }
 .prose sup, .prose sub { line-height: 0; }
 

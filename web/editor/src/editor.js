@@ -249,7 +249,8 @@ function start(root) {
   }
 
   // altText makes a short description from the name of a file.
-  const altText = (file) => file.name.replace(/\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ').trim()
+  // A draw.io diagram has two extensions, for example "flow.drawio.svg".
+  const altText = (file) => file.name.replace(/(\.drawio)?\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ').trim()
 
   async function insertImages(files, pos) {
     for (const file of files) {
