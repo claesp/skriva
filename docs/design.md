@@ -77,6 +77,10 @@ and these guidelines for long-form text:
   ISO 8601 format with the time zone, for example
   "2026-10-31T14:06:07+00:00". The date is a `time` element, thus
   programs can read the time from the `datetime` attribute.
+- No page scrolls to the side on a small window. In a table, a long
+  value without spaces (a URL or an ID) breaks at any character. Words
+  break only at spaces. A table with many columns (the audit log) is in
+  a box that scrolls to the side.
 - In a table, a date column is the last data column. The text in it is
   right-aligned.
 - All toolbars and all columns of action buttons show all their

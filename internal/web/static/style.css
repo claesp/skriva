@@ -358,6 +358,12 @@ table.items td a:hover { text-decoration: underline; }
 table.items .i { margin-right: 0.4em; color: var(--muted); }
 table.items .i-folder { color: var(--accent); fill: color-mix(in srgb, var(--accent) 18%, transparent); }
 th.num, td.num { text-align: right; }
+td .tag { white-space: nowrap; }
+/* A table with many columns, for example the audit log. On a small
+   window, the table scrolls in its box. The page does not scroll to the
+   side. */
+.tablescroll { max-width: 100%; overflow-x: auto; margin: 0.5rem 0 1rem; }
+.tablescroll > table { margin: 0; }
 th.date, td.date { text-align: right; white-space: nowrap; }
 time[title] { cursor: help; }
 
@@ -792,6 +798,11 @@ td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
      button go to the right side of the next line, as on the other
      pages. */
   header.site .search + .user { margin-left: auto; }
+  /* A table must fit in the window. Long values without spaces (a URL
+     or an ID in a code element) break at any character. Words break
+     only at spaces. The cells have less space around the text. */
+  th, td { padding-left: 0.375rem; padding-right: 0.375rem; }
+  td code { overflow-wrap: anywhere; }
 }
 
 /* A printed document shows only the text. */
