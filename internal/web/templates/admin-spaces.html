@@ -11,7 +11,7 @@
     <td class="num">{{.Nodes}}</td>
     <td>{{.Description}}</td>
     <td class="actions">
-      {{if $.Can "tenant.manage"}}{{template "tool" (tool (print $.TenantPath "/admin/spaces/" .Slug "/access") "access" "Access")}}{{end}}
+      {{template "tool" (when ($.Can "tenant.manage") (tool (print $.TenantPath "/admin/spaces/" .Slug "/access") "access" "Access"))}}
       {{template "tool" (tool (print $.TenantPath "/" .Slug "/") "open" "Open the space")}}
     </td>
   </tr>

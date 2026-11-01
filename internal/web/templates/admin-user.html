@@ -12,7 +12,7 @@
     <tr><th scope="row">First sign-in</th><td>{{date .User.CreatedAt}}</td><td class="actions"></td></tr>
     <tr><th scope="row">Status</th>
       <td>{{if .User.Disabled}}<span class="tag danger">Disabled</span>{{else}}Active{{end}}</td>
-      <td class="actions">{{if not .IsSelf}}{{if .User.Disabled}}{{template "post" (post (print $u "/enable") "enable" "Enable" $.CSRF "")}}{{else}}{{template "post" (post (print $u "/disable") "disable" "Disable" $.CSRF "")}}{{end}}{{end}}</td></tr>
+      <td class="actions">{{if .IsSelf}}{{template "tool" (dtool "disable" "Disable")}}{{else if .User.Disabled}}{{template "post" (post (print $u "/enable") "enable" "Enable" $.CSRF "")}}{{else}}{{template "post" (post (print $u "/disable") "disable" "Disable" $.CSRF "")}}{{end}}</td></tr>
   </tbody>
 </table>
 <h2>Groups</h2>

@@ -108,8 +108,9 @@ Users with the permission `tenant.manage` manage these items:
   administrator can disable a user. The server then deletes all
   sessions of the user.
 - **Groups.** OIDC groups and local groups. The pages of a group are
-  **Members** and **Role bindings**. Only local groups have
-  **New member** and **Delete**. See [Access control](access-control.md).
+  **Members** and **Role bindings**. For an OIDC group,
+  **New member**, **Remove** and **Delete** are disabled, because the
+  identity provider controls the members. See [Access control](access-control.md).
 - **Roles.** Custom roles for the tenant.
 - **Role bindings.** Roles for users and groups, for all spaces or for
   one space.

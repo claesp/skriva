@@ -11,7 +11,7 @@
   </tbody>
 </table>
 <h2>Members</h2>
-{{if $local}}{{template "tablebar" (tool (print $g "/members/new") "new-user" "New member")}}{{end}}
+{{template "tablebar" (when $local (tool (print $g "/members/new") "new-user" "New member"))}}
 <table>
   <thead><tr><th>User name</th><th>Name</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
@@ -19,7 +19,7 @@
   <tr>
     <td><a href="{{$.TenantPath}}/admin/users/{{.ID}}">{{.Username}}</a></td>
     <td>{{.DisplayName}}</td>
-    <td class="actions">{{if $local}}{{template "post" (post (print $g "/members/" .ID "/remove") "remove" "Remove" $.CSRF "")}}{{end}}</td>
+    <td class="actions">{{if $local}}{{template "post" (post (print $g "/members/" .ID "/remove") "remove" "Remove" $.CSRF "")}}{{else}}{{template "tool" (dtool "remove" "Remove")}}{{end}}</td>
   </tr>
   {{else}}
   <tr><td colspan="3">The group has no members.</td></tr>

@@ -123,6 +123,15 @@ var funcs = template.FuncMap{
 	// ntool is a button in the toolbar of a node. The button of the
 	// current tab is marked and opens closeURL. Thus a second click ends
 	// the mode, for example the editor.
+	// when disables a button if ok is false. A toolbar shows all its
+	// buttons at the same places. A button for an action that the user
+	// cannot do is disabled, not hidden.
+	"when": func(ok bool, t toolArgs) toolArgs {
+		if !ok {
+			t.Disabled, t.Current = true, false
+		}
+		return t
+	},
 	// dtool is a disabled button in a toolbar.
 	"dtool": func(icon, label string) toolArgs { return toolArgs{Icon: icon, Label: label, Disabled: true} },
 	"ntool": func(currentTab, tab, href, closeURL, icon, label string) toolArgs {

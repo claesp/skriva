@@ -13,8 +13,8 @@
     <td>{{.Comment}}</td>
     <td class="date">{{date .CreatedAt}}</td>
     <td class="actions">
-      {{if gt .Version 1}}{{template "tool" (tool (print $.SpacePath "/compare/" $.Data.Node.PublicID "?from=" (sub .Version 1) "&to=" .Version) "compare" (print "Changes in version " .Version))}}{{end}}
-      {{if and ($.Can "doc.edit") (ne .Version $.Data.Node.Version)}}{{template "tool" (tool (print $.SpacePath "/edit/" $.Data.Node.PublicID "?from=" .Version) "restore" "Restore")}}{{end}}
+      {{template "tool" (when (gt .Version 1) (tool (print $.SpacePath "/compare/" $.Data.Node.PublicID "?from=" (sub .Version 1) "&to=" .Version) "compare" (print "Changes in version " .Version)))}}
+      {{template "tool" (when (and ($.Can "doc.edit") (ne .Version $.Data.Node.Version)) (tool (print $.SpacePath "/edit/" $.Data.Node.PublicID "?from=" .Version) "restore" "Restore"))}}
     </td>
   </tr>
   {{end}}

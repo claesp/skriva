@@ -4,7 +4,7 @@
 {{$s := print $.TenantPath "/admin/spaces/" .Slug}}
 <div class="pagehead"><h1>{{.Name}}</h1></div>
 <h2>Settings</h2>
-{{if $.Can "space.manage"}}{{template "tablebar" (tool (print $s "/edit") "edit" "Change the settings")}}{{end}}
+{{template "tablebar" (when ($.Can "space.manage") (tool (print $s "/edit") "edit" "Change the settings"))}}
 <table class="settings">
   <tbody>
     <tr><th scope="row">Name</th><td>{{.Name}}</td></tr>

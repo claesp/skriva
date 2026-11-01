@@ -75,9 +75,9 @@
     <span class="group">
       {{template "tool" (ntool .Data.Tab "bindings" (print $g "/bindings") $g "binding" "Role bindings")}}
     </span>
-    {{if eq .Data.Group.Source "local"}}<span class="group">
-      {{template "tool" (ntool .Data.Tab "delete" (print $g "/delete") $g "delete" "Delete")}}
-    </span>{{end}}
+    <span class="group">
+      {{template "tool" (when (eq .Data.Group.Source "local") (ntool .Data.Tab "delete" (print $g "/delete") $g "delete" "Delete"))}}
+    </span>
   </nav>
 </div>
 <div class="main reading">
@@ -92,12 +92,12 @@
     {{if .Data.Tab}}<a href="{{$s}}">{{.Data.Space.Name}}</a> / {{.Data.Crumb}}{{else}}{{.Data.Space.Name}}{{end}}</nav>
   <nav class="toolbar" aria-label="Tools">
     <span class="group">
-      {{if .Can "tenant.manage"}}{{template "tool" (ntool .Data.Tab "access" (print $s "/access") $s "access" "Access")}}{{end}}
+      {{template "tool" (when (.Can "tenant.manage") (ntool .Data.Tab "access" (print $s "/access") $s "access" "Access"))}}
       {{template "tool" (tool (print .TenantPath "/" .Data.Space.Slug "/") "open" "Open the space")}}
     </span>
-    {{if .Can "space.manage"}}<span class="group">
-      {{template "tool" (ntool .Data.Tab "delete" (print $s "/delete") $s "delete" "Delete")}}
-    </span>{{end}}
+    <span class="group">
+      {{template "tool" (when (.Can "space.manage") (ntool .Data.Tab "delete" (print $s "/delete") $s "delete" "Delete"))}}
+    </span>
   </nav>
 </div>
 <div class="main reading">
@@ -116,9 +116,9 @@
       {{template "tool" (ntool .Data.Tab "spaces" (print $t "/spaces") $t "space" "Spaces")}}
       {{template "tool" (tool (print "/" .Data.Code "/") "open" "Open the tenant")}}
     </span>
-    {{if not .Data.IsDefault}}<span class="group">
-      {{template "tool" (ntool .Data.Tab "delete" (print $t "/delete") $t "delete" "Delete")}}
-    </span>{{end}}
+    <span class="group">
+      {{template "tool" (when (not .Data.IsDefault) (ntool .Data.Tab "delete" (print $t "/delete") $t "delete" "Delete"))}}
+    </span>
   </nav>
 </div>
 <div class="main reading">
@@ -208,14 +208,14 @@
 <div class="topbar wide">
   <nav class="breadcrumbs" aria-label="Path"><a href="{{$v.TenantPath}}/">Spaces</a> /
     {{if .Tab}}<a href="{{$v.SpacePath}}/">{{$v.Space.Name}}</a> / Trash{{else}}{{$v.Space.Name}}{{end}}</nav>
-  {{if or $v.Data.Trash ($v.Can "tenant.manage")}}<nav class="toolbar" aria-label="Tools">
-    {{if $v.Data.Trash}}<span class="group">
-      {{template "tool" (ntool .Tab "trash" (print $v.SpacePath "/trash") (print $v.SpacePath "/") "trash" "Trash")}}
-    </span>{{end}}
-    {{if $v.Can "tenant.manage"}}<span class="group">
-      {{template "tool" (tool (print $v.TenantPath "/admin/spaces/" $v.Space.Slug "/access") "access" "Access")}}
-    </span>{{end}}
-  </nav>{{end}}
+  <nav class="toolbar" aria-label="Tools">
+    <span class="group">
+      {{template "tool" (when $v.Data.Trash (ntool .Tab "trash" (print $v.SpacePath "/trash") (print $v.SpacePath "/") "trash" "Trash"))}}
+    </span>
+    <span class="group">
+      {{template "tool" (when ($v.Can "tenant.manage") (tool (print $v.TenantPath "/admin/spaces/" $v.Space.Slug "/access") "access" "Access"))}}
+    </span>
+  </nav>
 </div>
 <aside class="sidebar" aria-label="Contents">
   {{template "tree" (tree $v.SpacePath $v.Data.Tree)}}

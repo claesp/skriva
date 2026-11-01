@@ -75,6 +75,13 @@ and these guidelines for long-form text:
   programs can read the time from the `datetime` attribute.
 - In a table, a date column is the last data column. The text in it is
   right-aligned.
+- All toolbars and all columns of action buttons show all their
+  buttons. A button for an action that the user cannot do (no
+  permission, or not possible for this item) is disabled: gray, without
+  a link, with "(not available)" in its name. It is not hidden. This
+  applies to the toolbars of the space, of the administration pages and
+  of the tables (for example the built-in roles, the OIDC groups and the
+  old versions). The template function `when` disables a button.
 - The toolbar of a folder or a document has the same buttons at the
   same places in all modes (the page, the forms and the form of a new
   item) and for all users. The user does not have to look for a button.

@@ -1573,6 +1573,11 @@ func TestToolbarModes(t *testing.T) {
 		!strings.Contains(b, `aria-label="Rename"`) {
 		t.Fatalf("toolbar of a folder:\n%s", b)
 	}
+	// The space page shows the Trash button disabled for an editor.
+	if b := toolbar(readBody(t, bob.get(sp+"/"))); !strings.Contains(b, `title="Trash (not available)"`) ||
+		!strings.Contains(b, `title="Access (not available)"`) {
+		t.Fatalf("toolbar of the space page:\n%s", b)
+	}
 	// The page has no Save button.
 	if b = toolbar(readBody(t, bob.get(sp+"/d/"+id+"/plan"))); strings.Contains(b, `class="save"`) {
 		t.Fatalf("toolbar of the page:\n%s", b)

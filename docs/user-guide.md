@@ -155,7 +155,7 @@ days in the trash, the wiki deletes them permanently.
 ## The trash
 
 To open the trash, click **Trash** (box) in the toolbar of the space
-page. The button is there only if you have permission to delete items.
+page. If you do not have permission to delete items, the button is gray.
 The trash shows the items that you can delete. Each row shows the old
 place of the item, who deleted it and when.
 

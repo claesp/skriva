@@ -2,9 +2,9 @@
 <div class="with-sidebar">
 <div class="topbar wide">
   <nav class="breadcrumbs" aria-label="Path">Spaces</nav>
-  {{if .Can "space.manage"}}<nav class="toolbar" aria-label="Tools"><span class="group">
-    {{template "tool" (tool (print .TenantPath "/admin/spaces") "settings" "Manage spaces")}}
-  </span></nav>{{end}}
+  <nav class="toolbar" aria-label="Tools"><span class="group">
+    {{template "tool" (when (.Can "space.manage") (tool (print .TenantPath "/admin/spaces") "settings" "Manage spaces"))}}
+  </span></nav>
 </div>
 <aside class="sidebar" aria-label="Spaces">
   <ul class="tree">

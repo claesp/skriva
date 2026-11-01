@@ -26,8 +26,8 @@ You cannot undo this.</p>
     <td>{{.DeletedBy}}</td>
     <td class="date">{{date .DeletedAt}}</td>
     <td class="actions">
-      {{if .ParentInTrash}}<small>Restore the folder first</small>{{else}}{{template "post" (post (print $.SpacePath "/trash/" .PublicID "/restore") "restore" "Restore" $.CSRF "")}}{{end}}
-      {{if .CanPurge}}{{template "tool" (tool (print $.SpacePath "/trash/" .PublicID "/delete") "delete" "Delete permanently")}}{{end}}
+      {{if .ParentInTrash}}{{template "tool" (dtool "restore" "Restore (restore the folder first)")}}{{else}}{{template "post" (post (print $.SpacePath "/trash/" .PublicID "/restore") "restore" "Restore" $.CSRF "")}}{{end}}
+      {{template "tool" (when .CanPurge (tool (print $.SpacePath "/trash/" .PublicID "/delete") "delete" "Delete permanently"))}}
     </td>
   </tr>
   {{end}}

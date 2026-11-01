@@ -3,7 +3,7 @@
 {{with .Data}}
 <div class="notice versionnote">
   <span>This is version {{.Revision.Version}} from {{date .Revision.CreatedAt}}{{with .Revision.Author}} by {{.}}{{end}}.</span>
-  {{if $.Can "doc.edit"}}{{template "tool" (tool (print $.SpacePath "/edit/" .Node.PublicID "?from=" .Revision.Version) "restore" "Restore")}}{{end}}
+  {{template "tool" (when ($.Can "doc.edit") (tool (print $.SpacePath "/edit/" .Node.PublicID "?from=" .Revision.Version) "restore" "Restore"))}}
 </div>
 <div class="pagehead"><h1>{{.Revision.Title}}</h1></div>
 <article class="prose">{{.HTML}}</article>

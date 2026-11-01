@@ -10,7 +10,7 @@
     <td>{{.Name}}{{if .Builtin}} <span class="tag">built-in</span>{{end}}</td>
     <td>{{.Description}}</td>
     <td>{{range .Permissions}}<code>{{.}}</code> {{end}}</td>
-    <td class="actions">{{if not .Builtin}}{{template "tool" (tool (print $.TenantPath "/admin/roles/" .ID "/delete") "delete" "Delete")}}{{end}}</td>
+    <td class="actions">{{template "tool" (when (not .Builtin) (tool (print $.TenantPath "/admin/roles/" .ID "/delete") "delete" "Delete"))}}</td>
   </tr>
   {{end}}
   </tbody>
