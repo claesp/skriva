@@ -229,6 +229,21 @@ All queries use parameters. No query contains text from a user.
 The container image contains only the program and CA certificates. The
 program runs as user 65532, not as root.
 
+## Audit log
+
+The audit log records the changes to access rights (users, groups,
+roles, role bindings, default roles), to spaces and tenants, the moves,
+the restored versions, the trash actions and the sign-ins. See
+[Administration: audit log](administration.md#audit-log).
+
+- Each event is written in the transaction of the change. If the event
+  cannot be written, the change fails.
+- Only users with `tenant.manage` can read the audit log of a tenant.
+  Only system administrators can read the system audit log.
+- The application has no function to change or delete an event. The
+  cleanup task deletes events after 365 days.
+- The log does not contain IP addresses, tokens or secrets.
+
 ## Known limits
 
 - The login limit applies to all clients together. Thus a flood of

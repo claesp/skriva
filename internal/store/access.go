@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -102,9 +103,14 @@ func (s *Store) Group(ctx context.Context, tenantID, id int64) (*Group, error) {
 // CreateLocalGroup makes a local group in a tenant.
 func (s *Store) CreateLocalGroup(ctx context.Context, tenantID int64, name, description string) (int64, error) {
 	var id int64
-	err := s.pool.QueryRow(ctx, `
-		INSERT INTO groups (tenant_id, name, source, description) VALUES ($1, $2, 'local', $3)
-		RETURNING id`, tenantID, name, description).Scan(&id)
+	err := s.tx(ctx, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO groups (tenant_id, name, source, description) VALUES ($1, $2, 'local', $3)
+			RETURNING id`, tenantID, name, description).Scan(&id); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, Action: AuditGroupCreate, Target: name})
+	})
 	if sqlState(err) == codeUniqueViolation {
 		return 0, ErrConflict
 	}
@@ -133,15 +139,16 @@ func ensureOIDCGroup(ctx context.Context, q querier, tenantID int64, name string
 // DeleteGroup removes a local group. OIDC groups come from the identity
 // provider, thus the function does not remove them.
 func (s *Store) DeleteGroup(ctx context.Context, tenantID, id int64) error {
-	tag, err := s.pool.Exec(ctx,
-		"DELETE FROM groups WHERE tenant_id = $1 AND id = $2 AND source = 'local'", tenantID, id)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.tx(ctx, func(tx pgx.Tx) error {
+		var name string
+		err := tx.QueryRow(ctx, `
+			DELETE FROM groups WHERE tenant_id = $1 AND id = $2 AND source = 'local'
+			RETURNING name`, tenantID, id).Scan(&name)
+		if err != nil {
+			return notFound(err)
+		}
+		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, Action: AuditGroupDelete, Target: name})
+	})
 }
 
 // GroupMembers returns the members of a group.
@@ -190,41 +197,59 @@ func (s *Store) UserGroups(ctx context.Context, tenantID, userID int64) ([]Group
 // AddLocalGroupMember adds a user to a local group. The group and the user
 // must be in the tenant.
 func (s *Store) AddLocalGroupMember(ctx context.Context, tenantID, groupID, userID int64) error {
-	var exists bool
-	err := s.pool.QueryRow(ctx, `
-		WITH ins AS (
-			INSERT INTO group_members (tenant_id, group_id, user_id)
-			SELECT $1, g.id, u.id FROM groups g, users u
-			WHERE g.tenant_id = $1 AND g.id = $2 AND g.source = 'local'
-			  AND u.tenant_id = $1 AND u.id = $3
-			ON CONFLICT DO NOTHING RETURNING 1)
-		SELECT EXISTS (SELECT 1 FROM ins)
-		    OR EXISTS (SELECT 1 FROM group_members gm JOIN groups g ON g.id = gm.group_id
-		               WHERE gm.tenant_id = $1 AND gm.group_id = $2 AND gm.user_id = $3
-		                 AND g.source = 'local')`,
-		tenantID, groupID, userID).Scan(&exists)
-	if err != nil {
+	return s.tx(ctx, func(tx pgx.Tx) error {
+		var inserted, exists bool
+		err := tx.QueryRow(ctx, `
+			WITH ins AS (
+				INSERT INTO group_members (tenant_id, group_id, user_id)
+				SELECT $1, g.id, u.id FROM groups g, users u
+				WHERE g.tenant_id = $1 AND g.id = $2 AND g.source = 'local'
+				  AND u.tenant_id = $1 AND u.id = $3
+				ON CONFLICT DO NOTHING RETURNING 1)
+			SELECT EXISTS (SELECT 1 FROM ins),
+			       EXISTS (SELECT 1 FROM group_members gm JOIN groups g ON g.id = gm.group_id
+			               WHERE gm.tenant_id = $1 AND gm.group_id = $2 AND gm.user_id = $3
+			                 AND g.source = 'local')`,
+			tenantID, groupID, userID).Scan(&inserted, &exists)
+		switch {
+		case err != nil:
+			return err
+		case inserted:
+			return s.auditMember(ctx, tx, tenantID, groupID, userID, AuditMemberAdd)
+		case !exists:
+			return ErrNotFound
+		}
+		return nil
+	})
+}
+
+// auditMember writes a change of a group member into the audit log.
+func (s *Store) auditMember(ctx context.Context, tx pgx.Tx, tenantID, groupID, userID int64, action string) error {
+	var group, user string
+	if err := tx.QueryRow(ctx, `
+		SELECT g.name, u.username FROM groups g, users u
+		WHERE g.tenant_id = $1 AND g.id = $2 AND u.tenant_id = $1 AND u.id = $3`,
+		tenantID, groupID, userID).Scan(&group, &user); err != nil {
 		return err
 	}
-	if !exists {
-		return ErrNotFound
-	}
-	return nil
+	return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, Action: action, Target: group, Details: "User " + user})
 }
 
 // RemoveLocalGroupMember removes a user from a local group.
 func (s *Store) RemoveLocalGroupMember(ctx context.Context, tenantID, groupID, userID int64) error {
-	tag, err := s.pool.Exec(ctx, `
-		DELETE FROM group_members gm USING groups g
-		WHERE gm.group_id = g.id AND g.source = 'local'
-		  AND gm.tenant_id = $1 AND gm.group_id = $2 AND gm.user_id = $3`, tenantID, groupID, userID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.tx(ctx, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			DELETE FROM group_members gm USING groups g
+			WHERE gm.group_id = g.id AND g.source = 'local'
+			  AND gm.tenant_id = $1 AND gm.group_id = $2 AND gm.user_id = $3`, tenantID, groupID, userID)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		return s.auditMember(ctx, tx, tenantID, groupID, userID, AuditMemberRemove)
+	})
 }
 
 // Roles returns the built-in roles and the custom roles of a tenant.
@@ -287,10 +312,13 @@ func (s *Store) CreateRole(ctx context.Context, tenantID int64, name, descriptio
 			tenantID, name, description).Scan(&id); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `
+		if _, err := tx.Exec(ctx, `
 			INSERT INTO role_permissions (role_id, permission)
-			SELECT DISTINCT $1::bigint, unnest($2::text[])`, id, names)
-		return err
+			SELECT DISTINCT $1::bigint, unnest($2::text[])`, id, names); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, Action: AuditRoleCreate, Target: name,
+			Details: strings.Join(names, ", ")})
 	})
 	if sqlState(err) == codeUniqueViolation {
 		return ErrConflict
@@ -301,15 +329,16 @@ func (s *Store) CreateRole(ctx context.Context, tenantID int64, name, descriptio
 // DeleteRole removes a custom role of a tenant and its bindings. Built-in
 // roles are permanent.
 func (s *Store) DeleteRole(ctx context.Context, tenantID, id int64) error {
-	tag, err := s.pool.Exec(ctx,
-		"DELETE FROM roles WHERE tenant_id = $1 AND id = $2 AND NOT builtin", tenantID, id)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.tx(ctx, func(tx pgx.Tx) error {
+		var name string
+		err := tx.QueryRow(ctx,
+			"DELETE FROM roles WHERE tenant_id = $1 AND id = $2 AND NOT builtin RETURNING name",
+			tenantID, id).Scan(&name)
+		if err != nil {
+			return notFound(err)
+		}
+		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, Action: AuditRoleDelete, Target: name})
+	})
 }
 
 // Bindings returns the role bindings of a tenant.
@@ -378,41 +407,83 @@ func (s *Store) BindRoleToGroup(ctx context.Context, tenantID int64, roleName st
 // paths of the subtree of the node. Thus the function refreshes them in
 // the same transaction.
 func (s *Store) bindScoped(ctx context.Context, tenantID int64, roleName string, userID, groupID *int64, sc Scope) error {
-	if sc.NodeID == 0 {
-		return bind(ctx, s.pool, tenantID, roleName, userID, groupID, sc)
-	}
-	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if err := lockSpace(ctx, tx, sc.SpaceID); err != nil {
+	return s.tx(ctx, func(tx pgx.Tx) error {
+		if sc.NodeID != 0 {
+			if err := lockSpace(ctx, tx, sc.SpaceID); err != nil {
+				return err
+			}
+		}
+		id, err := bind(ctx, tx, tenantID, roleName, userID, groupID, sc)
+		if err != nil {
 			return err
 		}
-		if err := bind(ctx, tx, tenantID, roleName, userID, groupID, sc); err != nil {
-			return err
+		if id != 0 {
+			if err := s.auditBinding(ctx, tx, tenantID, id, AuditBindingCreate); err != nil {
+				return err
+			}
 		}
-		return refreshAccess(ctx, tx, sc.SpaceID, sc.NodeID)
+		if sc.NodeID != 0 {
+			return refreshAccess(ctx, tx, sc.SpaceID, sc.NodeID)
+		}
+		return nil
 	})
 }
 
 // bind makes a role binding. The role must be a built-in role or a custom
 // role of the tenant. The foreign keys make sure that the user, the group,
-// the space and the node are in the tenant.
-func bind(ctx context.Context, q querier, tenantID int64, roleName string, userID, groupID *int64, sc Scope) error {
+// the space and the node are in the tenant. It returns the ID of the new
+// binding, or 0 if the binding exists already.
+func bind(ctx context.Context, q querier, tenantID int64, roleName string, userID, groupID *int64, sc Scope) (int64, error) {
 	if err := checkRole(ctx, q, tenantID, roleName); err != nil {
 		if err == ErrInvalid {
-			return ErrNotFound
+			return 0, ErrNotFound
 		}
-		return err
+		return 0, err
 	}
 	spaceID, nodeID := sc.ids()
-	_, err := q.Exec(ctx, `
+	var id int64
+	err := q.QueryRow(ctx, `
 		INSERT INTO role_bindings (tenant_id, role_id, user_id, group_id, space_id, node_id)
 		SELECT $1, id, $3, $4, $5, $6 FROM roles
 		WHERE name = $2 AND (tenant_id IS NULL OR tenant_id = $1)
-		ON CONFLICT DO NOTHING`, tenantID, roleName, userID, groupID, spaceID, nodeID)
-	if sqlState(err) == codeForeignKeyViolation {
+		ON CONFLICT DO NOTHING RETURNING id`, tenantID, roleName, userID, groupID, spaceID, nodeID).Scan(&id)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return 0, nil
+	case sqlState(err) == codeForeignKeyViolation:
 		// The user, the group or the space does not exist in the tenant.
-		return ErrNotFound
+		return 0, ErrNotFound
 	}
-	return err
+	return id, err
+}
+
+// auditBinding writes a new or a removed role binding into the audit log.
+// The binding must exist.
+func (s *Store) auditBinding(ctx context.Context, tx pgx.Tx, tenantID, id int64, action string) error {
+	var role, subject, scope string
+	var spaceID *int64
+	err := tx.QueryRow(ctx, `
+		SELECT r.name,
+		       CASE WHEN g.id IS NOT NULL THEN 'Group ' || g.name ELSE 'User ' || u.username END,
+		       CASE WHEN n.id IS NOT NULL THEN 'Item "' || n.title || '" (' || n.public_id || ')'
+		            WHEN sp.id IS NOT NULL THEN 'All of the space'
+		            ELSE 'All spaces' END,
+		       b.space_id
+		FROM role_bindings b
+		JOIN roles r ON r.id = b.role_id
+		LEFT JOIN groups g ON g.id = b.group_id
+		LEFT JOIN users u ON u.id = b.user_id
+		LEFT JOIN spaces sp ON sp.id = b.space_id
+		LEFT JOIN nodes n ON n.id = b.node_id
+		WHERE b.tenant_id = $1 AND b.id = $2`, tenantID, id).Scan(&role, &subject, &scope, &spaceID)
+	if err != nil {
+		return err
+	}
+	e := auditEntry{TenantID: &tenantID, Action: action, Target: subject, Details: "Role " + role + ". Scope: " + scope + "."}
+	if spaceID != nil {
+		e.SpaceID = *spaceID
+	}
+	return s.audit(ctx, tx, e)
 }
 
 // DeleteBinding removes a role binding of a tenant. For a binding of a
@@ -429,6 +500,9 @@ func (s *Store) DeleteBinding(ctx context.Context, tenantID, id int64) error {
 			if err := lockSpace(ctx, tx, *spaceID); err != nil {
 				return err
 			}
+		}
+		if err := s.auditBinding(ctx, tx, tenantID, id, AuditBindingDelete); err != nil {
+			return err
 		}
 		tag, err := tx.Exec(ctx, "DELETE FROM role_bindings WHERE tenant_id = $1 AND id = $2", tenantID, id)
 		if err != nil {

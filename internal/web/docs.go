@@ -326,7 +326,9 @@ type nodeForm struct {
 	Body    string
 	Comment string
 	Version int
-	Error   string
+	// RestoredFrom is the old version that the form restores, or 0.
+	RestoredFrom int
+	Error        string
 	// UploadURL is the address for uploaded images.
 	UploadURL string
 	// EditorURL is the address of the script of the editor.
@@ -548,6 +550,7 @@ func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request, n *store
 		}
 		f.Title, body = rev.Title, rev.Body
 		f.Comment = "Restore version " + strconv.Itoa(from)
+		f.RestoredFrom = from
 	}
 	if !n.IsFolder() {
 		var err error
@@ -566,6 +569,14 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Nod
 		return
 	}
 	f := nodeForm{Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind, nodePage: nodePage{Node: n}, Version: version}
+	if v := r.PostFormValue("restored_from"); v != "" {
+		from, ok := parseVersion(v)
+		if !ok || from < 1 || from >= version+1 {
+			s.badRequest(w, r, "The form is not valid.")
+			return
+		}
+		f.RestoredFrom = from
+	}
 	readNodeForm(r, &f)
 	if msg := s.validateForm(r, &f); msg != "" {
 		f.Error = msg
@@ -576,7 +587,7 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Nod
 	sl := slug.Make(f.Title)
 	err := s.store.UpdateNode(r.Context(), ri.Space.ID, n.PublicID, store.NodeUpdate{
 		BaseVersion: version, Title: f.Title, Slug: sl, Content: f.content,
-		Comment: f.Comment, AuthorID: ri.Session.User.ID,
+		Comment: f.Comment, AuthorID: ri.Session.User.ID, RestoredFrom: f.RestoredFrom,
 	})
 	if errors.Is(err, store.ErrConflict) {
 		f.Error = "A different user changed this item after you started to edit it. " +

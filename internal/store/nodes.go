@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -113,6 +114,9 @@ type NodeUpdate struct {
 	Content
 	Comment  string
 	AuthorID int64
+	// RestoredFrom is the old version that the author restored, or 0.
+	// The audit log records a restored version.
+	RestoredFrom int
 }
 
 // addFileRefs records that a node uses files.
@@ -390,8 +394,17 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO revisions (node_id, version, title, body, author_id, comment, created_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)`, id, version, u.Title, body, nullID(u.AuthorID), u.Comment, now)
-		if err != nil || folder {
+		if err != nil {
 			return err
+		}
+		if u.RestoredFrom > 0 {
+			if err := s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodeRevert, Target: u.Title,
+				TargetID: publicID, Details: fmt.Sprintf("Version %d restored as version %d.", u.RestoredFrom, version)}); err != nil {
+				return err
+			}
+		}
+		if folder {
+			return nil
 		}
 		if err := setLinks(ctx, tx, spaceID, id, u.Content); err != nil {
 			return err
@@ -409,10 +422,10 @@ func (s *Store) MoveNode(ctx context.Context, spaceID int64, publicID, newParent
 			return err
 		}
 		var id int64
-		var kind string
+		var kind, title string
 		if err := tx.QueryRow(ctx, `
-			SELECT id, kind FROM nodes WHERE space_id = $1 AND public_id = $2 AND deleted_at IS NULL`,
-			spaceID, publicID).Scan(&id, &kind); err != nil {
+			SELECT id, kind, title FROM nodes WHERE space_id = $1 AND public_id = $2 AND deleted_at IS NULL`,
+			spaceID, publicID).Scan(&id, &kind, &title); err != nil {
 			return notFound(err)
 		}
 		parentID, _, err := parentFor(ctx, tx, spaceID, newParentPublicID, kind)
@@ -441,6 +454,18 @@ func (s *Store) MoveNode(ctx context.Context, spaceID int64, publicID, newParent
 			id, parentID, s.now()); err != nil {
 			return err
 		}
+		place := "To the top level."
+		if parentID != nil {
+			var parent string
+			if err := tx.QueryRow(ctx, "SELECT title FROM nodes WHERE id = $1", *parentID).Scan(&parent); err != nil {
+				return err
+			}
+			place = "Into \"" + parent + "\" (" + newParentPublicID + ")."
+		}
+		if err := s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodeMove, Target: title,
+			TargetID: publicID, Details: place}); err != nil {
+			return err
+		}
 		// The subtree now has a different parent path.
 		return refreshAccess(ctx, tx, spaceID, id)
 	})
@@ -461,14 +486,19 @@ func (s *Store) SetNodeDefaultRole(ctx context.Context, tenantID, spaceID int64,
 			return err
 		}
 		var id int64
+		var title string
 		err := tx.QueryRow(ctx, `
 			UPDATE nodes n SET default_role = $4
 			FROM spaces sp
 			WHERE sp.id = n.space_id AND sp.tenant_id = $1 AND n.space_id = $2 AND n.public_id = $3
 			  AND n.deleted_at IS NULL
-			RETURNING n.id`, tenantID, spaceID, publicID, role).Scan(&id)
+			RETURNING n.id, n.title`, tenantID, spaceID, publicID, role).Scan(&id, &title)
 		if err != nil {
 			return notFound(err)
+		}
+		if err := s.audit(ctx, tx, auditEntry{TenantID: &tenantID, SpaceID: spaceID, Action: AuditNodeDefaultRole,
+			Target: title, TargetID: publicID, Details: roleText(role, "parent")}); err != nil {
+			return err
 		}
 		return refreshAccess(ctx, tx, spaceID, id)
 	})

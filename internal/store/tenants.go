@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -122,7 +123,10 @@ func (s *Store) CreateTenant(ctx context.Context, code string, ts TenantSettings
 		if err := checkRole(ctx, tx, t.ID, ts.DefaultRole); err != nil {
 			return err
 		}
-		return ensureAdminGroup(ctx, tx, t)
+		if err := s.audit(ctx, tx, auditEntry{Action: AuditTenantCreate, Target: t.Name, TargetID: code}); err != nil {
+			return err
+		}
+		return s.ensureAdminGroup(ctx, tx, t)
 	})
 	if sqlState(err) == codeUniqueViolation {
 		return nil, ErrConflict
@@ -171,7 +175,17 @@ func (s *Store) UpdateTenant(ctx context.Context, id int64, ts TenantSettings, n
 				return err
 			}
 		}
-		return ensureAdminGroup(ctx, tx, t)
+		details := "Enabled."
+		if ts.Disabled {
+			details = "Disabled."
+		}
+		if newSecret != nil {
+			details += " The client secret changed."
+		}
+		if err := s.audit(ctx, tx, auditEntry{Action: AuditTenantUpdate, Target: t.Name, TargetID: code, Details: details}); err != nil {
+			return err
+		}
+		return s.ensureAdminGroup(ctx, tx, t)
 	})
 	return t, err
 }
@@ -179,18 +193,22 @@ func (s *Store) UpdateTenant(ctx context.Context, id int64, ts TenantSettings, n
 // DeleteTenant removes a tenant and all its data. The default tenant is
 // permanent: the function returns ErrInvalid for it.
 func (s *Store) DeleteTenant(ctx context.Context, id int64) error {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1 AND NOT is_default", id)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		var isDefault bool
-		if err := s.pool.QueryRow(ctx, "SELECT is_default FROM tenants WHERE id = $1", id).Scan(&isDefault); err != nil {
-			return notFound(err)
+	return s.tx(ctx, func(tx pgx.Tx) error {
+		var code, name string
+		err := tx.QueryRow(ctx, "DELETE FROM tenants WHERE id = $1 AND NOT is_default RETURNING code, name",
+			id).Scan(&code, &name)
+		if errors.Is(err, pgx.ErrNoRows) {
+			var isDefault bool
+			if err := tx.QueryRow(ctx, "SELECT is_default FROM tenants WHERE id = $1", id).Scan(&isDefault); err != nil {
+				return notFound(err)
+			}
+			return ErrInvalid
 		}
-		return ErrInvalid
-	}
-	return nil
+		if err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, auditEntry{Action: AuditTenantDelete, Target: name, TargetID: code})
+	})
 }
 
 // ClientSecret returns the decrypted OIDC client secret of the tenant.
@@ -219,7 +237,7 @@ func (s *Store) EnsureAdminGroups(ctx context.Context) error {
 	}
 	for _, t := range tenants {
 		if err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-			return ensureAdminGroup(ctx, tx, t)
+			return s.ensureAdminGroup(ctx, tx, t)
 		}); err != nil {
 			return err
 		}
@@ -227,7 +245,7 @@ func (s *Store) EnsureAdminGroups(ctx context.Context) error {
 	return nil
 }
 
-func ensureAdminGroup(ctx context.Context, tx pgx.Tx, t *Tenant) error {
+func (s *Store) ensureAdminGroup(ctx context.Context, tx pgx.Tx, t *Tenant) error {
 	if t.AdminGroup == "" {
 		return nil
 	}
@@ -235,7 +253,11 @@ func ensureAdminGroup(ctx context.Context, tx pgx.Tx, t *Tenant) error {
 	if err != nil {
 		return err
 	}
-	return bind(ctx, tx, t.ID, "admin", nil, &gid, Scope{})
+	id, err := bind(ctx, tx, t.ID, "admin", nil, &gid, Scope{})
+	if err != nil || id == 0 {
+		return err
+	}
+	return s.auditBinding(ctx, tx, t.ID, id, AuditBindingCreate)
 }
 
 // checkRole returns ErrInvalid if the role name is not empty and no

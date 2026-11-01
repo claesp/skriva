@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -47,12 +48,13 @@ func (s *Store) TrashNode(ctx context.Context, spaceID int64, publicID string, u
 			return err
 		}
 		var id int64
+		var title string
 		if err := tx.QueryRow(ctx, `
-			SELECT id FROM nodes WHERE space_id = $1 AND public_id = $2 AND deleted_at IS NULL`,
-			spaceID, publicID).Scan(&id); err != nil {
+			SELECT id, title FROM nodes WHERE space_id = $1 AND public_id = $2 AND deleted_at IS NULL`,
+			spaceID, publicID).Scan(&id, &title); err != nil {
 			return notFound(err)
 		}
-		_, err := tx.Exec(ctx, `
+		tag, err := tx.Exec(ctx, `
 			WITH RECURSIVE sub(id) AS (
 				SELECT $1::bigint
 				UNION
@@ -60,7 +62,11 @@ func (s *Store) TrashNode(ctx context.Context, spaceID int64, publicID string, u
 			)
 			UPDATE nodes n SET deleted_at = $2, deleted_by = $3, trash_id = $1
 			FROM sub WHERE n.id = sub.id`, id, s.now(), nullID(userID))
-		return err
+		if err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodeTrash, Target: title,
+			TargetID: publicID, Details: itemCount(tag.RowsAffected() - 1)})
 	})
 }
 
@@ -124,22 +130,27 @@ func (s *Store) RestoreNode(ctx context.Context, spaceID int64, publicID string)
 			return err
 		}
 		var id int64
+		var title string
 		var parentInTrash bool
 		err := tx.QueryRow(ctx, `
-			SELECT n.id, COALESCE(p.deleted_at IS NOT NULL, false)
+			SELECT n.id, n.title, COALESCE(p.deleted_at IS NOT NULL, false)
 			FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
 			WHERE n.space_id = $1 AND n.public_id = $2 AND n.trash_id = n.id`,
-			spaceID, publicID).Scan(&id, &parentInTrash)
+			spaceID, publicID).Scan(&id, &title, &parentInTrash)
 		if err != nil {
 			return notFound(err)
 		}
 		if parentInTrash {
 			return ErrInvalid
 		}
-		_, err = tx.Exec(ctx, `
+		tag, err := tx.Exec(ctx, `
 			UPDATE nodes SET deleted_at = NULL, deleted_by = NULL, trash_id = NULL
 			WHERE space_id = $1 AND trash_id = $2`, spaceID, id)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodeRestore, Target: title,
+			TargetID: publicID, Details: itemCount(tag.RowsAffected() - 1)})
 	})
 }
 
@@ -151,13 +162,16 @@ func (s *Store) PurgeNode(ctx context.Context, spaceID int64, publicID string) e
 		if err := lockSpace(ctx, tx, spaceID); err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx, `
-			DELETE FROM nodes WHERE space_id = $1 AND public_id = $2 AND trash_id = id`, spaceID, publicID)
+		var title string
+		err := tx.QueryRow(ctx, `
+			DELETE FROM nodes WHERE space_id = $1 AND public_id = $2 AND trash_id = id RETURNING title`,
+			spaceID, publicID).Scan(&title)
 		if err != nil {
-			return err
+			return notFound(err)
 		}
-		if tag.RowsAffected() == 0 {
-			return ErrNotFound
+		if err := s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodePurge, Target: title,
+			TargetID: publicID}); err != nil {
+			return err
 		}
 		return deleteUnusedPaths(ctx, tx, spaceID)
 	})
@@ -182,10 +196,27 @@ func (s *Store) purgeTrash(ctx context.Context) error {
 			if err := lockSpace(ctx, tx, spaceID); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `
-				DELETE FROM nodes WHERE space_id = $1 AND trash_id = id AND deleted_at < $2`,
-				spaceID, before); err != nil {
+			rows, err := tx.Query(ctx, `
+				DELETE FROM nodes WHERE space_id = $1 AND trash_id = id AND deleted_at < $2
+				RETURNING public_id, title`, spaceID, before)
+			if err != nil {
 				return err
+			}
+			type item struct{ id, title string }
+			items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (item, error) {
+				var it item
+				err := row.Scan(&it.id, &it.title)
+				return it, err
+			})
+			if err != nil {
+				return err
+			}
+			// The cleanup task has no actor. Thus the log shows "System".
+			for _, it := range items {
+				if err := s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodePurge, Target: it.title,
+					TargetID: it.id, Details: fmt.Sprintf("After %d days in the trash.", TrashDays)}); err != nil {
+					return err
+				}
 			}
 			return deleteUnusedPaths(ctx, tx, spaceID)
 		})
@@ -194,4 +225,15 @@ func (s *Store) purgeTrash(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// itemCount describes the number of items in a subtree for the audit log.
+func itemCount(n int64) string {
+	switch n {
+	case 0:
+		return ""
+	case 1:
+		return "With 1 item in it."
+	}
+	return fmt.Sprintf("With %d items in it.", n)
 }

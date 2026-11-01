@@ -1340,5 +1340,11 @@ func TestTrash(t *testing.T) {
 	if items, _ := st.Trash(ctx, sp.ID); len(items) != 0 {
 		t.Fatalf("trash after %d days = %+v", store.TrashDays+1, items)
 	}
+	// The cleanup task writes the permanent deletion into the audit log.
+	events, err := st.AuditEvents(ctx, &tn.ID, 0, 1)
+	if err != nil || len(events) != 1 || events[0].Action != store.AuditNodePurge ||
+		events[0].Actor != "System" || events[0].Target != "home" || events[0].Space != "default0" {
+		t.Fatalf("audit events = %+v, %v", events, err)
+	}
 	checkAccessCache(t, st, sp.ID)
 }

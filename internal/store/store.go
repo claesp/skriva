@@ -46,8 +46,9 @@ func New(pool *pgxpool.Pool, box *secret.Box) *Store {
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 // DeleteExpired removes expired sessions and login states, the items
-// that are in the trash for more than TrashDays days, and the uploaded
-// files that no node uses.
+// that are in the trash for more than TrashDays days, the audit events
+// that are older than AuditDays days, and the uploaded files that no node
+// uses.
 func (s *Store) DeleteExpired(ctx context.Context) error {
 	now := s.now()
 	if _, err := s.pool.Exec(ctx, "DELETE FROM sessions WHERE expires_at < $1", now); err != nil {
@@ -57,6 +58,10 @@ func (s *Store) DeleteExpired(ctx context.Context) error {
 		return err
 	}
 	if err := s.purgeTrash(ctx); err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, "DELETE FROM audit_events WHERE created_at < $1",
+		now.AddDate(0, 0, -AuditDays)); err != nil {
 		return err
 	}
 	// A file that no node uses after one day is an upload that the user

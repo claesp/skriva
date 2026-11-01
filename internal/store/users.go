@@ -140,17 +140,19 @@ func (s *Store) Users(ctx context.Context, tenantID int64) ([]*User, error) {
 // function disables a user, it also removes all sessions of that user.
 func (s *Store) SetUserDisabled(ctx context.Context, tenantID, id int64, disabled bool) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, "UPDATE users SET disabled = $3 WHERE tenant_id = $1 AND id = $2",
-			tenantID, id, disabled)
+		var username string
+		err := tx.QueryRow(ctx, "UPDATE users SET disabled = $3 WHERE tenant_id = $1 AND id = $2 RETURNING username",
+			tenantID, id, disabled).Scan(&username)
 		if err != nil {
-			return err
+			return notFound(err)
 		}
-		if tag.RowsAffected() == 0 {
-			return ErrNotFound
-		}
+		action := AuditUserEnable
 		if disabled {
-			_, err = tx.Exec(ctx, "DELETE FROM sessions WHERE user_id = $1", id)
+			action = AuditUserDisable
+			if _, err := tx.Exec(ctx, "DELETE FROM sessions WHERE user_id = $1", id); err != nil {
+				return err
+			}
 		}
-		return err
+		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, Action: action, Target: username})
 	})
 }

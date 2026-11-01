@@ -54,7 +54,7 @@ These rules apply to the tree:
 | `/` | Goes to the default tenant. |
 | `/admin/` | System administration. |
 | `/{tenant}/` | The spaces of the tenant. |
-| `/{tenant}/admin/` | Tenant administration. |
+| `/{tenant}/admin/` | Tenant administration. `/{tenant}/admin/audit` is the audit log. |
 | `/{tenant}/{space}/` | The tree of the space. |
 | `/{tenant}/{space}/d/{id}/{slug}` | One folder or document. |
 | `/{tenant}/{space}/d/{id}` | Short link. It goes to the full link. |
@@ -149,6 +149,7 @@ space `default0` ("Default").
 | `roles`            | Built-in roles (no tenant) and custom roles (one tenant). |
 | `role_permissions` | The permissions of each role. |
 | `role_bindings`    | Each row gives one role to one user or to one group of a tenant, in all spaces, in one space or in one item. |
+| `audit_events`     | The audit log. A row with no tenant is an event of the system administration. |
 | `sessions`         | Browser sessions. The table keeps only a token hash. |
 | `oidc_states`      | Data for logins that are in progress. |
 | `schema_migrations`| The migrations that the server applied. |
@@ -274,6 +275,23 @@ the title, because the target can be made later. The page of a node
 shows the nodes that link to it: the rows with the node as target, and
 the rows with the current slug of the node. The query uses two indexes:
 one for each type of row.
+
+### Audit log
+
+The store functions that change access rights, spaces, tenants, the
+trash or the place of an item write an event into `audit_events`. They
+use the transaction of the change. Thus the change and the event are
+saved together, or not at all. The HTTP middleware puts the ID of the
+user into the context of the request (`store.WithActor`). The store
+reads the name of the user when it writes the event. Without a user in
+the context, the event shows "System".
+
+The event keeps the names and the codes from the time of the event: the
+name of the user, the code of the space and the title of the item. Thus
+the log does not need the rows of these items. The foreign keys set
+`actor_id` to NULL when a user is deleted, and remove the events of a
+deleted tenant. The deletion of a tenant is an event of the system
+administration, thus it stays in the log.
 
 ### Comparison of versions
 

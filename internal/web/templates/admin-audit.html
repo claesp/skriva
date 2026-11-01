@@ -1,0 +1,22 @@
+{{define "content"}}
+{{template "listhead" (head "Audit log" "" "")}}
+<p>{{if .System}}The changes to the tenants, and the sign-ins of the system administrators.{{else}}The changes to the access rights, to the spaces, to the trash and to the place of the items, the restored versions and the sign-ins.{{end}}
+The log keeps each event for {{.Data.Days}} days. The changes to the text of a document are in the history of the document.</p>
+<table class="audit">
+  <thead><tr><th>User</th><th>Action</th><th>Item</th><th>Details</th><th class="date">Time</th></tr></thead>
+  <tbody>
+  {{range .Data.Rows}}
+  <tr>
+    <td>{{.Actor}}</td>
+    <td>{{.ActionText}}</td>
+    <td>{{.Target}}{{with .TargetID}} <small><code>{{.}}</code></small>{{end}}{{with .Space}}<br><small>Space <code>{{.}}</code></small>{{end}}</td>
+    <td>{{.Details}}</td>
+    <td class="date">{{date .CreatedAt}}</td>
+  </tr>
+  {{else}}
+  <tr><td colspan="5">There are no events.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{with .Data.Older}}<div class="buttons"><a class="button secondary" href="{{.}}">Older events</a></div>{{end}}
+{{end}}

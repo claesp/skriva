@@ -66,12 +66,17 @@ also record these events:
 
 The logs do not contain session tokens, ID tokens or secrets.
 
+The database also keeps an audit log for the administrators. See
+[Administration: audit log](administration.md#audit-log). The server
+writes each audit event in the same transaction as the change. Thus the
+audit log cannot miss a change that the database saved.
+
 ## Maintenance
 
 The server deletes expired sessions and login data every 10 minutes.
 At the same time, it permanently deletes the items that are in the
-trash for more than 30 days, and the uploaded images that no document
-uses after one day.
+trash for more than 30 days, the audit events that are older than 365
+days, and the uploaded images that no document uses after one day.
 
 ## Backup
 

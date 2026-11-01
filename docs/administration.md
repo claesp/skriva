@@ -125,6 +125,40 @@ From the page of a user or a group, the form gives the role to that user
 or group. From the access page of a space or an item, the form gives
 the role for that space or item.
 
+## Audit log
+
+The audit log shows who changed what, and when. Open **Administration**,
+then **Audit log**. In the tenant administration, the page needs the
+permission `tenant.manage`. The system administration has its own audit
+log with the events of the tenants.
+
+The tenant audit log records these events:
+
+| Area | Events |
+|------|--------|
+| Users | Sign-in, disable, enable |
+| Groups | Make, delete, add a member, remove a member |
+| Roles | Make, delete |
+| Role bindings | Give a role, remove a role (with the scope) |
+| Spaces | Make, change, delete, change the default role |
+| Folders and documents | Move, change the default role, restore an old version, delete (to the trash), restore from the trash, delete permanently |
+
+The system audit log records the sign-ins of the system administrators
+and these changes to tenants: make, change and delete.
+
+Each row shows the user, the action, the item, the details and the time.
+The newest events come first. A page shows 100 events. Click **Older
+events** for the next page. The log keeps the names from the time of
+the event. Thus a row stays correct after the user or the item is
+deleted. The user "System" is the server itself, for example the
+cleanup task or the settings at start.
+
+The log does not record changes to the text of a document. These
+changes are in the history of the document. The server deletes events
+that are older than 365 days.
+
+## Spaces
+
 Users with the permission `space.manage` manage the spaces:
 
 - Make a space. The code has exactly 8 characters from `a-z` and `0-9`.

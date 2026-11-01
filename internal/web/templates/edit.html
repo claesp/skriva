@@ -6,6 +6,7 @@
 <form id="nodeform" action="{{.Action}}" method="post" class="stack editor">
   {{template "csrf" $.CSRF}}
   <input type="hidden" name="version" value="{{.Version}}">
+  {{with .RestoredFrom}}<input type="hidden" name="restored_from" value="{{.}}">{{end}}
   {{if .IsNew}}
   <input type="hidden" name="kind" value="{{.Kind}}">
   <input type="hidden" name="parent" value="{{.ParentID}}">

@@ -132,6 +132,7 @@
   <symbol id="i-disable" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></symbol>
   <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
   <symbol id="i-compare" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M11 18H8a2 2 0 0 1-2-2V9"/></symbol>
+  <symbol id="i-audit" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4"/></symbol>
   <symbol id="i-restore" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/></symbol>
   <symbol id="i-sign-out" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
@@ -150,6 +151,7 @@
   <ul>
   {{if eq .Menu "system"}}
     <li><a href="/admin/"{{if eq .Section "tenants"}} aria-current="page"{{end}}>{{template "icon" "tenant"}}Tenants</a></li>
+    <li><a href="/admin/audit"{{if eq .Section "audit"}} aria-current="page"{{end}}>{{template "icon" "audit"}}Audit log</a></li>
   {{else}}
     {{if .Can "tenant.manage"}}
     <li><a href="{{.TenantPath}}/admin/users"{{if eq .Section "users"}} aria-current="page"{{end}}>{{template "icon" "user"}}Users</a></li>
@@ -157,6 +159,7 @@
     <li><a href="{{.TenantPath}}/admin/roles"{{if eq .Section "roles"}} aria-current="page"{{end}}>{{template "icon" "role"}}Roles</a></li>
     <li><a href="{{.TenantPath}}/admin/bindings"{{if eq .Section "bindings"}} aria-current="page"{{end}}>{{template "icon" "binding"}}Role bindings</a></li>
     <li><a href="{{.TenantPath}}/admin/recent"{{if eq .Section "recent"}} aria-current="page"{{end}}>{{template "icon" "history"}}Recent changes</a></li>
+    <li><a href="{{.TenantPath}}/admin/audit"{{if eq .Section "audit"}} aria-current="page"{{end}}>{{template "icon" "audit"}}Audit log</a></li>
     {{end}}
     {{if .Can "space.manage"}}
     <li><a href="{{.TenantPath}}/admin/spaces"{{if eq .Section "spaces"}} aria-current="page"{{end}}>{{template "icon" "space"}}Spaces</a></li>

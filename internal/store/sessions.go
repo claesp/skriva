@@ -30,10 +30,16 @@ func (s *Session) System() bool { return s.TenantID == nil }
 func (s *Store) CreateSession(ctx context.Context, tenantID *int64, userID int64, idToken string, ttl time.Duration) (string, error) {
 	token := rand.Text()
 	csrf := rand.Text()
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO sessions (token_hash, tenant_id, user_id, csrf_token, id_token, created_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		hashToken(token), tenantID, userID, csrf, idToken, s.now(), s.now().Add(ttl))
+	err := s.tx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO sessions (token_hash, tenant_id, user_id, csrf_token, id_token, created_at, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			hashToken(token), tenantID, userID, csrf, idToken, s.now(), s.now().Add(ttl)); err != nil {
+			return err
+		}
+		// A login is an event of the tenant of the user.
+		return s.audit(ctx, tx, auditEntry{TenantID: tenantID, ActorID: userID, Action: AuditLogin})
+	})
 	if err != nil {
 		return "", err
 	}

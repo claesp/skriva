@@ -225,7 +225,8 @@ func (s *Server) require(perm rbac.Permission, h http.HandlerFunc) http.Handler 
 			s.forbidden(w, r)
 			return
 		}
-		h(w, r)
+		// The store writes the user into the audit log.
+		h(w, r.WithContext(store.WithActor(r.Context(), ri.Session.User.ID)))
 	})
 }
 
@@ -241,7 +242,7 @@ func (s *Server) requireSystem(h http.HandlerFunc) http.Handler {
 		if !s.checkCSRF(w, r, sess) {
 			return
 		}
-		h(w, r)
+		h(w, r.WithContext(store.WithActor(r.Context(), sess.User.ID)))
 	})
 }
 

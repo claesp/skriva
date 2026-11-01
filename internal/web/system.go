@@ -26,6 +26,7 @@ func (s *Server) systemRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/signed-out", s.handleSignedOut)
 	mux.Handle("POST /admin/logout", s.requireSystem(s.handleLogout))
 	mux.Handle("GET /admin/{$}", s.requireSystem(s.handleTenants))
+	mux.Handle("GET /admin/audit", s.requireSystem(s.handleAudit))
 	mux.Handle("GET /admin/tenants/new", s.requireSystem(s.handleTenantNewForm))
 	mux.Handle("POST /admin/tenants", s.requireSystem(s.handleTenantCreate))
 	mux.Handle("GET /admin/tenants/{code}", s.requireSystem(s.handleTenant))

@@ -48,6 +48,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/roles/{id}/delete", s.require(m, s.handleAdminRoleDelete))
 
 	mux.Handle("GET "+p+"/recent", s.require(m, s.handleAdminRecent))
+	mux.Handle("GET "+p+"/audit", s.require(m, s.handleAudit))
 	mux.Handle("GET "+p+"/bindings", s.require(m, s.handleAdminBindings))
 	mux.Handle("GET "+p+"/bindings/new", s.require(m, s.handleAdminBindingNew))
 	mux.Handle("POST "+p+"/bindings", s.require(m, s.handleAdminBindingCreate))

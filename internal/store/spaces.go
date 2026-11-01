@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Space is a tree of folders and documents in a tenant.
@@ -64,9 +66,15 @@ func (s *Store) Space(ctx context.Context, tenantID int64, slug string) (*Space,
 // CreateSpace makes a space. It returns ErrConflict if the tenant has a
 // space with the same slug.
 func (s *Store) CreateSpace(ctx context.Context, tenantID int64, slug, name, description string) error {
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO spaces (tenant_id, slug, name, description) VALUES ($1, $2, $3, $4)`,
-		tenantID, slug, name, description)
+	err := s.tx(ctx, func(tx pgx.Tx) error {
+		var id int64
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO spaces (tenant_id, slug, name, description) VALUES ($1, $2, $3, $4) RETURNING id`,
+			tenantID, slug, name, description).Scan(&id); err != nil {
+			return err
+		}
+		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, SpaceID: id, Action: AuditSpaceCreate, Target: name})
+	})
 	switch sqlState(err) {
 	case codeUniqueViolation:
 		return ErrConflict
@@ -79,16 +87,16 @@ func (s *Store) CreateSpace(ctx context.Context, tenantID int64, slug, name, des
 // UpdateSpace changes the name and the description of a space. The slug
 // is permanent because it is part of the URLs.
 func (s *Store) UpdateSpace(ctx context.Context, tenantID int64, slug, name, description string) error {
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE spaces SET name = $3, description = $4 WHERE tenant_id = $1 AND slug = $2`,
-		tenantID, slug, name, description)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.tx(ctx, func(tx pgx.Tx) error {
+		var id int64
+		err := tx.QueryRow(ctx, `
+			UPDATE spaces SET name = $3, description = $4 WHERE tenant_id = $1 AND slug = $2 RETURNING id`,
+			tenantID, slug, name, description).Scan(&id)
+		if err != nil {
+			return notFound(err)
+		}
+		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, SpaceID: id, Action: AuditSpaceUpdate, Target: name})
+	})
 }
 
 // SetSpaceDefaultRole sets the default role in a space. Nil means that
@@ -100,25 +108,36 @@ func (s *Store) SetSpaceDefaultRole(ctx context.Context, tenantID int64, slug st
 			return err
 		}
 	}
-	tag, err := s.pool.Exec(ctx, "UPDATE spaces SET default_role = $3 WHERE tenant_id = $1 AND slug = $2",
-		tenantID, slug, role)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.tx(ctx, func(tx pgx.Tx) error {
+		var id int64
+		var name string
+		err := tx.QueryRow(ctx, `
+			UPDATE spaces SET default_role = $3 WHERE tenant_id = $1 AND slug = $2 RETURNING id, name`,
+			tenantID, slug, role).Scan(&id, &name)
+		if err != nil {
+			return notFound(err)
+		}
+		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, SpaceID: id, Action: AuditSpaceDefaultRole,
+			Target: name, Details: roleText(role, "tenant")})
+	})
 }
 
 // DeleteSpace removes a space with all its folders and documents.
 func (s *Store) DeleteSpace(ctx context.Context, tenantID int64, slug string) error {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM spaces WHERE tenant_id = $1 AND slug = $2", tenantID, slug)
-	if err != nil {
+	return s.tx(ctx, func(tx pgx.Tx) error {
+		var id int64
+		var name string
+		err := tx.QueryRow(ctx, "SELECT id, name FROM spaces WHERE tenant_id = $1 AND slug = $2 FOR UPDATE",
+			tenantID, slug).Scan(&id, &name)
+		if err != nil {
+			return notFound(err)
+		}
+		// The event is written before the deletion, because it reads the
+		// code of the space.
+		if err := s.audit(ctx, tx, auditEntry{TenantID: &tenantID, SpaceID: id, Action: AuditSpaceDelete, Target: name}); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, "DELETE FROM spaces WHERE id = $1", id)
 		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	})
 }

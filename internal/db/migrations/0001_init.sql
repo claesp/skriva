@@ -251,6 +251,26 @@ CREATE INDEX role_bindings_group_idx ON role_bindings (group_id) WHERE group_id 
 CREATE INDEX role_bindings_space_idx ON role_bindings (space_id) WHERE space_id IS NOT NULL;
 CREATE INDEX role_bindings_node_idx ON role_bindings (node_id) WHERE node_id IS NOT NULL;
 
+-- The audit log: changes to access rights, to the trash and to the tree,
+-- restored versions, and logins. A NULL tenant_id is an event of the
+-- system administration. The columns keep the names at the time of the
+-- event, thus the log stays readable after a user, a group or an item
+-- is deleted.
+CREATE TABLE audit_events (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id  bigint      REFERENCES tenants (id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    actor_id   bigint      REFERENCES users (id) ON DELETE SET NULL,
+    actor_name text        NOT NULL,
+    action     text        NOT NULL,
+    space_slug text        NOT NULL DEFAULT '',
+    target     text        NOT NULL DEFAULT '',
+    target_id  text        NOT NULL DEFAULT '',
+    details    text        NOT NULL DEFAULT ''
+);
+CREATE INDEX audit_events_tenant_idx ON audit_events (tenant_id, id DESC);
+CREATE INDEX audit_events_created_idx ON audit_events (created_at);
+
 -- The database keeps only a SHA-256 hash of the session token. A NULL
 -- tenant_id identifies a system administrator session.
 CREATE TABLE sessions (

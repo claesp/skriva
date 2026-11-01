@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime/multipart"
@@ -1457,4 +1458,76 @@ func TestCompareVersions(t *testing.T) {
 	wantStatus(t, bob.get(sp+"/compare/"+id+"?from=x"), http.StatusBadRequest)
 	// Version 1 has no earlier version.
 	wantStatus(t, bob.get(sp+"/compare/"+id+"?to=1"), http.StatusBadRequest)
+}
+
+func TestAuditLog(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	bob := e.login("bob")
+	mary := e.login("mary")
+
+	folder := alice.create("folder", "", "Secret folder", "")
+	id := bob.create("document", "", "Plan", "one")
+	wantStatus(t, bob.save(id, "Plan", "two", 1), http.StatusSeeOther)
+	// A restore of version 1 is an event. A normal save is not.
+	wantStatus(t, bob.post(sp+"/edit/"+id, url.Values{
+		"title": {"Plan"}, "body": {docBody("one")}, "version": {"2"}, "restored_from": {"1"},
+	}), http.StatusSeeOther)
+	wantStatus(t, bob.post(sp+"/edit/"+id, url.Values{
+		"title": {"Plan"}, "body": {docBody("x")}, "version": {"3"}, "restored_from": {"7"},
+	}), http.StatusBadRequest)
+	wantStatus(t, bob.post(sp+"/move/"+id, url.Values{"parent": {folder}}), http.StatusSeeOther)
+	wantStatus(t, alice.post(sp+"/access/"+folder+"/default-role", url.Values{"default_role": {""}}), http.StatusSeeOther)
+	wantStatus(t, mary.post(sp+"/delete/"+folder, nil), http.StatusSeeOther)
+	wantStatus(t, mary.post(sp+"/trash/"+folder+"/restore", nil), http.StatusSeeOther)
+
+	wantStatus(t, bob.get("/dflt/admin/audit"), http.StatusForbidden)
+	b := readBody(t, alice.get("/dflt/admin/audit"))
+	for _, want := range []string{
+		"Signed in", "Restored an old version", "Version 1 restored as version 3.",
+		"Moved an item", `Into &#34;Secret folder&#34; (` + folder + `).`,
+		"Changed the default role of an item", "No default role",
+		"Deleted an item (to the trash)", "With 1 item in it.", "Restored an item from the trash",
+		"<td>bob</td>", "Space <code>default0</code>",
+	} {
+		if !strings.Contains(b, want) {
+			t.Fatalf("audit log does not contain %q:\n%s", want, b)
+		}
+	}
+	if strings.Count(b, "Restored an old version") != 1 {
+		t.Fatalf("a normal save is in the audit log:\n%s", b)
+	}
+
+	// The system log has the events of the system administration only.
+	root := e.loginAt("/admin", "root")
+	wantStatus(t, root.post("/admin/tenants", url.Values{
+		"code": {"acme"}, "name": {"Acme"}, "oidc_issuer": {"https://idp.example"},
+		"oidc_client_id": {"acme"}, "oidc_scopes": {"openid"}, "oidc_groups_claim": {"groups"},
+		"default_role": {"viewer"}, "session_ttl": {"8h"}, "max_doc_kib": {"512"},
+	}), http.StatusSeeOther)
+	b = readBody(t, root.get("/admin/audit"))
+	if !strings.Contains(b, "Made a tenant") || !strings.Contains(b, "acme") || strings.Contains(b, "Moved an item") {
+		t.Fatalf("system audit log:\n%s", b)
+	}
+	if b := readBody(t, alice.get("/dflt/admin/audit")); strings.Contains(b, "Made a tenant") {
+		t.Fatalf("tenant log shows a system event:\n%s", b)
+	}
+
+	// Older events are on the next page.
+	for i := range auditPageSize {
+		if _, err := e.st.CreateLocalGroup(ctx, e.dft.ID, fmt.Sprint("group ", i), ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b = readBody(t, alice.get("/dflt/admin/audit"))
+	if strings.Contains(b, "Moved an item") {
+		t.Fatalf("first page shows old events:\n%s", b)
+	}
+	m := regexp.MustCompile(`href="(/dflt/admin/audit\?before=\d+)"`).FindStringSubmatch(b)
+	if m == nil {
+		t.Fatalf("no link to older events:\n%s", b)
+	}
+	if b := readBody(t, alice.get(m[1])); !strings.Contains(b, "Moved an item") {
+		t.Fatalf("older events:\n%s", b)
+	}
 }
