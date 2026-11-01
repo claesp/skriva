@@ -35,7 +35,7 @@ search field. Click it to open a list of the items that you can make:
 **Document** and **Folder**. The new item goes into the space, the
 folder or the document that you have open. **Folder** is not in the
 list on a document page, because a folder cannot be in a document.
-Click **New** again to close the list.
+Click out of the list, or click **New** again, to close the list.
 
 ## Toolbar
 

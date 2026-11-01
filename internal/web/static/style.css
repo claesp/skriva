@@ -236,10 +236,14 @@ header.site .newmenu + .search { margin-left: 0; }
 .newmenu > summary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--fg)); }
 .newmenu > summary .i-chevron-down { width: 0.9em; height: 0.9em; transition: transform 0.15s; }
 .newmenu[open] > summary .i-chevron-down { transform: rotate(180deg); }
+/* When the list is open, a transparent layer of the button covers the
+   window. A click out of the list is then a click on the button, and
+   the list closes. This does not need JavaScript. */
+.newmenu[open] > summary::before { content: ""; position: fixed; inset: 0; z-index: 2; cursor: default; }
 .newmenu > ul {
   position: absolute;
   top: calc(100% + 0.25rem);
-  right: 0;
+  left: 0;
   z-index: 3;
   width: max-content;
   max-width: calc(100vw - 2rem);
@@ -699,6 +703,9 @@ td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
 }
 
 @media (max-width: 40rem) {
+  /* The button is at the right side of a small window. The list opens
+     to the left, thus it stays in the window. */
+  .newmenu > ul { left: auto; right: 0; }
   header.site .search { margin-left: 0; width: 100%; }
   header.site .search input { width: 100%; }
 }

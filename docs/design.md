@@ -35,7 +35,10 @@ and these guidelines for long-form text:
   title of a document do not change.
 - The **New** button in the page header has the accent color. It opens
   a list of the items that the user can make. The list is a `details`
-  element, thus it does not need JavaScript.
+  element, thus it does not need JavaScript. The left side of the list
+  is below the left side of the button. On small windows, the list
+  opens to the left. A click out of the list closes it: when the list
+  is open, a transparent layer of the button covers the window.
 
 ## Other rules
 
