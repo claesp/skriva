@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -84,6 +85,11 @@ type Content struct {
 	// Files are the public IDs of the uploaded files that the text uses.
 	// Files from other spaces have no effect.
 	Files []string
+	// DocLinks are the public IDs of the targets of the "doc:" links.
+	// Targets in other spaces have no effect.
+	DocLinks []string
+	// WikiLinks are the slugs of the titles of the wiki links.
+	WikiLinks []string
 }
 
 // NewNode contains the data for a new node.
@@ -120,6 +126,84 @@ func addFileRefs(ctx context.Context, tx pgx.Tx, spaceID, nodeID int64, files []
 		ON CONFLICT DO NOTHING`, spaceID, nodeID, files)
 	return err
 }
+
+// setLinks replaces the links of a node.
+func setLinks(ctx context.Context, tx pgx.Tx, spaceID, nodeID int64, c Content) error {
+	if _, err := tx.Exec(ctx, "DELETE FROM node_links WHERE source_id = $1", nodeID); err != nil {
+		return err
+	}
+	if len(c.DocLinks) > 0 {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO node_links (space_id, source_id, target_id)
+			SELECT $1, $2, n.id FROM nodes n
+			WHERE n.space_id = $1 AND n.public_id = ANY($3) AND n.id <> $2
+			ON CONFLICT DO NOTHING`, spaceID, nodeID, c.DocLinks); err != nil {
+			return err
+		}
+	}
+	if len(c.WikiLinks) > 0 {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO node_links (space_id, source_id, target_slug)
+			SELECT $1, $2, s FROM unnest($3::text[]) s
+			ON CONFLICT DO NOTHING`, spaceID, nodeID, c.WikiLinks); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Backlinks returns the nodes that link to node n: with a "doc:" link,
+// or with a wiki link to the title of n. The result does not contain n
+// and the nodes in the trash. The caller must remove the nodes that the
+// user cannot read.
+func (s *Store) Backlinks(ctx context.Context, n *Node) ([]NodeSummary, error) {
+	return s.summaries(ctx, `
+		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id
+		FROM nodes n
+		JOIN (SELECT source_id FROM node_links WHERE target_id = $2
+		      UNION
+		      SELECT source_id FROM node_links WHERE space_id = $1 AND target_slug = $3 AND $3 <> ''
+		) l ON l.source_id = n.id
+		WHERE n.space_id = $1 AND n.id <> $2 AND n.deleted_at IS NULL
+		ORDER BY lower(n.title), n.id
+		LIMIT 200`, n.SpaceID, n.ID, n.Slug)
+}
+
+// LinkTarget is a possible target for a link in the editor.
+type LinkTarget struct {
+	NodeSummary
+	// ParentTitle and ParentPathID are the title and the access path of
+	// the parent, or empty for the top level.
+	ParentTitle  string
+	ParentPathID int64
+}
+
+// FindLinkTargets returns the nodes of a space with a title that contains
+// query, without the nodes in the trash. Titles that start with the query
+// come first. The caller must remove the nodes that the user cannot read.
+func (s *Store) FindLinkTargets(ctx context.Context, spaceID int64, query string, limit int) ([]LinkTarget, error) {
+	pattern := "%" + likeEscaper.Replace(query) + "%"
+	rows, err := s.pool.Query(ctx, `
+		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id,
+		       COALESCE(p.title, ''), COALESCE(p.access_path_id, 0)
+		FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
+		WHERE n.space_id = $1 AND n.deleted_at IS NULL AND n.title ILIKE $2
+		ORDER BY lower(n.title) = lower($3) DESC, lower(n.title) LIKE lower($4) DESC,
+		         lower(n.title), n.id
+		LIMIT $5`, spaceID, pattern, query, likeEscaper.Replace(query)+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (LinkTarget, error) {
+		var t LinkTarget
+		err := row.Scan(&t.ID, &t.PublicID, &t.ParentID, &t.Kind, &t.Title, &t.Slug, &t.UpdatedAt,
+			&t.AccessPathID, &t.ParentTitle, &t.ParentPathID)
+		return t, err
+	})
+}
+
+// likeEscaper escapes the special characters of a LIKE pattern.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 // Node returns the node with the given public ID in a space.
 func (s *Store) Node(ctx context.Context, spaceID int64, publicID string) (*Node, error) {
@@ -248,6 +332,9 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 		if err != nil {
 			return err
 		}
+		if err := setLinks(ctx, tx, spaceID, id, nn.Content); err != nil {
+			return err
+		}
 		_, err = tx.Exec(ctx, `
 			INSERT INTO revisions (node_id, version, title, body, author_id, comment, created_at)
 			VALUES ($1, 1, $2, $3, $4, $5, $6)`, id, nn.Title, nn.Body, nullID(nn.AuthorID), nn.Comment, now)
@@ -304,6 +391,9 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 			INSERT INTO revisions (node_id, version, title, body, author_id, comment, created_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)`, id, version, u.Title, body, nullID(u.AuthorID), u.Comment, now)
 		if err != nil || folder {
+			return err
+		}
+		if err := setLinks(ctx, tx, spaceID, id, u.Content); err != nil {
 			return err
 		}
 		return addFileRefs(ctx, tx, spaceID, id, u.Files)

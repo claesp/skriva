@@ -60,6 +60,7 @@ These rules apply to the tree:
 | `/{tenant}/{space}/d/{id}` | Short link. It goes to the full link. |
 | `/{tenant}/{space}/w/{slug}` | The target of a wiki link. |
 | `/{tenant}/{space}/trash` | The trash of the space. |
+| `/{tenant}/{space}/link-targets?q=` | JSON: the pages for the list of pages in the link bar of the editor. |
 | `/{tenant}/{space}/files/{id}` | An uploaded image. A `POST` to `/{tenant}/{space}/files` uploads an image. |
 
 - The tenant code has exactly 4 characters from `a-z` and `0-9`, for
@@ -139,6 +140,7 @@ space `default0` ("Default").
 | `revisions`        | All versions of each node. |
 | `files`            | Uploaded images. The data is in the table. |
 | `file_refs`        | The nodes that use each file, in one or more versions. |
+| `node_links`       | The links in the current version of each node: the target node of a `doc:` link, or the slug of a wiki link. |
 | `users`            | Users. The key is (tenant, issuer, subject). A user with no tenant is a system administrator. |
 | `groups`           | Groups of a tenant. The source is `oidc` or `local`. |
 | `group_members`    | The members of each group. |
@@ -221,7 +223,7 @@ attributes:
 | Blocks | Paragraph, heading (levels 1 to 8), quotation, code block, horizontal line, bulleted list, numbered list, task list, image, table |
 | Text formats (marks) | Bold, italic, underline, strikethrough, code, link |
 | Attributes | Alignment (center, right) of paragraphs and headings, language of a code block, start of a numbered list, checked state of a task, the source and the descriptions of an image, the number of columns and rows that a table cell covers |
-| Link destinations | `http`, `https`, `mailto`, `wiki:Title#Heading`, paths that start with one `/`, fragments |
+| Link destinations | `http`, `https`, `mailto`, `doc:ID#Heading`, `wiki:Title#Heading`, paths that start with one `/`, fragments |
 | Image sources | `file:{id}` (an uploaded file), `https` URLs |
 
 The server does not trust the editor. When it saves a document, it
@@ -252,6 +254,24 @@ The package converts a checked document to:
 A wiki link has the destination `wiki:Title`. The HTML has a link to
 `/{tenant}/{space}/w/{slug}`. That page finds the item with the slug in
 the same space.
+
+A document link has the destination `doc:ID`, with the public ID of the
+target. The HTML and the Markdown have a link to the short link
+`/{tenant}/{space}/d/{id}`, and the short link goes to the full URL.
+Thus a document link stays correct when the target gets a new title or
+moves. The link bar of the editor makes these links: it gets a list of
+pages from `/{tenant}/{space}/link-targets`. The list contains only the
+pages that the user can read.
+
+### Links between pages
+
+When the server saves a node, it replaces the rows of the node in
+`node_links`. A `doc:` link gives a row with the target node, if the
+target is in the same space. A wiki link gives a row with the slug of
+the title, because the target can be made later. The page of a node
+shows the nodes that link to it: the rows with the node as target, and
+the rows with the current slug of the node. The query uses two indexes:
+one for each type of row.
 
 ### Uploaded files
 

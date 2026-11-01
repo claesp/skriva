@@ -52,6 +52,7 @@ func (s *Server) spaceRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/trash/{id}/delete", s.trashed(rbac.SpaceManage, s.handlePurgeForm))
 	mux.Handle("POST "+p+"/trash/{id}/delete", s.trashed(rbac.SpaceManage, s.handlePurge))
 	mux.Handle("GET "+p+"/search", s.require("", s.handleSearch))
+	mux.Handle("GET "+p+"/link-targets", s.require("", s.handleLinkTargets))
 	mux.Handle("POST "+p+"/files", s.require("", s.handleUpload))
 	mux.Handle("GET "+p+"/files/{id}", s.require("", s.handleFile))
 }
@@ -243,18 +244,24 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Nod
 			return
 		}
 	}
+	backlinks, err := s.store.Backlinks(r.Context(), n)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	s.render(w, r, http.StatusOK, "view", n.Title, struct {
 		nodePage
-		HTML     template.HTML
-		Children []store.NodeSummary
-	}{page, html, readableOnly(r, children)})
+		HTML      template.HTML
+		Children  []store.NodeSummary
+		Backlinks []store.NodeSummary
+	}{page, html, readableOnly(r, children), readableOnly(r, backlinks)})
 }
 
-// links returns the URL prefixes of wiki links and files in the space of
-// the request.
+// links returns the URL prefixes of wiki links, document links and files
+// in the space of the request.
 func links(r *http.Request) doc.Links {
 	b := base(r)
-	return doc.Links{Wiki: b + "/w/", Files: b + "/files/"}
+	return doc.Links{Wiki: b + "/w/", Files: b + "/files/", Doc: b + "/d/"}
 }
 
 // renderBody converts a saved body to HTML.
@@ -418,7 +425,11 @@ func (s *Server) validateForm(r *http.Request, f *nodeForm) string {
 		if err != nil {
 			return "The text is not in the correct format."
 		}
-		f.content = store.Content{Body: string(d.JSON()), PlainText: d.PlainText(), Files: d.Files()}
+		docLinks, wikiLinks := d.Links()
+		f.content = store.Content{
+			Body: string(d.JSON()), PlainText: d.PlainText(), Files: d.Files(),
+			DocLinks: docLinks, WikiLinks: wikiLinks,
+		}
 		d.MapImages(links(r).Src)
 		f.Body = string(d.JSON())
 	}

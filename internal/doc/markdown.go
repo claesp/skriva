@@ -240,7 +240,7 @@ func (m *mdWriter) text(n *Node) string {
 				core = "[[" + title + "|" + core + "]]"
 			}
 		} else {
-			core = "[" + core + "](" + escapeURL(href) + ")"
+			core = "[" + core + "](" + escapeURL(m.links.Href(href)) + ")"
 		}
 	}
 	return lead + core + trail

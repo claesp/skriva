@@ -14,7 +14,7 @@
     <input name="title" value="{{.Title}}" required maxlength="200" placeholder="Title" autofocus></label>
   {{if not .IsFolder}}
   <input type="hidden" name="body" value="{{.Body}}" data-editor-body>
-  <div class="wysiwyg" data-upload="{{.UploadURL}}" data-csrf="{{$.CSRF}}">
+  <div class="wysiwyg" data-upload="{{.UploadURL}}" data-links="{{$.SpacePath}}/link-targets" data-csrf="{{$.CSRF}}">
     {{template "editortoolbar"}}
     <div class="wysiwyg-text prose" data-editor-text></div>
     <p class="editor-status" role="status" data-editor-status></p>
@@ -88,8 +88,13 @@
   <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden data-editor-file>
 </div>
 <div class="editor-linkbar" hidden data-editor-linkbar>
-  <label>Link address
-    <input type="text" placeholder="https://… or wiki:Title" data-editor-href></label>
+  <div class="linkfield">
+    <label for="editor-href">Link address or title of a page</label>
+    <input id="editor-href" type="text" placeholder="Title of a page, https://… or wiki:Title" autocomplete="off"
+      role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="editor-link-list" data-editor-href>
+    <ul id="editor-link-list" class="linklist" role="listbox" aria-label="Pages" hidden data-editor-linklist></ul>
+    <small class="linknote" data-editor-linknote></small>
+  </div>
   <button type="button" data-command="linkApply">Apply</button>
   <button type="button" data-command="linkRemove">Remove link</button>
   <button type="button" data-command="linkCancel">Cancel</button>

@@ -1353,3 +1353,80 @@ func TestUploads(t *testing.T) {
 	wantStatus(t, bob.upload(sp+"/files?parent="+id, "a.png", png), http.StatusOK)
 	wantStatus(t, bob.upload(sp+"/files", "a.png", png), http.StatusOK)
 }
+
+// linkBody returns a document with one paragraph that links to href.
+func linkBody(text, href string) string {
+	return `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"` + text +
+		`","marks":[{"type":"link","attrs":{"href":"` + href + `"}}]}]}]}`
+}
+
+func TestLinksBetweenDocuments(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	carol := e.login("carol")
+
+	target := alice.create("document", "", "Install guide", "text")
+	byID := alice.create("document", "", "Setup", linkBody("Install", "doc:"+target+"#Step 2"))
+	byTitle := alice.create("document", "", "Notes", linkBody("guide", "wiki:Install guide"))
+	private := alice.create("document", "", "Private plan", linkBody("x", "doc:"+target))
+	wantStatus(t, alice.post(sp+"/access/"+private+"/default-role", url.Values{"default_role": {""}}), http.StatusSeeOther)
+
+	// A "doc:" link goes to the short link of the document.
+	if b := readBody(t, alice.get(sp+"/d/"+byID+"/setup")); !strings.Contains(b, `href="`+sp+`/d/`+target+`#step-2"`) {
+		t.Fatalf("document link not rendered:\n%s", b)
+	}
+
+	// The page of the target shows the pages that link to it. Carol cannot
+	// see the private page.
+	// backlinks returns the section with the links to the page. The tree
+	// of the page also contains links to all pages.
+	backlinks := func(page string) string {
+		i := strings.Index(page, `aria-label="Links to this page"`)
+		if i < 0 {
+			return ""
+		}
+		return page[i : i+strings.Index(page[i:], "</section>")]
+	}
+	b := backlinks(readBody(t, carol.get(sp+"/d/"+target+"/install-guide")))
+	if !strings.Contains(b, "Links to this page") || !strings.Contains(b, byID) || !strings.Contains(b, byTitle) || strings.Contains(b, private) {
+		t.Fatalf("backlinks of carol:\n%s", b)
+	}
+
+	// After a rename, the "doc:" link stays. The wiki link uses the old
+	// title, thus it is not a backlink now.
+	wantStatus(t, alice.save(target, "Installation", "text", 1), http.StatusSeeOther)
+	b = backlinks(readBody(t, carol.get(sp+"/d/"+target+"/installation")))
+	if !strings.Contains(b, byID) || strings.Contains(b, byTitle) {
+		t.Fatalf("backlinks after rename:\n%s", b)
+	}
+	// A source in the trash is not a backlink.
+	wantStatus(t, alice.post(sp+"/delete/"+byID, nil), http.StatusSeeOther)
+	if b := readBody(t, carol.get(sp+"/d/"+target+"/installation")); strings.Contains(b, "Links to this page") {
+		t.Fatalf("backlink from the trash:\n%s", b)
+	}
+
+	// The search for the link bar finds readable pages only.
+	var got []linkTarget
+	resp := carol.get(sp + "/link-targets?q=pla")
+	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("content type %q", ct)
+	}
+	if err := json.Unmarshal([]byte(readBody(t, resp)), &got); err != nil || len(got) != 0 {
+		t.Fatalf("carol finds %v (%v)", got, err)
+	}
+	if err := json.Unmarshal([]byte(readBody(t, alice.get(sp+"/link-targets?q=PLA"))), &got); err != nil ||
+		len(got) != 1 || got[0].ID != private || got[0].Title != "Private plan" {
+		t.Fatalf("alice finds %v (%v)", got, err)
+	}
+	if err := json.Unmarshal([]byte(readBody(t, alice.get(sp+"/link-targets?q=%25"))), &got); err != nil || len(got) != 0 {
+		t.Fatalf("a percent sign matches %v (%v)", got, err)
+	}
+	if err := json.Unmarshal([]byte(readBody(t, carol.get(sp+"/link-targets?id="+target))), &got); err != nil ||
+		len(got) != 1 || got[0].Title != "Installation" {
+		t.Fatalf("lookup by ID: %v (%v)", got, err)
+	}
+	if err := json.Unmarshal([]byte(readBody(t, carol.get(sp+"/link-targets?id="+private))), &got); err != nil || len(got) != 0 {
+		t.Fatalf("carol finds the private page by ID: %v (%v)", got, err)
+	}
+	wantStatus(t, e.anon().get(sp+"/link-targets?q=a"), http.StatusSeeOther)
+}

@@ -70,6 +70,14 @@ you cannot read a folder, it is not in the tree and the search does not
 find its documents. If you have a link to a document that you cannot
 read, the wiki shows "not found".
 
+## Links to this page
+
+Below the text, a page shows the list **Links to this page**: the pages
+in the same space that link to it. The list shows only the pages that
+you can read. A link with the list of pages (`doc:`) always counts. A
+wiki link counts if it has the current title of the page. Pages in the
+trash do not count.
+
 ## Links to a document
 
 Each document has two links:
@@ -236,15 +244,32 @@ Click **Link** or press Ctrl+K. Type the address and click **Apply** or
 press Enter. If you selected text, the text becomes the link. The
 editor keeps the selected text marked while you type the address. If
 the cursor is in a link, the editor selects all of the link and you can
-change its address. These addresses are permitted:
+change its address.
+
+To link to a page in the same space, type a part of its title. The
+link bar shows a list of the pages with that text in the title. Use the
+arrow keys or the mouse to select a page, then press Enter again or
+click **Apply**. If you did not select text, the title of the page
+becomes the text of the link. The address of the link is
+`doc:` and the ID of the page. This link stays correct when the page
+gets a different title or moves to a different folder. Below the
+address, the link bar shows the title of the page.
+
+These addresses are permitted:
 
 - `https://…` and `http://…`: a page on a different site.
 - `mailto:…`: an e-mail address.
-- `wiki:Title` or `wiki:Title#Heading`: a document in the same space.
+- `doc:ID` or `doc:ID#Heading`: a page in the same space. The list of
+  pages makes this address.
+- `wiki:Title` or `wiki:Title#Heading`: a document in the same space,
+  found with its title.
 - A path that starts with `/`, for example the short link of a
   document.
 
-Type `[[Title]]` in the text to make a wiki link quickly. Wiki links are
+Type `[[Title]]` in the text to make a wiki link quickly. A wiki link
+finds the page with its title. Thus a wiki link does not go to the page
+after the page gets a different title. Use the list of pages for a link
+that must stay correct. Wiki links are
 case insensitive. `[[Install]]`, `[[install]]` and `[[INSTALL]]` go to
 the same document. This is also true for the heading in
 `[[Title#Heading]]`. If more than one document in the space has the

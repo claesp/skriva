@@ -18,6 +18,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/clpe/skriva/internal/slug"
 )
 
 // Node is one node of a document.
@@ -159,6 +161,48 @@ func FileID(src string) (string, bool) {
 // example "wiki:Getting started#Install".
 const WikiPrefix = "wiki:"
 
+// DocPrefix is the prefix of a link to a document with its public ID,
+// for example "doc:k3x9p2qa7tm4zb#Install". The link stays correct when
+// the title of the document changes or the document moves.
+const DocPrefix = "doc:"
+
+// DocLink returns the public ID and the heading of a "doc:" link.
+func DocLink(href string) (id, heading string, ok bool) {
+	rest, ok := strings.CutPrefix(href, DocPrefix)
+	if !ok {
+		return "", "", false
+	}
+	id, heading, _ = strings.Cut(rest, "#")
+	return id, heading, fileIDRE.MatchString(id)
+}
+
+// Links returns the targets of the links in the document: the public IDs
+// of the "doc:" links and the slugs of the titles of the wiki links. Each
+// value occurs one time.
+func (n *Node) Links() (docs, wiki []string) {
+	seenDoc, seenWiki := map[string]bool{}, map[string]bool{}
+	n.walk(func(x *Node) {
+		for _, m := range x.Marks {
+			if m.Type != "link" {
+				continue
+			}
+			href := attrString(m.Attrs, "href")
+			if id, _, ok := DocLink(href); ok && !seenDoc[id] {
+				seenDoc[id] = true
+				docs = append(docs, id)
+			}
+			if title, ok := strings.CutPrefix(href, WikiPrefix); ok {
+				title, _, _ = strings.Cut(title, "#")
+				if s := slug.Make(title); s != "" && !seenWiki[s] {
+					seenWiki[s] = true
+					wiki = append(wiki, s)
+				}
+			}
+		}
+	})
+	return docs, wiki
+}
+
 // nodeSpec tells which attributes a node type has and whether it can
 // have children.
 type nodeSpec struct {
@@ -276,7 +320,8 @@ func cleanMarks(in []*Mark) []*Mark {
 }
 
 // cleanHref checks the destination of a link. It permits http, https and
-// mailto URLs, wiki links, paths on the same site and fragments.
+// mailto URLs, wiki links, document links, paths on the same site and
+// fragments.
 func cleanHref(href string) (string, bool) {
 	href = strings.TrimSpace(href)
 	if href == "" || len(href) > 2000 || strings.ContainsFunc(href, unicode.IsControl) || strings.Contains(href, `\`) {
@@ -284,6 +329,10 @@ func cleanHref(href string) (string, bool) {
 	}
 	if title, ok := strings.CutPrefix(href, WikiPrefix); ok {
 		return href, strings.TrimSpace(strings.SplitN(title, "#", 2)[0]) != ""
+	}
+	if strings.HasPrefix(href, DocPrefix) {
+		_, _, ok := DocLink(href)
+		return href, ok
 	}
 	if strings.HasPrefix(href, "#") || (strings.HasPrefix(href, "/") && !strings.HasPrefix(href, "//")) {
 		return href, true

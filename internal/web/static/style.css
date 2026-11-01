@@ -409,7 +409,30 @@ form.editor label.title input {
   background: var(--panel);
   font-size: var(--ui-size);
 }
-.editor-linkbar label { display: flex; flex: 1 1 16rem; flex-direction: column; gap: 0.25rem; }
+.editor-linkbar .linkfield { position: relative; display: flex; flex: 1 1 16rem; flex-direction: column; gap: 0.25rem; }
+/* The list of pages for a link. It covers the text below the link bar. */
+.linklist {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  max-height: 16rem;
+  margin: 0.125rem 0 0;
+  padding: 0.25rem 0;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+}
+.linklist[hidden] { display: none; }
+.linklist li { padding: 0.375rem 0.75rem; cursor: pointer; }
+.linklist li small { color: var(--muted); }
+.linklist li[aria-selected="true"] { background: var(--panel); color: var(--accent); }
+.linknote { color: var(--muted); }
+.linknote:empty { display: none; }
 .wysiwyg-text { max-width: none; min-height: 50vh; padding: 1rem 1.25rem; }
 .wysiwyg-text .ProseMirror { min-height: 48vh; outline: none; }
 .wysiwyg-text .ProseMirror > :first-child { margin-top: 0; }

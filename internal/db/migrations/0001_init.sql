@@ -205,6 +205,24 @@ CREATE TABLE file_refs (
 );
 CREATE INDEX file_refs_node_idx ON file_refs (node_id);
 
+-- The links in the current version of each node. A "doc:" link has the
+-- target node. A wiki link has the slug of the target title, because the
+-- target can be made later. The server replaces the rows of a node when
+-- it saves the node. The page of a node uses the rows to show the nodes
+-- that link to it.
+CREATE TABLE node_links (
+    space_id    bigint NOT NULL,
+    source_id   bigint NOT NULL,
+    target_id   bigint,
+    target_slug text,
+    CHECK ((target_id IS NULL) <> (target_slug IS NULL)),
+    FOREIGN KEY (space_id, source_id) REFERENCES nodes (space_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (space_id, target_id) REFERENCES nodes (space_id, id) ON DELETE CASCADE,
+    UNIQUE NULLS NOT DISTINCT (source_id, target_id, target_slug)
+);
+CREATE INDEX node_links_target_idx ON node_links (target_id) WHERE target_id IS NOT NULL;
+CREATE INDEX node_links_slug_idx ON node_links (space_id, target_slug) WHERE target_slug IS NOT NULL;
+
 -- A role binding gives a role to one user or to one group. A binding
 -- without a space applies in all spaces of the tenant. A binding with a
 -- space applies only in that space. A binding with a node applies to that

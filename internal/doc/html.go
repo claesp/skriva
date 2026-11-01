@@ -20,10 +20,20 @@ type Links struct {
 	// Files is the prefix of uploaded files. The source "file:ID"
 	// becomes Files + ID.
 	Files string
+	// Doc is the prefix of document links. The link "doc:ID#Part"
+	// becomes Doc + ID + "#" + slug.Make("Part").
+	Doc string
 }
 
 // Href returns the URL of a link destination.
 func (l Links) Href(href string) string {
+	if id, heading, ok := DocLink(href); ok {
+		out := l.Doc + id
+		if f := slug.Make(heading); f != "" {
+			out += "#" + f
+		}
+		return out
+	}
 	title, ok := strings.CutPrefix(href, WikiPrefix)
 	if !ok {
 		return href

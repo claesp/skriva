@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-var links = Links{Wiki: "/t/s/w/", Files: "/t/s/files/"}
+var links = Links{Wiki: "/t/s/w/", Files: "/t/s/files/", Doc: "/t/s/d/"}
 
 func mustParse(t *testing.T, src string) *Node {
 	t.Helper()
@@ -94,18 +94,34 @@ func TestParseImageSrc(t *testing.T) {
 }
 
 func TestLinks(t *testing.T) {
-	for _, href := range []string{"https://a.example/x", "http://a.example", "mailto:a@example.com", "/t/s/d/x", "#part", "wiki:Start"} {
+	for _, href := range []string{"https://a.example/x", "http://a.example", "mailto:a@example.com", "/t/s/d/x", "#part", "wiki:Start", "doc:0123456789abcd", "doc:0123456789abcd#Part"} {
 		if _, ok := cleanHref(href); !ok {
 			t.Errorf("cleanHref(%q) refused", href)
 		}
 	}
-	for _, href := range []string{"javascript:x", "JavaScript:x", "data:text/html,x", "//evil.example", "/\\evil", "vbscript:x", "wiki:", "wiki:#x", "https://", "a\x00b"} {
+	for _, href := range []string{"javascript:x", "JavaScript:x", "data:text/html,x", "//evil.example", "/\\evil", "vbscript:x", "wiki:", "wiki:#x", "https://", "a\x00b", "doc:", "doc:short", "doc:0123456789ABCD", "doc:0123456789abcd/x"} {
 		if _, ok := cleanHref(href); ok {
 			t.Errorf("cleanHref(%q) permitted", href)
 		}
 	}
 	if got := links.Href("wiki:Getting Started#Über uns"); got != "/t/s/w/getting-started#uber-uns" {
 		t.Errorf("Href = %q", got)
+	}
+	if got := links.Href("doc:0123456789abcd#Über uns"); got != "/t/s/d/0123456789abcd#uber-uns" {
+		t.Errorf("Href = %q", got)
+	}
+	n := mustParse(t, `{"type":"doc","content":[{"type":"paragraph","content":[
+		{"type":"text","text":"a","marks":[{"type":"link","attrs":{"href":"doc:0123456789abcd"}}]},
+		{"type":"text","text":"b","marks":[{"type":"link","attrs":{"href":"doc:0123456789abcd#x"}}]},
+		{"type":"text","text":"c","marks":[{"type":"link","attrs":{"href":"wiki:Getting Started#x"}}]},
+		{"type":"text","text":"d","marks":[{"type":"link","attrs":{"href":"wiki:getting started"}}]},
+		{"type":"text","text":"e","marks":[{"type":"link","attrs":{"href":"https://a.example"}}]}]}]}`)
+	docs, wiki := n.Links()
+	if len(docs) != 1 || docs[0] != "0123456789abcd" || len(wiki) != 1 || wiki[0] != "getting-started" {
+		t.Errorf("Links() = %v, %v", docs, wiki)
+	}
+	if md := n.Markdown(links); !strings.Contains(md, "[a](/t/s/d/0123456789abcd)") {
+		t.Errorf("Markdown = %q", md)
 	}
 }
 

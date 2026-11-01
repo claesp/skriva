@@ -33,6 +33,11 @@ This document describes the security controls of Skriva.
   search do not show the titles of items that the user cannot read.
 - A deletion also removes the subtree. Thus the server requires
   `doc.delete` for each item in the subtree.
+- The list of pages for a link (`link-targets`) and the list "Links to
+  this page" show only the pages that the user can read. The list of
+  pages also shows the title of the parent only if the user can read
+  the parent. A `doc:` link to a page that the user cannot read goes to
+  "not found".
 - A deleted item goes into the trash. The item keeps its access path.
   Thus the trash uses the permissions of the old place. A restored item
   goes back to its old place only. If the old parent is in the trash,

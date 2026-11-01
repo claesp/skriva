@@ -154,10 +154,11 @@ const SkrivaHeader = TableHeader.extend({
 })
 
 // isAllowedHref has the same rules as the server: http, https and mailto
-// URLs, wiki links, paths on the same site and fragments.
+// URLs, wiki links, document links, paths on the same site and fragments.
 function isAllowedHref(href) {
   if (!href || /[\u0000-\u001f\u007f\\]/.test(href)) return false
   if (href.startsWith('wiki:')) return href.slice(5).split('#')[0].trim() !== ''
+  if (href.startsWith('doc:')) return /^doc:[0-9a-z]{14}(#.*)?$/.test(href)
   if (href.startsWith('#') || (href.startsWith('/') && !href.startsWith('//'))) return true
   try {
     const u = new URL(href)
@@ -173,6 +174,8 @@ function start(root) {
   const toolbar = root.querySelector('[data-editor-toolbar]')
   const linkbar = root.querySelector('[data-editor-linkbar]')
   const hrefInput = root.querySelector('[data-editor-href]')
+  const linkList = root.querySelector('[data-editor-linklist]')
+  const linkNote = root.querySelector('[data-editor-linknote]')
   const fileInput = root.querySelector('[data-editor-file]')
   const status = root.querySelector('[data-editor-status]')
   const tableGroup = root.querySelector('[data-editor-group="table"]')
@@ -206,7 +209,7 @@ function start(root) {
           openOnClick: false,
           autolink: true,
           defaultProtocol: 'https',
-          protocols: ['wiki'],
+          protocols: ['wiki', 'doc'],
           isAllowedUri: (url) => isAllowedHref(url),
           HTMLAttributes: { rel: 'noopener noreferrer nofollow', target: null },
         },
@@ -278,6 +281,111 @@ function start(root) {
 
   // The link bar.
   const keepSelection = (range) => editor.view.dispatch(editor.state.tr.setMeta(keptSelection, range))
+
+  // The list of pages in the link bar. Text that is not an address
+  // finds the pages with that text in the title. A selected page gives a
+  // "doc:" link. This link stays correct when the page gets a different
+  // title or moves.
+  let targets = []
+  let active = -1
+  let chosenTitle = ''
+  let searchTimer = 0
+  let searchSeq = 0
+  const looksLikeAddress = (v) => /^[a-z][a-z0-9+.-]*:/i.test(v) || v.startsWith('/') || v.startsWith('#')
+
+  async function fetchTargets(params) {
+    const resp = await fetch(root.dataset.links + '?' + new URLSearchParams(params), { credentials: 'same-origin' })
+    if (!resp.ok) throw new Error('The search failed.')
+    return resp.json()
+  }
+
+  function showTargets(list) {
+    targets = list
+    active = list.length > 0 ? 0 : -1
+    linkList.replaceChildren(...list.map((t, i) => {
+      const li = document.createElement('li')
+      li.id = 'editor-link-option-' + i
+      li.setAttribute('role', 'option')
+      li.dataset.index = String(i)
+      li.textContent = t.title
+      if (t.parent) {
+        const small = document.createElement('small')
+        small.textContent = 'in ' + t.parent
+        li.append(' ', small)
+      }
+      return li
+    }))
+    const open = list.length > 0
+    linkList.hidden = !open
+    hrefInput.setAttribute('aria-expanded', String(open))
+    markActive()
+  }
+
+  function markActive() {
+    for (const li of linkList.children) {
+      li.setAttribute('aria-selected', String(Number(li.dataset.index) === active))
+    }
+    if (active >= 0) {
+      hrefInput.setAttribute('aria-activedescendant', 'editor-link-option-' + active)
+      linkList.children[active].scrollIntoView({ block: 'nearest' })
+    } else {
+      hrefInput.removeAttribute('aria-activedescendant')
+    }
+  }
+
+  function chooseTarget(i) {
+    const t = targets[i]
+    if (!t) return
+    hrefInput.value = 'doc:' + t.id
+    chosenTitle = t.title
+    linkNote.textContent = 'Links to the page "' + t.title + '".'
+    showTargets([])
+    hrefInput.focus()
+  }
+
+  // describeHref shows the title of the page of a "doc:" link.
+  async function describeHref(href) {
+    const m = /^doc:([0-9a-z]{14})/.exec(href)
+    linkNote.textContent = ''
+    if (!m) return
+    try {
+      const [t] = await fetchTargets({ id: m[1] })
+      if (hrefInput.value === href) {
+        linkNote.textContent = t ? 'Links to the page "' + t.title + '".' : 'The page does not exist, or you cannot read it.'
+      }
+    } catch {
+      // The note is only information.
+    }
+  }
+
+  hrefInput.addEventListener('input', () => {
+    const v = hrefInput.value.trim()
+    chosenTitle = ''
+    linkNote.textContent = ''
+    clearTimeout(searchTimer)
+    if (v === '' || looksLikeAddress(v)) {
+      showTargets([])
+      describeHref(v)
+      return
+    }
+    const seq = ++searchSeq
+    searchTimer = setTimeout(async () => {
+      try {
+        const list = await fetchTargets({ q: v })
+        if (seq === searchSeq) showTargets(list)
+      } catch (err) {
+        say(err.message, true)
+      }
+    }, 150)
+  })
+
+  // A mouse down on an option does not take the focus from the input.
+  linkList.addEventListener('mousedown', (event) => event.preventDefault())
+  linkList.addEventListener('click', (event) => {
+    const li = event.target.closest('[role="option"]')
+    if (li) chooseTarget(Number(li.dataset.index))
+  })
+
   function openLinkbar() {
     // In a link, with no selection, the link bar changes all of the link.
     if (editor.state.selection.empty && editor.isActive('link')) {
@@ -287,11 +395,16 @@ function start(root) {
     keepSelection(empty ? null : { from, to })
     linkbar.hidden = false
     hrefInput.value = editor.getAttributes('link').href || ''
+    chosenTitle = ''
+    showTargets([])
+    describeHref(hrefInput.value)
     hrefInput.focus()
     hrefInput.select()
   }
   function closeLinkbar() {
     linkbar.hidden = true
+    showTargets([])
+    linkNote.textContent = ''
     keepSelection(null)
     editor.commands.focus()
   }
@@ -303,13 +416,14 @@ function start(root) {
       return
     }
     if (!isAllowedHref(href)) {
-      say('The link address is not valid. Use https://…, mailto:…, wiki:Title or a path that starts with /.', true)
+      say('Select a page in the list, or type an address: https://…, mailto:…, wiki:Title or a path that starts with /.', true)
       return
     }
     say('')
     const chain = editor.chain().focus().extendMarkRange('link')
     if (editor.state.selection.empty && !editor.isActive('link')) {
-      chain.insertContent({ type: 'text', text: href.replace(/^wiki:/, ''), marks: [{ type: 'link', attrs: { href } }] })
+      const text = chosenTitle || href.replace(/^wiki:/, '')
+      chain.insertContent({ type: 'text', text, marks: [{ type: 'link', attrs: { href } }] })
     } else {
       chain.setLink({ href })
     }
@@ -406,14 +520,27 @@ function start(root) {
     fileInput.value = ''
   })
 
-  // Enter in the link bar applies the link. It does not send the form.
+  // Enter in the link bar selects the marked page in the list, or applies
+  // the link. It does not send the form. The arrow keys move in the list.
+  // Escape closes the list, and then the link bar.
   hrefInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
+    const open = !linkList.hidden
+    if (event.key === 'ArrowDown' && open) {
       event.preventDefault()
-      applyLink()
+      active = (active + 1) % targets.length
+      markActive()
+    } else if (event.key === 'ArrowUp' && open) {
+      event.preventDefault()
+      active = (active - 1 + targets.length) % targets.length
+      markActive()
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      if (open && active >= 0) chooseTarget(active)
+      else applyLink()
     } else if (event.key === 'Escape') {
       event.preventDefault()
-      closeLinkbar()
+      if (open) showTargets([])
+      else closeLinkbar()
     }
   })
 

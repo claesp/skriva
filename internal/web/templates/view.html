@@ -17,6 +17,14 @@
 </section>
 {{end}}
 {{end}}
+{{with .Backlinks}}
+<section class="children backlinks" aria-label="Links to this page">
+  <h2>Links to this page</h2>
+  <ul class="pages">
+    {{range .}}<li class="{{.Kind}}"><a href="{{docpath $.SpacePath .PublicID .Slug}}">{{template "icon" .Kind}}{{.Title}}</a></li>{{end}}
+  </ul>
+</section>
+{{end}}
 <footer class="meta">
   Version {{.Node.Version}} · Changed {{date .Node.UpdatedAt}}{{with .Node.UpdatedBy}} by {{.}}{{end}} ·
   Short link: <a href="{{$.SpacePath}}/d/{{.Node.PublicID}}">{{$.SpacePath}}/d/{{.Node.PublicID}}</a>
