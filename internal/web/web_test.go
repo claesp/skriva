@@ -344,6 +344,44 @@ func TestPublicRoutes(t *testing.T) {
 	wantStatus(t, c.get("/static/"), http.StatusNotFound)
 }
 
+// TestFonts checks that each font in the style sheet and each preload
+// is available, and that the browser can keep the font files.
+func TestFonts(t *testing.T) {
+	e := newEnv(t)
+	c := e.anon()
+	css, err := staticFS.ReadFile("static/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	urls := regexp.MustCompile(`url\("(fonts/[^"]+)"\)`).FindAllStringSubmatch(string(css), -1)
+	if len(urls) != 12 {
+		t.Fatalf("style sheet has %d font URLs, want 12", len(urls))
+	}
+	for _, u := range urls {
+		resp := c.get("/static/" + u[1])
+		wantStatus(t, resp, http.StatusOK)
+		if ct := resp.Header.Get("Content-Type"); ct != "font/woff2" {
+			t.Errorf("%s: content type %q", u[1], ct)
+		}
+		if cc := resp.Header.Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+			t.Errorf("%s: cache control %q", u[1], cc)
+		}
+	}
+	for _, f := range preloadFonts {
+		if !strings.Contains(string(css), `url("`+strings.TrimPrefix(f, "/static/")+`")`) {
+			t.Errorf("preload %s is not in the style sheet", f)
+		}
+	}
+	page := c.get("/dflt/signed-out")
+	body := readBody(t, page)
+	if !strings.Contains(body, `<link rel="preload" href="`+preloadFonts[0]+`" as="font" type="font/woff2" crossorigin>`) {
+		t.Errorf("page does not preload the fonts")
+	}
+	if csp := page.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "font-src 'self'") {
+		t.Errorf("CSP does not permit the fonts: %s", csp)
+	}
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	e := newEnv(t)
 	resp := e.anon().get("/healthz")

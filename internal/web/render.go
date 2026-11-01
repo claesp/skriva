@@ -175,6 +175,7 @@ type view struct {
 	Space    *store.Space
 	Session  *store.Session
 	StyleURL string
+	Fonts    []string
 	// System is true on the system administration pages.
 	System bool
 	// Menu is "admin" or "system" on the administration pages. The
@@ -244,6 +245,7 @@ func (s *Server) newView(r *http.Request, title string, data any) *view {
 		Space:    ri.Space,
 		Session:  ri.Session,
 		StyleURL: s.staticURL("style.css"),
+		Fonts:    preloadFonts,
 		System:   strings.HasPrefix(r.URL.Path, "/admin/"),
 		New:      ri.New,
 		Data:     data,
@@ -279,6 +281,14 @@ func (s *Server) renderError(w http.ResponseWriter, r *http.Request, status int,
 	}{status, msg})
 }
 
+// preloadFonts are the fonts that almost all pages use: the text of the
+// interface and the text of a document. The browser gets them before it
+// reads the style sheet. The URLs must be the same as in style.css.
+var preloadFonts = []string{
+	"/static/fonts/inter-5.3.0/inter-latin-wght-normal.woff2",
+	"/static/fonts/source-serif-4-5.3.1/source-serif-4-latin-opsz-normal.woff2",
+}
+
 // staticURL returns the URL of a static file with its version.
 func (s *Server) staticURL(name string) string {
 	return "/static/" + name + "?v=" + s.tmpl.versions[name]
@@ -296,7 +306,10 @@ func (s *Server) staticHandler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if v := s.tmpl.versions[strings.TrimPrefix(r.URL.Path, "/static/")]; v != "" && r.URL.Query().Get("v") == v {
+		name := strings.TrimPrefix(r.URL.Path, "/static/")
+		// The folder of a font contains the version in its name. Thus
+		// the files in it do not change.
+		if v := s.tmpl.versions[name]; (v != "" && r.URL.Query().Get("v") == v) || strings.HasPrefix(name, "fonts/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
 			w.Header().Set("Cache-Control", "public, max-age=300")

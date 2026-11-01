@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} · {{if .Tenant}}{{.Tenant.Name}}{{else}}Skriva{{end}}</title>
-<link rel="stylesheet" href="{{.StyleURL}}">
+{{range .Fonts}}<link rel="preload" href="{{.}}" as="font" type="font/woff2" crossorigin>
+{{end}}<link rel="stylesheet" href="{{.StyleURL}}">
 </head>
 <body>
 <a class="skip" href="#content">Skip to the content</a>

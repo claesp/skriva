@@ -165,7 +165,7 @@ The server sends these headers with each response:
 
 | Header | Value |
 |--------|-------|
-| `Content-Security-Policy` | `default-src 'none'; style-src 'self'; img-src 'self' https:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`. The form of a document adds `script-src 'self'; connect-src 'self'`. An uploaded file has `default-src 'none'; sandbox`. |
+| `Content-Security-Policy` | `default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self' https:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`. The form of a document adds `script-src 'self'; connect-src 'self'`. An uploaded file has `default-src 'none'; sandbox`. |
 | `X-Content-Type-Options` | `nosniff` |
 | `X-Frame-Options` | `DENY` |
 | `Referrer-Policy` | `same-origin` |

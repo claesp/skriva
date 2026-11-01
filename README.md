@@ -40,6 +40,7 @@ as `root` (password `root`).
 - [Administration](docs/administration.md)
 - [Page design](docs/design.md)
 - [WYSIWYG editors: research](docs/wysiwyg-editors.md)
+- [Fonts: research](docs/fonts.md)
 - [Security](docs/security.md)
 - [Development and tests](docs/development.md)
 - [Operation](docs/operation.md)

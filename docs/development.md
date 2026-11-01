@@ -135,6 +135,40 @@ Rules for the script:
 The tests in `internal/doc` and `internal/web` do not run the script.
 Before a release, open the editor in a browser and try each button.
 
+## Fonts
+
+The fonts are in `internal/web/static/fonts`. `web/fonts/package.json`
+and `web/fonts/package-lock.json` give the exact versions of the
+Fontsource packages. See [Fonts](fonts.md).
+
+Run `make fonts` to get the files again. The command runs
+`scripts/fetch-fonts.sh`. The script uses a Node container in Podman:
+
+1. `npm ci --ignore-scripts` installs the packages from the lock file.
+   npm checks the checksum of each package.
+2. The script copies the Latin and Latin Extended files to a folder for
+   each font. The folder name contains the package version.
+3. The script gets the license of each font from the font project.
+
+Commit the files. The Go program embeds them.
+
+To update a font:
+
+1. Change the version in `web/fonts/package.json`.
+2. Run this command, then `make fonts`:
+
+   ```sh
+   podman run --rm -v "$PWD/web/fonts":/src:Z -w /src docker.io/library/node:24-alpine \
+     npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+   ```
+
+3. Change the folder names in the `@font-face` rules in `style.css` and
+   in `preloadFonts` in `internal/web/render.go`. `TestFonts` checks
+   that all URLs are correct.
+
+The server tells browsers to keep the font files for one year. Thus do
+not change a file in a folder. A new version must have a new folder.
+
 ## Checks before a commit
 
 1. Run `make lint`.

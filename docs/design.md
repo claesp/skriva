@@ -1,8 +1,9 @@
 # Page design
 
 The document text is the main item of each page. The interface (header,
-tree, menus and toolbars) uses a smaller sans-serif font and muted
-colors. Thus it stays in the background.
+tree, menus and toolbars) uses a smaller sans-serif font (Inter) and
+muted colors. Thus it stays in the background. Code uses JetBrains Mono.
+See [Fonts](fonts.md).
 
 The design of the text follows [Tufte CSS](https://edwardtufte.github.io/tufte-css/)
 and these guidelines for long-form text:
@@ -15,7 +16,7 @@ and these guidelines for long-form text:
 
 | Item | Value | Reason |
 |------|-------|--------|
-| Font | A serif font that the system has: Charter, Sitka Text, Cambria, Palatino or Georgia. | Tufte CSS uses a serif font for the text. The page does not load fonts from other sites. |
+| Font | Source Serif 4. The fallback fonts are Charter, Sitka Text, Cambria, Palatino and Georgia. | Tufte CSS uses a serif font for the text. The server supplies the font, thus all systems show the same font. See [Fonts](fonts.md). |
 | Size | 18 px on small screens to 22 px on large screens (1.125rem to 1.375rem). | Butterick recommends 15 to 25 px on the web. |
 | Line height | 1.6 | WCAG 1.4.8 recommends at least 1.5. |
 | Line length | 40rem to 64rem. The width increases with the width of the window. This is approximately 40 characters on a telephone, 75 characters on a 1440 px screen and up to 90 characters on very large screens. | The guidelines recommend 45 to 75 characters, and WCAG 1.4.8 permits a maximum of 80. Large screens use more of the width, by decision of the project. |

@@ -1,0 +1,11 @@
+{
+  "name": "skriva-fonts",
+  "private": true,
+  "description": "The fonts of Skriva. scripts/fetch-fonts.sh copies the files to internal/web/static/fonts.",
+  "license": "OFL-1.1",
+  "dependencies": {
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@fontsource-variable/source-serif-4": "5.3.1"
+  }
+}

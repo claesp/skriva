@@ -140,14 +140,14 @@ func (s *Server) withRecover(next http.Handler) http.Handler {
 
 // contentSecurityPolicy permits no scripts. Only the form of a document
 // uses JavaScript. See editorSecurityPolicy.
-const contentSecurityPolicy = "default-src 'none'; style-src 'self'; img-src 'self' https:; " +
+const contentSecurityPolicy = "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self' https:; " +
 	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 
 // editorSecurityPolicy applies to the form of a document. It permits the
 // script of the editor from the same site, and requests to the same site
 // for uploads. It does not permit inline scripts or inline styles.
 const editorSecurityPolicy = "default-src 'none'; script-src 'self'; connect-src 'self'; " +
-	"style-src 'self'; img-src 'self' https:; " +
+	"style-src 'self'; font-src 'self'; img-src 'self' https:; " +
 	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 
 func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
