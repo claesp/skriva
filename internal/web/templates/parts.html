@@ -265,7 +265,8 @@
    button is disabled if the user does not have the permission, or, on
    the form of a new item, if it needs a saved item. On that form, the
    Edit button is the current button. A form has the Save button at the
-   left side, in its own group. Folders have no History and Source. */}}
+   left side, in its own group. For a folder, History and Source are
+   disabled, because a folder has no text. */}}
 {{define "nodetools"}}
 {{$n := .Data.Node}}
 {{$t := .Data.Tab}}
@@ -280,10 +281,10 @@
   {{else if .Can "doc.edit"}}{{template "tool" (ntool $t "edit" (print $s "/edit/" $id) $c "edit" $editLabel)}}
   {{else}}{{template "tool" (dtool "edit" $editLabel)}}{{end}}
 </span>
-{{if not $folder}}<span class="group">
-  {{if $n}}{{template "tool" (ntool $t "history" (print $s "/history/" $id) $c "history" "History")}}{{else}}{{template "tool" (dtool "history" "History")}}{{end}}
-  {{if $n}}{{template "tool" (tool (print $s "/raw/" $id) "source" "Source")}}{{else}}{{template "tool" (dtool "source" "Source")}}{{end}}
-</span>{{end}}
+<span class="group">
+  {{if and $n (not $folder)}}{{template "tool" (ntool $t "history" (print $s "/history/" $id) $c "history" "History")}}{{else}}{{template "tool" (dtool "history" "History")}}{{end}}
+  {{if and $n (not $folder)}}{{template "tool" (tool (print $s "/raw/" $id) "source" "Source")}}{{else}}{{template "tool" (dtool "source" "Source")}}{{end}}
+</span>
 <span class="group">
   {{if and $n (.Can "doc.edit")}}{{template "tool" (ntool $t "move" (print $s "/move/" $id) $c "move" "Move")}}{{else}}{{template "tool" (dtool "move" "Move")}}{{end}}
   {{if and $n (.Can "doc.delete")}}{{template "tool" (ntool $t "delete" (print $s "/delete/" $id) $c "delete" "Delete")}}{{else}}{{template "tool" (dtool "delete" "Delete")}}{{end}}

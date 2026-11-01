@@ -1566,6 +1566,13 @@ func TestToolbarModes(t *testing.T) {
 		!strings.Contains(b, sp+"/history/"+id) || strings.Contains(b, sp+"/edit/") {
 		t.Fatalf("toolbar of a reader:\n%s", b)
 	}
+	// A folder has the same buttons. History and Source are disabled.
+	folder := bob.create("folder", "", "Box", "")
+	b = toolbar(readBody(t, bob.get(sp+"/d/"+folder+"/box")))
+	if !strings.Contains(b, `title="History (not available)"`) || !strings.Contains(b, `title="Source (not available)"`) ||
+		!strings.Contains(b, `aria-label="Rename"`) {
+		t.Fatalf("toolbar of a folder:\n%s", b)
+	}
 	// The page has no Save button.
 	if b = toolbar(readBody(t, bob.get(sp+"/d/"+id+"/plan"))); strings.Contains(b, `class="save"`) {
 		t.Fatalf("toolbar of the page:\n%s", b)
