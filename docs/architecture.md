@@ -59,6 +59,7 @@ These rules apply to the tree:
 | `/{tenant}/{space}/d/{id}/{slug}` | One folder or document. |
 | `/{tenant}/{space}/d/{id}` | Short link. It goes to the full link. |
 | `/{tenant}/{space}/w/{slug}` | The target of a wiki link. |
+| `/{tenant}/{space}/compare/{id}?from=&to=` | The changes between two versions of a document. |
 | `/{tenant}/{space}/trash` | The trash of the space. |
 | `/{tenant}/{space}/link-targets?q=` | JSON: the pages for the list of pages in the link bar of the editor. |
 | `/{tenant}/{space}/files/{id}` | An uploaded image. A `POST` to `/{tenant}/{space}/files` uploads an image. |
@@ -106,6 +107,7 @@ space `default0` ("Default").
 | `internal/secret`   | Encrypts the client secrets of the tenants. |
 | `internal/doc`      | Checks the documents. Converts a document to HTML, Markdown and plain text. |
 | `internal/slug`     | Makes slugs from titles. |
+| `internal/diff`     | Compares two sequences (the Myers algorithm). |
 | `internal/web`      | Contains the HTTP handlers, middleware and templates. |
 | `internal/testdb`   | Makes temporary databases for the integration tests. |
 | `e2e`               | Contains the end-to-end test. |
@@ -272,6 +274,21 @@ the title, because the target can be made later. The page of a node
 shows the nodes that link to it: the rows with the node as target, and
 the rows with the current slug of the node. The query uses two indexes:
 one for each type of row.
+
+### Comparison of versions
+
+The comparison uses the Markdown of the two versions. The package
+`internal/diff` compares the lines with the algorithm of Eugene W.
+Myers. It removes the common start and end first. In each block of
+changed lines, the server compares each removed line with the added
+line at the same position, word by word. The page shows three equal
+lines around each change.
+
+The time of the algorithm grows with the number of changes. Thus a
+small change in a long document is fast. If two versions have more
+than 1000 changed lines, the result shows the middle part as removed
+and added, without a search for equal lines. This limits the time and
+the memory of one request.
 
 ### Uploaded files
 

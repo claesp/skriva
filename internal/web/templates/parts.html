@@ -226,6 +226,16 @@
 <div class="main reading">
 {{end}}
 
+{{/* A form that selects two versions to compare. The argument is a
+   compareForm. The form uses GET, thus it needs no script. */}}
+{{define "compareform"}}{{if gt (len .Versions) 1}}
+<form class="compareform" method="get" action="{{.Action}}">
+  <label>From version <select name="from">{{range .Versions}}<option value="{{.Version}}"{{if eq .Version $.From}} selected{{end}}>{{.Version}}</option>{{end}}</select></label>
+  <label>to version <select name="to">{{range .Versions}}<option value="{{.Version}}"{{if eq .Version $.To}} selected{{end}}>{{.Version}}</option>{{end}}</select></label>
+  <button type="submit" class="secondary">Compare</button>
+</form>
+{{end}}{{end}}
+
 {{define "nodefoot"}}
 </div>
 </div>

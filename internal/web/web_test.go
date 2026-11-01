@@ -1430,3 +1430,31 @@ func TestLinksBetweenDocuments(t *testing.T) {
 	}
 	wantStatus(t, e.anon().get(sp+"/link-targets?q=a"), http.StatusSeeOther)
 }
+
+func TestCompareVersions(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob")
+	id := bob.create("document", "", "Plan", "first text")
+	wantStatus(t, bob.save(id, "Plan B", "second text", 1), http.StatusSeeOther)
+
+	b := readBody(t, bob.get(sp+"/history/"+id))
+	if !strings.Contains(b, sp+"/compare/"+id+"?from=1&amp;to=2") || !strings.Contains(b, `class="compareform"`) {
+		t.Fatalf("history page:\n%s", b)
+	}
+	// The default is the change in the current version.
+	b = readBody(t, bob.get(sp+"/compare/"+id))
+	for _, want := range []string{
+		"Compare versions 1 and 2", `<mark>first</mark> text`, `<mark>second</mark> text`,
+		`Title: Plan<mark> B</mark>`,
+	} {
+		if !strings.Contains(b, want) {
+			t.Fatalf("compare page does not contain %q:\n%s", want, b)
+		}
+	}
+	wantStatus(t, bob.get(sp+"/compare/"+id+"?from=2&to=1"), http.StatusOK)
+	wantStatus(t, bob.get(sp+"/compare/"+id+"?from=1&to=1"), http.StatusBadRequest)
+	wantStatus(t, bob.get(sp+"/compare/"+id+"?from=1&to=9"), http.StatusNotFound)
+	wantStatus(t, bob.get(sp+"/compare/"+id+"?from=x"), http.StatusBadRequest)
+	// Version 1 has no earlier version.
+	wantStatus(t, bob.get(sp+"/compare/"+id+"?to=1"), http.StatusBadRequest)
+}

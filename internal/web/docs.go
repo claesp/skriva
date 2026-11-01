@@ -42,6 +42,7 @@ func (s *Server) spaceRoutes(mux *http.ServeMux) {
 	mux.Handle("POST "+p+"/delete/{id}", s.node(rbac.DocDelete, s.handleDelete))
 	mux.Handle("GET "+p+"/history/{id}", s.node(rbac.DocRead, s.handleHistory))
 	mux.Handle("GET "+p+"/history/{id}/{version}", s.node(rbac.DocRead, s.handleRevision))
+	mux.Handle("GET "+p+"/compare/{id}", s.node(rbac.DocRead, s.handleCompare))
 	mux.Handle("GET "+p+"/raw/{id}", s.node(rbac.DocRead, s.handleRaw))
 	mux.Handle("GET "+p+"/access/{id}", s.node(rbac.TenantManage, s.handleNodeAccess))
 	mux.Handle("GET "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRoleForm))
@@ -797,7 +798,10 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, n *store.
 	s.render(w, r, http.StatusOK, "history", "History of "+n.Title, struct {
 		nodePage
 		Revisions []store.Revision
-	}{page, revs})
+		Compare   compareForm
+	}{page, revs, compareForm{
+		Action: base(r) + "/compare/" + n.PublicID, Versions: revs, From: n.Version - 1, To: n.Version,
+	}})
 }
 
 func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store.Node) {

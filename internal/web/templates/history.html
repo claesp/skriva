@@ -2,6 +2,7 @@
 {{template "nodehead" .}}
 {{with .Data}}
 <div class="pagehead"><h1>History of {{.Node.Title}}</h1></div>
+{{template "compareform" .Compare}}
 <table>
   <thead><tr><th>Version</th><th>Author</th><th>Comment</th><th class="date">Changed</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
@@ -11,7 +12,10 @@
     <td>{{.Author}}</td>
     <td>{{.Comment}}</td>
     <td class="date">{{date .CreatedAt}}</td>
-    <td class="actions">{{if and ($.Can "doc.edit") (ne .Version $.Data.Node.Version)}}{{template "tool" (tool (print $.SpacePath "/edit/" $.Data.Node.PublicID "?from=" .Version) "restore" "Restore")}}{{end}}</td>
+    <td class="actions">
+      {{if gt .Version 1}}{{template "tool" (tool (print $.SpacePath "/compare/" $.Data.Node.PublicID "?from=" (sub .Version 1) "&to=" .Version) "compare" (print "Changes in version " .Version))}}{{end}}
+      {{if and ($.Can "doc.edit") (ne .Version $.Data.Node.Version)}}{{template "tool" (tool (print $.SpacePath "/edit/" $.Data.Node.PublicID "?from=" .Version) "restore" "Restore")}}{{end}}
+    </td>
   </tr>
   {{end}}
   </tbody>

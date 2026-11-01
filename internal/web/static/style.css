@@ -134,6 +134,12 @@
   --accent-fg: #ffffff;
   --danger: #b3261e;
   --mark: #fff1a8;
+  /* The comparison of versions: the background of a removed or an added
+     line, and the mark of a changed word. */
+  --del-bg: #fbe9e7;
+  --del-line: #f2b8b5;
+  --ins-bg: #e6f4ea;
+  --ins-line: #a8dab5;
 
   /* The fonts of the server come first. The other fonts are fallbacks:
      the browser uses them before the font is available, and for the
@@ -168,6 +174,10 @@
     --accent-fg: #0d1117;
     --danger: #f28b82;
     --mark: #5c4f00;
+    --del-bg: #3b1d1b;
+    --del-line: #7a2e29;
+    --ins-bg: #1b3323;
+    --ins-line: #2e6b40;
   }
 }
 
@@ -365,6 +375,35 @@ time[title] { cursor: help; }
 .tablebar { display: flex; justify-content: flex-end; }
 .tablebar + table { margin-top: 0.25rem; }
 table.settings th { width: 12rem; color: var(--muted); font-weight: 400; }
+/* The comparison of two versions. The changed lines have a color and a
+   sign. The changed words in a line are marked more strongly. */
+.compareform { display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 1rem; margin: 1rem 0; font-size: var(--ui-size); }
+.compareform label { display: flex; align-items: center; gap: 0.375rem; }
+.compareform select { width: auto; }
+.versions { display: grid; gap: 0.25rem; margin: 1rem 0; font-size: var(--ui-size); }
+.versions div { display: flex; flex-wrap: wrap; gap: 0 0.5rem; padding-left: 0.5rem; border-left: 3px solid; }
+.versions .old { border-color: var(--del-line); }
+.versions .new { border-color: var(--ins-line); }
+.versions dt { font-weight: 600; }
+.versions dd { margin: 0; color: var(--muted); }
+.diff {
+  margin: 1rem 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+.diff .line { display: flex; min-width: max-content; }
+.diff .num { flex: none; width: 3.5em; padding-right: 0.5em; text-align: right; color: var(--muted); user-select: none; }
+.diff .sign { flex: none; width: 1.5em; text-align: center; user-select: none; }
+.diff .text { flex: 1; padding-right: 0.75rem; white-space: pre-wrap; }
+.diff .delete { background: var(--del-bg); }
+.diff .insert { background: var(--ins-bg); }
+.diff .delete mark { background: var(--del-line); color: inherit; }
+.diff .insert mark { background: var(--ins-line); color: inherit; }
+.diff .gap { padding: 0.125rem 0.75rem; background: var(--panel); color: var(--muted); font-family: var(--sans); font-size: var(--ui-size); }
 .versionnote { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 2rem; }
 
 /* The form of a document has the same place and width as the text of

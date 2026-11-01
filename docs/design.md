@@ -81,5 +81,10 @@ and these guidelines for long-form text:
   The buttons for tables are visible only when the cursor is in a table.
 - The editor shows the text with the same font, size and line length as
   the document page.
+- The comparison of two versions uses the monospaced font, as a
+  program for code. A removed line has a red background and the sign
+  `−`, an added line has a green background and the sign `+`. The
+  colors are not the only sign: screen readers read "Removed" and
+  "Added", and the changed words are `mark` elements.
 - Alignment uses CSS classes (`align-center`, `align-right`), not inline
   styles.

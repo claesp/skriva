@@ -161,6 +161,27 @@ place of the item, who deleted it and when.
 While an item is in the trash, nobody can open it. The search, the tree
 and the wiki links do not show it.
 
+## Compare versions
+
+1. Click **History** (clock) in the toolbar.
+2. Click **Changes** (two circles with arrows) in the row of a version.
+   The page shows the changes from the version before it.
+
+To compare two other versions, select them in **From version** and
+**to version** above the list, then click **Compare**.
+
+The page shows the changes in the title and in the Markdown source of
+the text:
+
+- A removed line has a red background and the sign `−`.
+- An added line has a green background and the sign `+`.
+- In a changed line, the changed words have a stronger color.
+- The page shows three unchanged lines before and after each change.
+  A gray row tells how many unchanged lines are not shown.
+
+The Markdown source does not contain the alignment and the underline.
+Thus the comparison does not show changes to these formats.
+
 ## Restore an old version
 
 1. Click **History** (clock) in the toolbar.

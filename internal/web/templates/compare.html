@@ -1,0 +1,34 @@
+{{define "content"}}
+{{template "nodehead" .}}
+{{with .Data}}
+<div class="pagehead"><h1>Compare versions {{.From.Version}} and {{.To.Version}}</h1></div>
+{{template "compareform" .Compare}}
+<dl class="versions">
+  <div class="old"><dt>Old: version {{.From.Version}}</dt><dd>{{date .From.CreatedAt}}{{with .From.Author}} by {{.}}{{end}}{{with .From.Comment}} · {{.}}{{end}}</dd></div>
+  <div class="new"><dt>New: version {{.To.Version}}</dt><dd>{{date .To.CreatedAt}}{{with .To.Author}} by {{.}}{{end}}{{with .To.Comment}} · {{.}}{{end}}</dd></div>
+</dl>
+{{if .OldTitle}}
+<div class="diff" role="group" aria-label="Title">
+  <div class="line delete"><span class="sign" aria-hidden="true">−</span><span class="vh">Removed: </span><span class="text">Title: {{template "diffparts" .OldTitle}}</span></div>
+  <div class="line insert"><span class="sign" aria-hidden="true">+</span><span class="vh">Added: </span><span class="text">Title: {{template "diffparts" .NewTitle}}</span></div>
+</div>
+{{end}}
+{{if .Changed}}
+<div class="diff" role="group" aria-label="Text in Markdown">
+{{range .Lines}}
+  {{if eq .Kind "skip"}}<div class="line gap">{{.Skipped}} unchanged lines</div>
+  {{else if eq .Kind "delete"}}<div class="line delete"><span class="num">{{.Old}}</span><span class="sign" aria-hidden="true">−</span><span class="vh">Removed: </span><span class="text">{{template "diffparts" .Parts}}</span></div>
+  {{else if eq .Kind "insert"}}<div class="line insert"><span class="num">{{.New}}</span><span class="sign" aria-hidden="true">+</span><span class="vh">Added: </span><span class="text">{{template "diffparts" .Parts}}</span></div>
+  {{else}}<div class="line"><span class="num">{{.New}}</span><span class="sign" aria-hidden="true"> </span><span class="text">{{template "diffparts" .Parts}}</span></div>{{end}}
+{{end}}
+</div>
+{{else}}
+<p>The text did not change.</p>
+{{end}}
+{{end}}
+{{template "nodefoot"}}
+{{end}}
+
+{{/* The parts of a line. The changed words are mark elements. The class
+   of the line tells if the words were removed or added. */}}
+{{define "diffparts"}}{{range .}}{{if .Changed}}<mark>{{.Text}}</mark>{{else}}{{.Text}}{{end}}{{end}}{{end}}
