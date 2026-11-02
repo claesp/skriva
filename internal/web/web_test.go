@@ -552,8 +552,8 @@ func TestTreeAndDocuments(t *testing.T) {
 	if b := readBody(t, bob.get(sp+"/edit/"+cfg+"?from=1")); !strings.Contains(b, `value="Configure"`) {
 		t.Fatalf("restore form:\n%s", b)
 	}
-	if raw := readBody(t, bob.get(sp+"/raw/"+linux)); raw != "Use **Podman**.\n" {
-		t.Fatalf("raw = %q", raw)
+	if md := readBody(t, bob.get(sp+"/export/"+linux+"/markdown/text")); !strings.HasSuffix(md, "\n\nUse **Podman**.\n") {
+		t.Fatalf("export = %q", md)
 	}
 
 	// Move.
@@ -1115,11 +1115,13 @@ func TestFolderPermissions(t *testing.T) {
 	wantStatus(t, alice.post(sp+"/access/"+hr+"/default-role", url.Values{"default_role": {""}}), http.StatusSeeOther)
 	wantStatus(t, alice.get(sp+"/access/"+hr), http.StatusOK)
 
-	for _, p := range []string{"/d/" + hr, "/d/" + salaries, "/history/" + salaries, "/raw/" + salaries, "/edit/" + salaries} {
+	for _, p := range []string{"/d/" + hr, "/d/" + salaries, "/history/" + salaries, "/export/" + salaries, "/export/" + salaries + "/markdown", "/edit/" + salaries} {
 		wantStatus(t, carol.get(sp+p), http.StatusNotFound)
 	}
 	wantStatus(t, carol.get(sp+"/d/"+public+"/public"), http.StatusOK)
-	if b := readBody(t, carol.get(sp+"/")); strings.Contains(b, "HR") || strings.Contains(b, "Salaries") {
+	// The page contains a random CSRF token. Thus the test looks for the
+	// title as the text of an element, not for the letters "HR".
+	if b := readBody(t, carol.get(sp+"/")); strings.Contains(b, ">HR<") || strings.Contains(b, "Salaries") {
 		t.Fatalf("tree of carol shows the private folder:\n%s", b)
 	}
 	if b := readBody(t, carol.get(sp+"/search?q=payroll")); strings.Contains(b, "Salaries") {
@@ -1347,8 +1349,8 @@ func TestUploads(t *testing.T) {
 		t.Fatalf("document does not show the image:\n%s", page)
 	}
 	wantStatus(t, carol.get(out.URL), http.StatusOK)
-	if raw := readBody(t, carol.get(sp+"/raw/"+id)); raw != "![A]("+out.URL+")\n" {
-		t.Fatalf("raw = %q", raw)
+	if md := readBody(t, carol.get(sp+"/export/"+id+"/markdown/text")); !strings.HasSuffix(md, "\n\n![A](http://example.test"+out.URL+")\n") {
+		t.Fatalf("export = %q", md)
 	}
 
 	// An upload for a new document checks the parent.
@@ -1568,10 +1570,10 @@ func TestToolbarModes(t *testing.T) {
 		!strings.Contains(b, sp+"/history/"+id) || strings.Contains(b, sp+"/edit/") {
 		t.Fatalf("toolbar of a reader:\n%s", b)
 	}
-	// A folder has the same buttons. History and Source are disabled.
+	// A folder has the same buttons. History and Export are disabled.
 	folder := bob.create("folder", "", "Box", "")
 	b = toolbar(readBody(t, bob.get(sp+"/d/"+folder+"/box")))
-	if !strings.Contains(b, `title="History (not available)"`) || !strings.Contains(b, `title="Source (not available)"`) ||
+	if !strings.Contains(b, `title="History (not available)"`) || !strings.Contains(b, `title="Export (not available)"`) ||
 		!strings.Contains(b, `aria-label="Rename"`) {
 		t.Fatalf("toolbar of a folder:\n%s", b)
 	}
@@ -1614,6 +1616,69 @@ func TestAdminMenuShowsAllItems(t *testing.T) {
 	}
 	if strings.Contains(menu, `href="/dflt/admin/users"`) {
 		t.Fatalf("menu has a link to the users:\n%s", menu)
+	}
+}
+
+// TestExport checks the export page and the Markdown export.
+func TestExport(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob")
+	folder := bob.create("folder", "", "Guides", "")
+	target := bob.create("document", folder, "Start", "")
+	body := `{"type":"doc","content":[` +
+		`{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Install"}]},` +
+		`{"type":"paragraph","content":[` +
+		`{"type":"text","text":"See ","marks":[]},` +
+		`{"type":"text","text":"Start","marks":[{"type":"link","attrs":{"href":"wiki:Start"}}]},` +
+		`{"type":"text","text":" and "},` +
+		`{"type":"text","text":"this","marks":[{"type":"link","attrs":{"href":"doc:` + target + `"}}]}]}]}`
+	id := bob.create("document", folder, `Plan "A" # 1`, body)
+
+	// The page shows the formats. The Export button is the current tab.
+	b := readBody(t, bob.get(sp+"/export/"+id))
+	for _, want := range []string{
+		`<h1>Export "Plan &#34;A&#34; # 1"</h1>`,
+		sp + "/export/" + id + "/markdown/text",
+		sp + "/export/" + id + "/markdown\"",
+		"Export (close)",
+	} {
+		if !strings.Contains(b, want) {
+			t.Fatalf("export page does not contain %q:\n%s", want, b)
+		}
+	}
+
+	resp := bob.get(sp + "/export/" + id + "/markdown")
+	wantStatus(t, resp, http.StatusOK)
+	if ct, cd := resp.Header.Get("Content-Type"), resp.Header.Get("Content-Disposition"); ct != "text/markdown; charset=utf-8" ||
+		cd != `attachment; filename=plan-a-1.md` {
+		t.Fatalf("headers: %q, %q", ct, cd)
+	}
+	got := readBody(t, resp)
+	site := "http://example.test"
+	wantPrefix := "---\ntitle: \"Plan \\\"A\\\" # 1\"\nclassification: \"Unclassified\"\nversion: 1\nupdated: \""
+	if !strings.HasPrefix(got, wantPrefix) {
+		t.Fatalf("front matter:\n%s", got)
+	}
+	for _, want := range []string{
+		"\nsource: \"" + site + sp + "/d/" + id + "/plan-a-1\"\n---\n\n# Plan \"A\" \\# 1\n\n",
+		"\n_This document is classified as UNCLASSIFIED._\n\n## Install\n\n",
+		"See [Start](" + site + sp + "/w/start) and [this](" + site + sp + "/d/" + target + ")\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("export does not contain %q:\n%s", want, got)
+		}
+	}
+	if text := readBody(t, bob.get(sp+"/export/"+id+"/markdown/text")); text != got {
+		t.Fatalf("text = %q, want %q", text, got)
+	}
+
+	// A folder and an unknown format have no export.
+	wantStatus(t, bob.get(sp+"/export/"+folder), http.StatusNotFound)
+	wantStatus(t, bob.get(sp+"/export/"+folder+"/markdown"), http.StatusNotFound)
+	wantStatus(t, bob.get(sp+"/export/"+id+"/pdf"), http.StatusNotFound)
+	// The Export button of a folder is disabled.
+	if b := readBody(t, bob.get(sp+"/d/"+folder+"/guides")); strings.Contains(b, sp+"/export/"+folder) {
+		t.Fatalf("folder page links to the export:\n%s", b)
 	}
 }
 

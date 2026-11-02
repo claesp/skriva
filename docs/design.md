@@ -110,7 +110,7 @@ and these guidelines for long-form text:
   A button is disabled (gray, no link) if the user does not have the
   permission, or, on the form of a new item, if it needs a saved item.
   On the form of a new item, the pencil button is the current button.
-  It goes back without a save. For a folder, History and Source are
+  It goes back without a save. For a folder, History and Export are
   disabled, because a folder has no text. Thus folders and documents
   have the buttons at the same places.
 - The **Save** button of a form is at the left side of the toolbar, in

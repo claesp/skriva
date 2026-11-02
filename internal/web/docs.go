@@ -43,7 +43,9 @@ func (s *Server) spaceRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/history/{id}", s.node(rbac.DocRead, s.handleHistory))
 	mux.Handle("GET "+p+"/history/{id}/{version}", s.node(rbac.DocRead, s.handleRevision))
 	mux.Handle("GET "+p+"/compare/{id}", s.node(rbac.DocRead, s.handleCompare))
-	mux.Handle("GET "+p+"/raw/{id}", s.node(rbac.DocRead, s.handleRaw))
+	mux.Handle("GET "+p+"/export/{id}", s.node(rbac.DocRead, s.handleExportPage))
+	mux.Handle("GET "+p+"/export/{id}/{format}", s.node(rbac.DocRead, s.handleExport))
+	mux.Handle("GET "+p+"/export/{id}/{format}/text", s.node(rbac.DocRead, s.handleExportText))
 	mux.Handle("GET "+p+"/access/{id}", s.node(rbac.TenantManage, s.handleNodeAccess))
 	mux.Handle("GET "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRoleForm))
 	mux.Handle("POST "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRole))
@@ -304,18 +306,6 @@ func (s *Server) parseEditorBody(r *http.Request, body string) (*doc.Node, error
 		}
 		return src
 	})
-}
-
-// handleRaw shows the text in Markdown. Markdown does not have all the
-// formats of a document. See doc.Node.Markdown.
-func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request, n *store.Node) {
-	d, err := doc.Parse([]byte(n.Body), nil)
-	if err != nil {
-		s.serverError(w, r, err)
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(d.Markdown(links(r))))
 }
 
 // nodeForm is the data for the form that makes or edits a node.

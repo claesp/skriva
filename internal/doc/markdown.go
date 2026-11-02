@@ -10,7 +10,23 @@ import (
 // the alignment and the underline. A cell that covers more than one
 // column becomes one cell and empty cells. Wiki links become [[Title]].
 func (n *Node) Markdown(l Links) string {
-	m := mdWriter{links: l}
+	return n.MarkdownWith(l, MarkdownOptions{WikiLinks: true})
+}
+
+// MarkdownOptions change the result of MarkdownWith.
+type MarkdownOptions struct {
+	// HeadingOffset is added to the level of each heading. Markdown has
+	// six heading levels, thus a higher level becomes level 6.
+	HeadingOffset int
+	// WikiLinks keeps the wiki links as [[Title]]. If it is false, a wiki
+	// link becomes a normal link to the URL from Links.Href.
+	WikiLinks bool
+}
+
+// MarkdownWith converts the document to Markdown with the options o. See
+// Markdown.
+func (n *Node) MarkdownWith(l Links, o MarkdownOptions) string {
+	m := mdWriter{links: l, opts: o}
 	m.blocks(n.Content, "")
 	return strings.TrimRight(m.b.String(), "\n") + "\n"
 }
@@ -18,6 +34,7 @@ func (n *Node) Markdown(l Links) string {
 type mdWriter struct {
 	b     strings.Builder
 	links Links
+	opts  MarkdownOptions
 }
 
 // blocks writes block nodes. prefix is the start of each line, for
@@ -37,8 +54,9 @@ func (m *mdWriter) block(n *Node, first, prefix string) {
 	case "paragraph":
 		m.lines(first, prefix, m.inline(n))
 	case "heading":
-		// Markdown has six heading levels. Levels 7 and 8 become level 6.
-		m.lines(first, prefix, strings.Repeat("#", min(n.level(), 6))+" "+strings.ReplaceAll(m.inline(n), "\n", " "))
+		// Markdown has six heading levels. Higher levels become level 6.
+		level := min(max(n.level()+m.opts.HeadingOffset, 1), 6)
+		m.lines(first, prefix, strings.Repeat("#", level)+" "+strings.ReplaceAll(m.inline(n), "\n", " "))
 	case "horizontalRule":
 		m.lines(first, prefix, "---")
 	case "blockquote":
@@ -233,7 +251,7 @@ func (m *mdWriter) text(n *Node) string {
 		core = "**" + core + "**"
 	}
 	if href != "" {
-		if title, ok := strings.CutPrefix(href, WikiPrefix); ok {
+		if title, ok := strings.CutPrefix(href, WikiPrefix); ok && m.opts.WikiLinks {
 			if title == n.Text {
 				core = "[[" + title + "]]"
 			} else {
@@ -253,6 +271,11 @@ var mdEscaper = strings.NewReplacer(
 
 // escapeMD escapes the characters that have a meaning in Markdown.
 func escapeMD(s string) string { return mdEscaper.Replace(s) }
+
+// EscapeMarkdown makes s safe for one line of Markdown text. It changes
+// each sequence of white space to one space and escapes the characters
+// that have a meaning in Markdown.
+func EscapeMarkdown(s string) string { return escapeMD(strings.Join(strings.Fields(s), " ")) }
 
 var urlEscaper = strings.NewReplacer(" ", "%20", "(", "%28", ")", "%29", "<", "%3C", ">", "%3E")
 

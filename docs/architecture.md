@@ -60,6 +60,7 @@ These rules apply to the tree:
 | `/{tenant}/{space}/d/{id}` | Short link. It goes to the full link. |
 | `/{tenant}/{space}/w/{slug}` | The target of a wiki link. |
 | `/{tenant}/{space}/compare/{id}?from=&to=` | The changes between two versions of a document. |
+| `/{tenant}/{space}/export/{id}` | The export formats of a document. `/export/{id}/{format}` downloads the file. `/export/{id}/{format}/text` shows a text format as plain text. |
 | `/{tenant}/{space}/trash` | The trash of the space. |
 | `/{tenant}/{space}/link-targets?q=` | JSON: the pages for the list of pages in the link bar of the editor. |
 | `/{tenant}/{space}/files/{id}` | An uploaded image. A `POST` to `/{tenant}/{space}/files` uploads an image. |
@@ -113,6 +114,7 @@ space `default0` ("Default").
 | `internal/auth`     | Connects to the OIDC providers. Keeps one client for each tenant. |
 | `internal/secret`   | Encrypts the client secrets of the tenants. |
 | `internal/doc`      | Checks the documents. Converts a document to HTML, Markdown and plain text. |
+| `internal/export`   | Makes the export files of a document. See [Export](#export). |
 | `internal/slug`     | Makes slugs from titles. |
 | `internal/diff`     | Compares two sequences (the Myers algorithm). |
 | `internal/web`      | Contains the HTTP handlers, middleware and templates. |
@@ -259,7 +261,7 @@ The package converts a checked document to:
   Run". After the conversion,
   [bluemonday](https://github.com/microcosm-cc/bluemonday) removes all
   unsafe HTML a second time.
-- **Markdown** for the "Source" page. Markdown does not have all the
+- **Markdown** for the [export](#export). Markdown does not have all the
   formats. The conversion ignores the alignment and the underline. A cell
   that covers more than one column becomes one cell and empty cells.
 - **Plain text** for the search index and the parts of the text in the
@@ -300,6 +302,27 @@ on the space (`classificationFor`). The foreign key to the level is
 deferred to the end of the transaction. Thus the deletion of a tenant
 removes the levels and the documents in one statement, and the deletion
 of a level that documents use fails.
+
+### Export
+
+The package `internal/export` has a list of formats (`export.Formats`).
+Each format has a name for the URL, a file name extension, a media type
+and a function that writes the file. The first format is Markdown. To
+add a format, add a `Format` value to the list. The export page shows
+all formats in the list.
+
+- The server makes the file from the current version. The permission
+  `doc.read` is necessary, the same as for the page.
+- The file has the title and the information classification. Thus the
+  classification stays with the text outside of Skriva.
+- Links and images get absolute URLs with `SKRIVA_BASE_URL`, because
+  the file is not on the server. Wiki links become normal links.
+- The values in the YAML front matter are JSON strings. A JSON string
+  is also a valid YAML string in double quotes. Thus a title cannot
+  change the structure of the block.
+- The download has `Content-Disposition: attachment` and the file name
+  `{slug}.md` (or `{id}.md` for an empty slug). The responses have
+  `Cache-Control: no-store`, the same as the pages.
 
 ### Audit log
 

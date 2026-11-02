@@ -274,7 +274,7 @@
    button is disabled if the user does not have the permission, or, on
    the form of a new item, if it needs a saved item. On that form, the
    Edit button is the current button. A form has the Save button at the
-   left side, in its own group. For a folder, History and Source are
+   left side, in its own group. For a folder, History and Export are
    disabled, because a folder has no text. */}}
 {{define "nodetools"}}
 {{$n := .Data.Node}}
@@ -292,7 +292,7 @@
 </span>
 <span class="group">
   {{if and $n (not $folder)}}{{template "tool" (ntool $t "history" (print $s "/history/" $id) $c "history" "History")}}{{else}}{{template "tool" (dtool "history" "History")}}{{end}}
-  {{if and $n (not $folder)}}{{template "tool" (tool (print $s "/raw/" $id) "source" "Source")}}{{else}}{{template "tool" (dtool "source" "Source")}}{{end}}
+  {{if and $n (not $folder)}}{{template "tool" (ntool $t "export" (print $s "/export/" $id) $c "export" "Export")}}{{else}}{{template "tool" (dtool "export" "Export")}}{{end}}
 </span>
 <span class="group">
   {{if and $n (.Can "doc.edit")}}{{template "tool" (ntool $t "move" (print $s "/move/" $id) $c "move" "Move")}}{{else}}{{template "tool" (dtool "move" "Move")}}{{end}}

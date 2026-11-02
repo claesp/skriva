@@ -50,7 +50,7 @@ action that you do not have permission for is gray and does nothing.
 |--------------|--------------|--------|
 | Pencil       | Edit         | Change the text of the document. For a folder, the name is **Rename**. |
 | Clock        | History      | Show the old versions of the document. |
-| `< >`        | Source       | Show the text of the document in Markdown. See [Source](#source). |
+| Arrow up from a tray | Export | Download the document as a file. See [Export a document](#export-a-document). |
 | Folder with arrow | Move    | Move the item to a different place. |
 | Waste bin    | Delete       | Move the item and the items in it into the trash. |
 | Lock         | Access       | Change the permissions of the item. |
@@ -60,7 +60,7 @@ The buttons are at the same places on the page of an item, on its
 forms and on the form of a new item. On a form, **Save** is at the left
 side of the toolbar, separate from the other buttons.
 
-**Edit**, **History**, **Move**, **Delete** and **Access** open a page
+**Edit**, **History**, **Export**, **Move**, **Delete** and **Access** open a page
 with the same tree, path and toolbar. On that page, the button has a
 line below it. Click the button again to go back to the document. From
 an old version, **History** goes back to the list of versions.
@@ -378,9 +378,43 @@ show it. The wiki shows a message with the steps above. In dark mode,
 images have a white background, because diagrams often have dark lines
 on a transparent background.
 
-### Source
+## Export a document
 
-**Source** (`< >`) shows the text of the document in Markdown. You can
-copy it to a different program. Markdown does not have all the formats
-of the editor. The source does not show the alignment, the underline and
-merged cells.
+**Export** shows the file formats for an export. An export is a file
+with the current version of the document. For each format, you can:
+
+- Click **Download** (arrow down to a tray) to save the file.
+- Click **Show as text** (`< >`) to see the file in the browser, if the
+  format is text. You can then copy the text to a different program.
+
+The file contains the title, the information classification and the
+version of the document. Links to other documents and images refer to
+Skriva. A reader must sign in to open them. A folder has no export.
+
+| Format   | Extension | Contents |
+|----------|-----------|----------|
+| Markdown | `.md`     | [GitHub Flavored Markdown](https://github.github.com/gfm/). |
+
+The Markdown file starts with a YAML front matter block:
+
+```markdown
+---
+title: "Install on Linux"
+classification: "Restricted"
+version: 4
+updated: "2026-11-02T09:00:00Z"
+source: "https://wiki.example.com/acme/handbook/d/k3x9p2qa7tm4zb/install-on-linux"
+---
+
+# Install on Linux
+
+_This document is classified as RESTRICTED._
+
+## Before you start
+```
+
+The title is the first heading. Thus each heading of the text goes down
+one level: a level 1 heading becomes `##`. Markdown has six levels, thus
+the levels 5 to 8 become `######`. A wiki link becomes a normal link.
+Markdown does not have all the formats of the editor. The file does not
+keep the alignment, the underline and merged cells.

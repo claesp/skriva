@@ -82,7 +82,7 @@ for security. Thus Markdown cannot be the storage format.
 
 The decision is Tiptap JSON. The server keeps a plain-text version of
 each document for the search, and converts a document to Markdown for
-the "Source" page. The Markdown ignores the formats that Markdown does
+the export. The Markdown ignores the formats that Markdown does
 not have.
 
 ## Changes without the Markdown requirement
