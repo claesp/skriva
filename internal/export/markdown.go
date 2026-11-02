@@ -13,9 +13,9 @@ import (
 var markdownFormat = Format{
 	Name:  "markdown",
 	Label: "Markdown",
-	Description: "Text with GitHub Flavored Markdown. A YAML front matter block " +
-		"gives the title, the classification and the version. Markdown does not have " +
-		"all formats of a document, for example the alignment and the underline.",
+	Description: "GitHub Flavored Markdown. The front matter contains the title, " +
+		"the classification and the version. The formats of Markdown and of the editor " +
+		"are not the same, thus the file can look different from the page.",
 	Extension:   ".md",
 	ContentType: "text/markdown; charset=utf-8",
 	Text:        true,
@@ -40,9 +40,6 @@ func writeMarkdown(w io.Writer, d *Document) error {
 	}
 	b.WriteString("---\n\n")
 	b.WriteString("# " + doc.EscapeMarkdown(d.Title) + "\n\n")
-	if d.Classification != "" {
-		b.WriteString("_This document is classified as " + doc.EscapeMarkdown(strings.ToUpper(d.Classification)) + "._\n\n")
-	}
 	if d.Body != nil && len(d.Body.Content) > 0 {
 		b.WriteString(d.Body.MarkdownWith(d.Links, doc.MarkdownOptions{HeadingOffset: 1}))
 	}

@@ -55,7 +55,6 @@ func TestMarkdown(t *testing.T) {
 		"source: \"https://wiki.example/t/s/d/x/plan\"\n" +
 		"---\n\n" +
 		"# Plan\n\n" +
-		"_This document is classified as RESTRICTED._\n\n" +
 		"###### Five\n\n" +
 		"###### Eight\n\n" +
 		"[Go](https://wiki.example/t/s/w/start#run)\n\n" +

@@ -1661,7 +1661,7 @@ func TestExport(t *testing.T) {
 	}
 	for _, want := range []string{
 		"\nsource: \"" + site + sp + "/d/" + id + "/plan-a-1\"\n---\n\n# Plan \"A\" \\# 1\n\n",
-		"\n_This document is classified as UNCLASSIFIED._\n\n## Install\n\n",
+		"\n---\n\n# Plan \"A\" \\# 1\n\n## Install\n\n",
 		"See [Start](" + site + sp + "/w/start) and [this](" + site + sp + "/d/" + target + ")\n",
 	} {
 		if !strings.Contains(got, want) {

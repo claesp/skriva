@@ -410,13 +410,12 @@ source: "https://wiki.example.com/acme/handbook/d/k3x9p2qa7tm4zb/install-on-linu
 
 # Install on Linux
 
-_This document is classified as RESTRICTED._
-
 ## Before you start
 ```
 
-The title is the first heading. Thus each heading of the text goes down
+The classification is only in the front matter. The text does not
+repeat it. The title is the first heading. Thus each heading of the text goes down
 one level: a level 1 heading becomes `##`. Markdown has six levels, thus
 the levels 5 to 8 become `######`. A wiki link becomes a normal link.
-Markdown does not have all the formats of the editor. The file does not
-keep the alignment, the underline and merged cells.
+The formats of Markdown and of the editor are not the same. Thus the
+file can look different from the page.

@@ -313,8 +313,10 @@ all formats in the list.
 
 - The server makes the file from the current version. The permission
   `doc.read` is necessary, the same as for the page.
-- The file has the title and the information classification. Thus the
-  classification stays with the text outside of Skriva.
+- The file has the title and the information classification as
+  metadata (in Markdown, the YAML front matter). Thus the classification
+  stays with the text outside of Skriva. The text does not repeat the
+  classification.
 - Links and images get absolute URLs with `SKRIVA_BASE_URL`, because
   the file is not on the server. Wiki links become normal links.
 - The values in the YAML front matter are JSON strings. A JSON string
