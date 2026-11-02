@@ -1631,7 +1631,7 @@ func TestClassification(t *testing.T) {
 	// shows it.
 	b := readBody(t, bob.get(sp+"/new?kind=document"))
 	if !strings.Contains(b, `<option value="`+byName["Unclassified"]+`" selected>Unclassified</option>`) ||
-		!strings.Contains(b, `This document is classified <strong data-classbar-level>UNCLASSIFIED</strong>`) {
+		!strings.Contains(b, `This document is classified as <strong data-classbar-level>UNCLASSIFIED</strong>`) {
 		t.Fatalf("form of a new document:\n%s", b)
 	}
 	// A folder has no level.
@@ -1644,7 +1644,7 @@ func TestClassification(t *testing.T) {
 	})
 	wantStatus(t, resp, http.StatusSeeOther)
 	b = readBody(t, bob.get(resp.Header.Get("Location")))
-	if !strings.Contains(b, `This document is classified <strong data-classbar-level>TOP SECRET</strong>`) {
+	if !strings.Contains(b, `This document is classified as <strong data-classbar-level>TOP SECRET</strong>`) {
 		t.Fatalf("page of the document:\n%s", b)
 	}
 	id := strings.Split(resp.Header.Get("Location"), "/")[4]

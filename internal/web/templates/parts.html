@@ -201,7 +201,7 @@
 </div>
 {{/* The information classification of a document, below the toolbar.
    The bar covers the width of the main column. */}}
-{{with .Data.Classification}}<div class="classbar" role="note">This document is classified <strong data-classbar-level>{{upper .}}</strong></div>{{end}}
+{{with .Data.Classification}}<div class="classbar" role="note">This document is classified as <strong data-classbar-level>{{upper .}}</strong></div>{{end}}
 <aside class="sidebar" aria-label="Contents">
   {{template "tree" (tree .SpacePath .Data.Tree)}}
 </aside>
