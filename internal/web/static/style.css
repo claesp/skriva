@@ -711,8 +711,6 @@ main:has(.with-sidebar) { max-width: none; padding: 0; }
 .with-sidebar:has(> .classbar) { --classbar-h: calc(2.375rem + 1px); }
 .with-sidebar:has(> .topbar.wide):has(> .classbar) > .sidebar { grid-row: 2 / span 2; }
 .with-sidebar:has(> .topbar.wide):has(> .classbar) > .main { grid-row: 3; }
-form.editor label.classification { flex-direction: row; align-items: center; gap: 0.5rem; font-size: var(--ui-size); }
-form.editor label.classification select { width: auto; }
 .sidebar {
   position: sticky;
   top: var(--sidebar-top, 0px);

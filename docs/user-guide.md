@@ -143,7 +143,8 @@ is classified as RESTRICTED". The bar stays visible when you scroll. The page of
 classification of that version. A printed document also shows the bar.
 
 To change the classification, open the document with **Edit** and
-select the level in **Classification**, below the title. The bar
+select the level in **Classification**, at the right side of the
+**Table** button in the toolbar of the editor. The bar
 changes when you select a level. Click **Save**. The history keeps the
 classification of each version, and the audit log records the change.
 Folders do not have a classification.
@@ -240,7 +241,7 @@ change.
 
 The editor shows the text with its formats, as the document page shows
 it. The editor needs JavaScript. Without JavaScript, you can change only
-the title of a document. All other pages work without JavaScript.
+the title of a document. The document then keeps its classification. All other pages work without JavaScript.
 
 The toolbar of the editor is above the text. It stays visible when you
 scroll. Put the mouse pointer on a button to see its name. A button for
@@ -257,6 +258,7 @@ a format that applies at the cursor has a gray background.
 | Link | Add, change or remove a link. See [Links](#links). |
 | Image | Add an image from your computer. See [Images](#images). |
 | Table | Add a table with 3 rows and 3 columns. The first row is the header row. |
+| Classification | Select the information classification of the document. See [Information classification](#information-classification). |
 
 When the cursor is in a table, the toolbar shows more buttons: **Add
 row**, **Remove row**, **Add column**, **Remove column**, **Merge or split

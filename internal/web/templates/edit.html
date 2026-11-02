@@ -14,14 +14,9 @@
   <label class="title"><span class="vh">Title</span>
     <input name="title" value="{{.Title}}" required maxlength="200" placeholder="Title" autofocus></label>
   {{if not .IsFolder}}
-  <label class="classification">Classification
-    <select name="classification">
-      {{range .Classifications}}<option value="{{.ID}}"{{if eq .ID $.Data.ClassificationID}} selected{{end}}>{{.Name}}</option>{{end}}
-    </select>
-  </label>
   <input type="hidden" name="body" value="{{.Body}}" data-editor-body>
   <div class="wysiwyg" data-upload="{{.UploadURL}}" data-links="{{$.SpacePath}}/link-targets" data-csrf="{{$.CSRF}}">
-    {{template "editortoolbar"}}
+    {{template "editortoolbar" .}}
     <div class="wysiwyg-text prose" data-editor-text></div>
     <p class="editor-status" role="status" data-editor-status></p>
     <noscript><p class="error">The editor needs JavaScript. Without JavaScript, you can change only the title.</p></noscript>
@@ -34,9 +29,12 @@
 {{template "nodefoot"}}
 {{end}}
 
-{{/* The toolbar of the editor. The script of the editor connects each
-   button to a command with the data-command attribute, and shows the
-   toolbar. Without the script, the toolbar is not visible. */}}
+{{/* The toolbar of the editor. The argument is a nodeForm. The script
+   of the editor connects each button to a command with the data-command
+   attribute, and shows the toolbar. Without the script, the toolbar is
+   not visible. The classification select is a field of the form, not a
+   command. A hidden field also sends its value, thus without the script
+   the document keeps its classification. */}}
 {{define "editortoolbar"}}
 <div class="editor-toolbar" role="toolbar" aria-label="Format" hidden data-editor-toolbar>
   <span class="group">
@@ -81,6 +79,12 @@
     {{template "ebtn" (ebtn "link" "link" "Link (Ctrl+K)")}}
     {{template "ebtn" (ebtn "image" "image" "Image")}}
     {{template "ebtn" (ebtn "table" "table" "Table")}}
+  </span>
+  <span class="group">
+    <label class="vh" for="editor-classification">Classification</label>
+    <select id="editor-classification" name="classification" title="Classification">
+      {{range .Classifications}}<option value="{{.ID}}"{{if eq .ID $.ClassificationID}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
   </span>
   <span class="group" data-editor-group="table" hidden>
     {{template "ebtn" (ebtn "addRow" "row-add" "Add row")}}
