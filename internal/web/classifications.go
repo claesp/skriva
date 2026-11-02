@@ -141,7 +141,8 @@ func (s *Server) handleAdminClassificationDelete(w http.ResponseWriter, r *http.
 	switch {
 	case errors.Is(err, store.ErrConflict):
 		s.renderError(w, r, http.StatusConflict,
-			"Documents use this classification. Give the documents a different classification first.")
+			"Documents use this classification. Give the documents a different classification first. "+
+				"This includes the documents in the trash: restore them, or delete them permanently.")
 		return
 	case errors.Is(err, store.ErrInvalid):
 		s.badRequest(w, r, "You cannot delete the default classification.")

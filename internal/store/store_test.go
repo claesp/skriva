@@ -1400,6 +1400,23 @@ func TestClassifications(t *testing.T) {
 		t.Fatalf("classification after a save = %q", n.Classification)
 	}
 
+	// The list counts the documents with each level. A document in the
+	// trash counts separately. Folders have no level.
+	gone, _ := st.CreateNode(ctx, sp.ID, store.NewNode{Kind: store.KindDocument, Title: "Old", ClassificationID: byName["Secret"]})
+	if err := st.TrashNode(ctx, sp.ID, gone, 0); err != nil {
+		t.Fatal(err)
+	}
+	levels, _ = st.Classifications(ctx, tn.ID)
+	for _, c := range levels {
+		want := [2]int{}
+		if c.Name == "Secret" {
+			want = [2]int{1, 1}
+		}
+		if got := [2]int{c.Documents, c.Trashed}; got != want || c.InUse() != (c.Name == "Secret") {
+			t.Fatalf("%s: documents, trashed = %v, want %v", c.Name, got, want)
+		}
+	}
+
 	// A level of a different tenant is not permitted.
 	other := newTenant(t, st, "othr")
 	otherLevels, _ := st.Classifications(ctx, other.ID)

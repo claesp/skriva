@@ -152,7 +152,8 @@ the role for that space or item.
 Open **Administration**, then **Classifications** (needs
 `tenant.manage`). The page shows the levels of information
 classification of the tenant, from the lowest to the highest, and the
-number of documents with each level. See [User guide: information
+number of documents with each level. Folders have no level. The
+documents in the trash show as a separate number below. See [User guide: information
 classification](user-guide.md#information-classification).
 
 - **New classification** (+) makes a level. **Order** sets the place
@@ -161,7 +162,9 @@ classification](user-guide.md#information-classification).
   the default. Select **The default for new documents** to make a level
   the default. The old default then stops being the default.
 - **Delete** (waste bin) deletes a level. The button is disabled for
-  the default level and for a level that documents use.
+  the default level and for a level that documents use, also if the
+  documents are in the trash. Restore these documents and change
+  their level, or delete them permanently.
 
 A new tenant gets the levels Unclassified (the default), Public,
 Restricted, Secret and Top Secret. The audit log records the changes.

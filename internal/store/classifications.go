@@ -15,16 +15,23 @@ type Classification struct {
 	// highest.
 	Position  int
 	IsDefault bool
-	// Documents is the number of documents with the level. Only
-	// Classifications sets it.
+	// Documents is the number of documents with the level, and Trashed
+	// the number of documents with the level in the trash. A level with
+	// documents cannot be deleted, also if the documents are in the
+	// trash. Only Classifications sets them.
 	Documents int
+	Trashed   int
 }
+
+// InUse reports whether documents use the level, also in the trash.
+func (c *Classification) InUse() bool { return c.Documents > 0 || c.Trashed > 0 }
 
 // Classifications returns the levels of a tenant in their order.
 func (s *Store) Classifications(ctx context.Context, tenantID int64) ([]Classification, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT c.id, c.name, c.description, c.position, c.is_default,
-		       (SELECT count(*) FROM nodes n WHERE n.classification_id = c.id)
+		       (SELECT count(*) FROM nodes n WHERE n.classification_id = c.id AND n.deleted_at IS NULL),
+		       (SELECT count(*) FROM nodes n WHERE n.classification_id = c.id AND n.deleted_at IS NOT NULL)
 		FROM classifications c WHERE c.tenant_id = $1
 		ORDER BY c.position, lower(c.name), c.id`, tenantID)
 	if err != nil {
@@ -32,7 +39,7 @@ func (s *Store) Classifications(ctx context.Context, tenantID int64) ([]Classifi
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Classification, error) {
 		var c Classification
-		err := row.Scan(&c.ID, &c.Name, &c.Description, &c.Position, &c.IsDefault, &c.Documents)
+		err := row.Scan(&c.ID, &c.Name, &c.Description, &c.Position, &c.IsDefault, &c.Documents, &c.Trashed)
 		return c, err
 	})
 }

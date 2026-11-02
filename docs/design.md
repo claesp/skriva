@@ -118,6 +118,9 @@ and these guidelines for long-form text:
   do not move. The toolbar is sticky, thus the button is always
   visible. The button is outside the form and uses the `form`
   attribute. This needs no script.
+- A table must fit in a phone window. A column with less important
+  data (for example a description) has the class `optional`. Narrow
+  windows do not show it.
 - A help text for a field of a form is a `<p class="help">` with a
   `<small>` text, directly below the field. The input refers to it
   with `aria-describedby`. The label contains only the name of the

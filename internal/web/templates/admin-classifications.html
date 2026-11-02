@@ -3,17 +3,17 @@
 <p>The levels of information classification of the documents, from the lowest to the highest. All spaces of the tenant use these levels. A new document gets the default level.</p>
 {{template "tablebar" (tool (print .TenantPath "/admin/classifications/new") "new" "New classification")}}
 <table>
-  <thead><tr><th class="num">Order</th><th>Name</th><th>Description</th><th class="num">Documents</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th class="num">Order</th><th>Name</th><th class="optional">Description</th><th class="num">Documents</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr>
     <td class="num">{{.Position}}</td>
     <td>{{.Name}}{{if .IsDefault}} <span class="tag">default</span>{{end}}</td>
-    <td>{{.Description}}</td>
-    <td class="num">{{.Documents}}</td>
+    <td class="optional">{{.Description}}</td>
+    <td class="num">{{.Documents}}{{with .Trashed}}<br><small>and {{.}} in the trash</small>{{end}}</td>
     <td class="actions">
       {{template "tool" (tool (print $.TenantPath "/admin/classifications/" .ID "/edit") "edit" "Change")}}
-      {{template "tool" (when (and (not .IsDefault) (eq .Documents 0)) (tool (print $.TenantPath "/admin/classifications/" .ID "/delete") "delete" "Delete"))}}
+      {{template "tool" (when (and (not .IsDefault) (not .InUse)) (tool (print $.TenantPath "/admin/classifications/" .ID "/delete") "delete" "Delete"))}}
     </td>
   </tr>
   {{end}}

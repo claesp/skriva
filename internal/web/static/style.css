@@ -852,6 +852,9 @@ td.actions .tool, header.site .tool { width: 2rem; height: 2rem; }
      only at spaces. The cells have less space around the text. */
   th, td { padding-left: 0.375rem; padding-right: 0.375rem; }
   td code { overflow-wrap: anywhere; }
+  /* A column with less important data, for example a description, is
+     not shown. The page of the item shows the data. */
+  th.optional, td.optional { display: none; }
 }
 
 /* A printed document shows only the text. */
