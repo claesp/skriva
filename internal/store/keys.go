@@ -108,6 +108,9 @@ func (s *Store) tenantOfSpace(ctx context.Context, spaceID int64) (int64, error)
 // of the caller: a key that encrypts data must be saved, also if the
 // transaction of the caller fails.
 func (s *Store) tenantKeys(ctx context.Context, tenantID int64) (*tenantKeys, error) {
+	if p, ok := ctx.Value(newKeysKey{}).(*newKeys); ok && p.tenantID == tenantID {
+		return p.keys, nil
+	}
 	s.keys.mu.Lock()
 	tk, ok := s.keys.tenants[tenantID]
 	s.keys.mu.Unlock()
@@ -198,20 +201,56 @@ func (s *Store) ensureKeys(ctx context.Context, tenantID int64) error {
 // insertKey makes a random key and saves it wrapped. If the key exists
 // already (a different request made it), the function does nothing.
 func (s *Store) insertKey(ctx context.Context, q querier, tenantID int64, purpose string, version int) error {
+	_, err := s.insertNewKey(ctx, q, tenantID, purpose, version)
+	return err
+}
+
+// insertNewKey is insertKey. It also returns the new key.
+func (s *Store) insertNewKey(ctx context.Context, q querier, tenantID int64, purpose string, version int) ([]byte, error) {
 	key := make([]byte, secret.KeySize)
 	_, _ = rand.Read(key) // crypto/rand.Read does not return errors.
 	wrapped, err := s.kek.Wrap(ctx, key, keyAAD(tenantID, purpose, version))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, err = q.Exec(ctx, `
 		INSERT INTO tenant_keys (tenant_id, purpose, version, wrapped, kek_id, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT DO NOTHING`, tenantID, purpose, version, wrapped, s.kek.ID(), s.now())
 	if sqlState(err) == codeForeignKeyViolation {
-		return ErrNotFound
+		return nil, ErrNotFound
 	}
-	return err
+	return key, err
+}
+
+// newKeys are the keys of a tenant that the transaction of the context
+// makes. Other connections cannot see the tenant before the commit.
+type newKeys struct {
+	tenantID int64
+	keys     *tenantKeys
+}
+
+type newKeysKey struct{}
+
+// withNewKeys makes the keys of a new tenant in the transaction tx. The
+// store uses the keys of the returned context for the tenant in the
+// transaction. The keys do not go into the keyring: if the transaction
+// fails, the keys do not exist.
+func (s *Store) withNewKeys(ctx context.Context, tx pgx.Tx, tenantID int64) (context.Context, error) {
+	dk, err := s.insertNewKey(ctx, tx, tenantID, purposeData, 1)
+	if err != nil {
+		return nil, err
+	}
+	sk, err := s.insertNewKey(ctx, tx, tenantID, purposeSearch, 1)
+	if err != nil {
+		return nil, err
+	}
+	aead, err := newAEAD(dk)
+	if err != nil {
+		return nil, err
+	}
+	tk := &tenantKeys{data: map[int]cipher.AEAD{1: aead}, current: 1, search: sk, loaded: s.now()}
+	return context.WithValue(ctx, newKeysKey{}, &newKeys{tenantID: tenantID, keys: tk}), nil
 }
 
 // The format of an encrypted value: one byte for the format, the key
@@ -291,6 +330,19 @@ func searchToken(key []byte, word string) int64 {
 	return int64(binary.BigEndian.Uint64(m.Sum(nil)[:8])) // #nosec G115 -- a hash value, any bit pattern is good.
 }
 
+// slugToken returns the keyed hash of the slug of a title, for wiki
+// links, or nil for an empty slug. The prefix "slug:" makes the hash
+// different from the hash of a word.
+func slugToken(key []byte, slug string) *int64 {
+	if slug == "" {
+		return nil
+	}
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte("slug:" + slug))
+	t := int64(binary.BigEndian.Uint64(m.Sum(nil)[:8])) // #nosec G115 -- a hash value, any bit pattern is good.
+	return &t
+}
+
 // EnsureAllKeys makes the keys of all tenants that have no keys. The
 // application calls it at start. Thus a problem with the KEK stops the
 // server at start, and not at the first save.
@@ -335,6 +387,7 @@ func (s *Store) TenantKeyInfo(ctx context.Context, tenantID int64) (*KeyInfo, er
 		        WHERE sp.tenant_id = $1 AND r.key_version <> k.version)
 		     + (SELECT count(*) FROM files f JOIN spaces sp ON sp.id = f.space_id
 		        WHERE sp.tenant_id = $1 AND f.key_version <> k.version)
+		     + (SELECT count(*) FROM audit_events a WHERE a.tenant_id = $1 AND a.key_version <> k.version)
 		FROM tenant_keys k
 		WHERE k.tenant_id = $1 AND k.purpose = 'data' AND k.retired_at IS NULL`, tenantID,
 	).Scan(&k.Version, &k.CreatedAt, &k.KEKID, &k.Retired, &k.OldItems)
@@ -402,24 +455,30 @@ func (s *Store) ReencryptBatch(ctx context.Context) (int, error) {
 		sql, update string
 		cols        []string
 	}{
-		{`SELECT sp.tenant_id, n.id, 0, 'nodes.%s:' || n.space_id || ':' || n.public_id, n.body, n.plain_text
+		{`SELECT sp.tenant_id, n.id, 0, 'nodes.%s:' || n.space_id || ':' || n.public_id, n.body, n.plain_text, n.title
 		  FROM nodes n JOIN spaces sp ON sp.id = n.space_id
 		  JOIN tenant_keys k ON k.tenant_id = sp.tenant_id AND k.purpose = 'data' AND k.retired_at IS NULL
 		  WHERE n.key_version <> k.version LIMIT $1`,
-			"UPDATE nodes SET body = $1, plain_text = $2, key_version = $3 WHERE id = $4 AND $5::int = 0 AND body = $6",
-			[]string{"body", "plain_text"}},
-		{`SELECT sp.tenant_id, r.node_id, r.version, 'revisions.%s:' || n.space_id || ':' || n.public_id || ':' || r.version, r.body
+			"UPDATE nodes SET body = $1, plain_text = $2, title = $3, key_version = $4 WHERE id = $5 AND $6::int = 0 AND body = $7",
+			[]string{"body", "plain_text", "title"}},
+		{`SELECT sp.tenant_id, r.node_id, r.version, 'revisions.%s:' || n.space_id || ':' || n.public_id || ':' || r.version, r.body, r.title
 		  FROM revisions r JOIN nodes n ON n.id = r.node_id JOIN spaces sp ON sp.id = n.space_id
 		  JOIN tenant_keys k ON k.tenant_id = sp.tenant_id AND k.purpose = 'data' AND k.retired_at IS NULL
 		  WHERE r.key_version <> k.version LIMIT $1`,
-			"UPDATE revisions SET body = $1, key_version = $2 WHERE node_id = $3 AND version = $4 AND body = $5",
-			[]string{"body"}},
+			"UPDATE revisions SET body = $1, title = $2, key_version = $3 WHERE node_id = $4 AND version = $5 AND body = $6",
+			[]string{"body", "title"}},
 		{`SELECT sp.tenant_id, f.id, 0, 'files.%s:' || f.space_id || ':' || f.public_id, f.data
 		  FROM files f JOIN spaces sp ON sp.id = f.space_id
 		  JOIN tenant_keys k ON k.tenant_id = sp.tenant_id AND k.purpose = 'data' AND k.retired_at IS NULL
 		  WHERE f.key_version <> k.version LIMIT $1`,
 			"UPDATE files SET data = $1, key_version = $2 WHERE id = $3 AND $4::int = 0 AND data = $5",
 			[]string{"data"}},
+		{`SELECT a.tenant_id, a.id, 0, 'audit_events.%s:' || a.id, a.sealed
+		  FROM audit_events a
+		  JOIN tenant_keys k ON k.tenant_id = a.tenant_id AND k.purpose = 'data' AND k.retired_at IS NULL
+		  WHERE a.key_version <> k.version LIMIT $1`,
+			"UPDATE audit_events SET sealed = $1, key_version = $2 WHERE id = $3 AND $4::int = 0 AND sealed = $5",
+			[]string{"sealed"}},
 	}
 	changed := 0
 	for _, q := range queries {
@@ -493,7 +552,9 @@ func (s *Store) deleteUnusedKeys(ctx context.Context) error {
 		  AND NOT EXISTS (SELECT 1 FROM revisions r JOIN nodes n ON n.id = r.node_id JOIN spaces sp ON sp.id = n.space_id
 		                  WHERE sp.tenant_id = k.tenant_id AND r.key_version = k.version)
 		  AND NOT EXISTS (SELECT 1 FROM files f JOIN spaces sp ON sp.id = f.space_id
-		                  WHERE sp.tenant_id = k.tenant_id AND f.key_version = k.version)`,
+		                  WHERE sp.tenant_id = k.tenant_id AND f.key_version = k.version)
+		  AND NOT EXISTS (SELECT 1 FROM audit_events a
+		                  WHERE a.tenant_id = k.tenant_id AND a.key_version = k.version)`,
 		s.now().Add(-retiredKeyAge))
 	return err
 }

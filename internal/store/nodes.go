@@ -1,14 +1,21 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
+
+	"github.com/clpe/skriva/internal/slug"
 )
 
 // Node kinds.
@@ -28,6 +35,7 @@ type Node struct {
 	Kind     string
 	Title    string
 	// Slug is a readable form of the title for the URL. It can be empty.
+	// The store makes it from the title.
 	Slug string
 	// Body is the text of a document in the JSON format of the editor.
 	// The store does not check the format. See package doc.
@@ -58,6 +66,7 @@ func (n *Node) IsFolder() bool { return n.Kind == KindFolder }
 type NodeSummary struct {
 	ID           int64
 	PublicID     string
+	SpaceID      int64
 	ParentID     *int64
 	Kind         string
 	Title        string
@@ -106,7 +115,6 @@ type NewNode struct {
 	ParentPublicID string
 	Kind           string
 	Title          string
-	Slug           string
 	Content
 	Comment  string
 	AuthorID int64
@@ -120,7 +128,6 @@ type NodeUpdate struct {
 	// BaseVersion is the version that the author edited.
 	BaseVersion int
 	Title       string
-	Slug        string
 	Content
 	Comment  string
 	AuthorID int64
@@ -144,8 +151,9 @@ func addFileRefs(ctx context.Context, tx pgx.Tx, spaceID, nodeID int64, files []
 	return err
 }
 
-// setLinks replaces the links of a node.
-func setLinks(ctx context.Context, tx pgx.Tx, spaceID, nodeID int64, c Content) error {
+// setLinks replaces the links of a node. wikiTokens are the keyed hashes
+// of the slugs of the wiki links.
+func setLinks(ctx context.Context, tx pgx.Tx, spaceID, nodeID int64, c Content, wikiTokens []int64) error {
 	if _, err := tx.Exec(ctx, "DELETE FROM node_links WHERE source_id = $1", nodeID); err != nil {
 		return err
 	}
@@ -158,11 +166,11 @@ func setLinks(ctx context.Context, tx pgx.Tx, spaceID, nodeID int64, c Content) 
 			return err
 		}
 	}
-	if len(c.WikiLinks) > 0 {
+	if len(wikiTokens) > 0 {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO node_links (space_id, source_id, target_slug)
-			SELECT $1, $2, s FROM unnest($3::text[]) s
-			ON CONFLICT DO NOTHING`, spaceID, nodeID, c.WikiLinks); err != nil {
+			INSERT INTO node_links (space_id, source_id, target_token)
+			SELECT $1, $2, t FROM unnest($3::bigint[]) t
+			ON CONFLICT DO NOTHING`, spaceID, nodeID, wikiTokens); err != nil {
 			return err
 		}
 	}
@@ -174,16 +182,22 @@ func setLinks(ctx context.Context, tx pgx.Tx, spaceID, nodeID int64, c Content) 
 // and the nodes in the trash. The caller must remove the nodes that the
 // user cannot read.
 func (s *Store) Backlinks(ctx context.Context, n *Node) ([]NodeSummary, error) {
-	return s.summaries(ctx, `
-		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id
+	tk, err := s.spaceKeys(ctx, n.SpaceID)
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.summaries(ctx, `
+		SELECT `+summaryCols+`
 		FROM nodes n
 		JOIN (SELECT source_id FROM node_links WHERE target_id = $2
 		      UNION
-		      SELECT source_id FROM node_links WHERE space_id = $1 AND target_slug = $3 AND $3 <> ''
+		      SELECT source_id FROM node_links WHERE space_id = $1 AND target_token = $3
 		) l ON l.source_id = n.id
 		WHERE n.space_id = $1 AND n.id <> $2 AND n.deleted_at IS NULL
-		ORDER BY lower(n.title), n.id
-		LIMIT 200`, n.SpaceID, n.ID, n.Slug)
+		ORDER BY n.id
+		LIMIT 200`, n.SpaceID, n.ID, slugToken(tk.search, n.Slug))
+	sortByTitle(list, func(n NodeSummary) string { return n.Title })
+	return list, err
 }
 
 // LinkTarget is a possible target for a link in the editor.
@@ -196,50 +210,81 @@ type LinkTarget struct {
 }
 
 // FindLinkTargets returns the nodes of a space with a title that contains
-// query, without the nodes in the trash. Titles that start with the query
-// come first. The caller must remove the nodes that the user cannot read.
+// query, without the nodes in the trash. The case of the letters has no
+// effect. Titles that start with the query come first. The titles are
+// encrypted, thus the function decrypts the titles of the space and
+// filters them in memory. The caller must remove the nodes that the user
+// cannot read.
 func (s *Store) FindLinkTargets(ctx context.Context, spaceID int64, query string, limit int) ([]LinkTarget, error) {
-	pattern := "%" + likeEscaper.Replace(query) + "%"
-	rows, err := s.pool.Query(ctx, `
-		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id,
-		       COALESCE(p.title, ''), COALESCE(p.access_path_id, 0)
-		FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
-		WHERE n.space_id = $1 AND n.deleted_at IS NULL AND n.title ILIKE $2
-		ORDER BY lower(n.title) = lower($3) DESC, lower(n.title) LIKE lower($4) DESC,
-		         lower(n.title), n.id
-		LIMIT $5`, spaceID, pattern, query, likeEscaper.Replace(query)+"%", limit)
+	nodes, err := s.summaries(ctx, `
+		SELECT `+summaryCols+` FROM nodes n
+		WHERE n.space_id = $1 AND n.deleted_at IS NULL
+		ORDER BY n.id LIMIT $2`, spaceID, MaxTreeNodes)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (LinkTarget, error) {
-		var t LinkTarget
-		err := row.Scan(&t.ID, &t.PublicID, &t.ParentID, &t.Kind, &t.Title, &t.Slug, &t.UpdatedAt,
-			&t.AccessPathID, &t.ParentTitle, &t.ParentPathID)
-		return t, err
-	})
+	byID := make(map[int64]*NodeSummary, len(nodes))
+	for i := range nodes {
+		byID[nodes[i].ID] = &nodes[i]
+	}
+	q := strings.ToLower(query)
+	// rank 0: the same title, 1: the title starts with the query, 2: the
+	// title contains the query.
+	type found struct {
+		LinkTarget
+		rank int
+	}
+	var list []found
+	for _, n := range nodes {
+		t := strings.ToLower(n.Title)
+		if !strings.Contains(t, q) {
+			continue
+		}
+		f := found{LinkTarget: LinkTarget{NodeSummary: n}, rank: 2}
+		switch {
+		case t == q:
+			f.rank = 0
+		case strings.HasPrefix(t, q):
+			f.rank = 1
+		}
+		if n.ParentID != nil {
+			if p := byID[*n.ParentID]; p != nil {
+				f.ParentTitle, f.ParentPathID = p.Title, p.AccessPathID
+			}
+		}
+		list = append(list, f)
+	}
+	sortByTitle(list, func(f found) string { return f.Title })
+	slices.SortStableFunc(list, func(a, b found) int { return a.rank - b.rank })
+	out := make([]LinkTarget, 0, min(limit, len(list)))
+	for _, f := range list[:min(limit, len(list))] {
+		out = append(out, f.LinkTarget)
+	}
+	return out, nil
 }
-
-// likeEscaper escapes the special characters of a LIKE pattern.
-var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 // Node returns the node with the given public ID in a space.
 func (s *Store) Node(ctx context.Context, spaceID int64, publicID string) (*Node, error) {
 	var n Node
-	var body []byte
+	var title, body []byte
 	err := s.pool.QueryRow(ctx, `
-		SELECT n.id, n.public_id, n.space_id, n.parent_id, n.kind, n.title, n.slug, n.body,
+		SELECT n.id, n.public_id, n.space_id, n.parent_id, n.kind, n.title, n.body,
 		       n.version, n.default_role, n.access_path_id, n.created_at, n.updated_at,
 		       COALESCE(NULLIF(u.display_name, ''), u.username, ''),
 		       COALESCE(c.id, 0), COALESCE(c.name, '')
 		FROM nodes n LEFT JOIN users u ON u.id = n.updated_by
 		LEFT JOIN classifications c ON c.id = n.classification_id
 		WHERE n.space_id = $1 AND n.public_id = $2 AND n.deleted_at IS NULL`, spaceID, publicID,
-	).Scan(&n.ID, &n.PublicID, &n.SpaceID, &n.ParentID, &n.Kind, &n.Title, &n.Slug, &body,
+	).Scan(&n.ID, &n.PublicID, &n.SpaceID, &n.ParentID, &n.Kind, &title, &body,
 		&n.Version, &n.DefaultRole, &n.AccessPathID, &n.CreatedAt, &n.UpdatedAt, &n.UpdatedBy,
 		&n.ClassificationID, &n.Classification)
 	if err != nil {
 		return nil, notFound(err)
 	}
+	if n.Title, err = s.openText(ctx, spaceID, titlePlace(spaceID, publicID), title); err != nil {
+		return nil, err
+	}
+	n.Slug = slug.Make(n.Title)
 	if n.Body, err = s.openText(ctx, spaceID, bodyPlace(spaceID, publicID), body); err != nil {
 		return nil, err
 	}
@@ -250,6 +295,14 @@ func (s *Store) Node(ctx context.Context, spaceID int64, publicID string) (*Node
 // agree with the queries of ReencryptBatch.
 func bodyPlace(spaceID int64, publicID string) string {
 	return "nodes.body:" + strconv.FormatInt(spaceID, 10) + ":" + publicID
+}
+
+func titlePlace(spaceID int64, publicID string) string {
+	return "nodes.title:" + strconv.FormatInt(spaceID, 10) + ":" + publicID
+}
+
+func revisionTitlePlace(spaceID int64, publicID string, version int) string {
+	return "revisions.title:" + strconv.FormatInt(spaceID, 10) + ":" + publicID + ":" + strconv.Itoa(version)
 }
 
 func plainTextPlace(spaceID int64, publicID string) string {
@@ -279,16 +332,34 @@ func (s *Store) openBytes(ctx context.Context, spaceID int64, place string, data
 	return s.open(ctx, tenantID, place, data)
 }
 
-// sealedContent is the encrypted content of a version of a node.
-type sealedContent struct {
-	body, plainText, revision []byte
-	version                   int
-	tokens                    []int64
+// MaxTitleLength is the maximum length of a title in characters.
+const MaxTitleLength = 200
+
+// validTitle reports whether a title has 1 to MaxTitleLength characters.
+func validTitle(title string) bool {
+	n := utf8.RuneCountInString(title)
+	return n >= 1 && n <= MaxTitleLength
 }
 
-// sealContent encrypts the content of version v of a node and makes the
-// search index from the title and the plain text.
+// sealedContent is the encrypted title and content of a version of a
+// node, and its keyed hashes.
+type sealedContent struct {
+	title, revisionTitle      []byte
+	body, plainText, revision []byte
+	version                   int
+	tokens, titleTokens       []int64
+	// slugToken is the hash of the slug of the title, or nil.
+	slugToken *int64
+	// wikiTokens are the hashes of the slugs of the wiki links.
+	wikiTokens []int64
+}
+
+// sealContent encrypts the title and the content of version v of a node
+// and makes the search index from the title and the plain text.
 func (s *Store) sealContent(ctx context.Context, spaceID int64, publicID string, v int, title string, c Content) (*sealedContent, error) {
+	if !validTitle(title) {
+		return nil, ErrInvalid
+	}
 	tenantID, err := s.tenantOfSpace(ctx, spaceID)
 	if err != nil {
 		return nil, err
@@ -298,13 +369,33 @@ func (s *Store) sealContent(ctx context.Context, spaceID int64, publicID string,
 		return nil, err
 	}
 	aead := tk.data[tk.current]
-	return &sealedContent{
-		body:      sealWith(aead, tk.current, tenantID, bodyPlace(spaceID, publicID), []byte(c.Body)),
-		plainText: sealWith(aead, tk.current, tenantID, plainTextPlace(spaceID, publicID), []byte(c.PlainText)),
-		revision:  sealWith(aead, tk.current, tenantID, revisionPlace(spaceID, publicID, v), []byte(c.Body)),
-		version:   tk.current,
-		tokens:    searchTokens(tk.search, title+"\n"+c.PlainText),
-	}, nil
+	seal := func(place, plain string) []byte { return sealWith(aead, tk.current, tenantID, place, []byte(plain)) }
+	sc := &sealedContent{
+		title:         seal(titlePlace(spaceID, publicID), title),
+		revisionTitle: seal(revisionTitlePlace(spaceID, publicID, v), title),
+		body:          seal(bodyPlace(spaceID, publicID), c.Body),
+		plainText:     seal(plainTextPlace(spaceID, publicID), c.PlainText),
+		revision:      seal(revisionPlace(spaceID, publicID, v), c.Body),
+		version:       tk.current,
+		tokens:        searchTokens(tk.search, title+"\n"+c.PlainText),
+		titleTokens:   searchTokens(tk.search, title),
+		slugToken:     slugToken(tk.search, slug.Make(title)),
+	}
+	for _, l := range c.WikiLinks {
+		if t := slugToken(tk.search, l); t != nil {
+			sc.wikiTokens = append(sc.wikiTokens, *t)
+		}
+	}
+	return sc, nil
+}
+
+// spaceKeys returns the keys of the tenant of a space.
+func (s *Store) spaceKeys(ctx context.Context, spaceID int64) (*tenantKeys, error) {
+	tenantID, err := s.tenantOfSpace(ctx, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	return s.tenantKeys(ctx, tenantID)
 }
 
 // nullID returns nil for 0. The author columns use NULL for "no user".
@@ -421,23 +512,23 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 		// A new node has no own access settings. Thus it gets the access
 		// path of its parent.
 		err = tx.QueryRow(ctx, `
-			INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug, body, plain_text, key_version,
-			                   search_tokens, version, created_by, updated_by, created_at, updated_at,
+			INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug_token, body, plain_text, key_version,
+			                   search_tokens, title_tokens, version, created_by, updated_by, created_at, updated_at,
 			                   access_path_id, classification_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $11, $12, $12, $13, $14)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, $12, $12, $13, $13, $14, $15)
 			RETURNING id`,
-			publicID, spaceID, parentID, nn.Kind, nn.Title, nn.Slug, sealed.body, sealed.plainText, sealed.version,
-			sealed.tokens, nullID(nn.AuthorID), now, pathID, classID).Scan(&id)
+			publicID, spaceID, parentID, nn.Kind, sealed.title, sealed.slugToken, sealed.body, sealed.plainText,
+			sealed.version, sealed.tokens, sealed.titleTokens, nullID(nn.AuthorID), now, pathID, classID).Scan(&id)
 		if err != nil {
 			return err
 		}
-		if err := setLinks(ctx, tx, spaceID, id, nn.Content); err != nil {
+		if err := setLinks(ctx, tx, spaceID, id, nn.Content, sealed.wikiTokens); err != nil {
 			return err
 		}
 		_, err = tx.Exec(ctx, `
 			INSERT INTO revisions (node_id, version, title, body, key_version, author_id, comment, classification, created_at)
 			VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8)`,
-			id, nn.Title, sealed.revision, sealed.version, nullID(nn.AuthorID), nn.Comment, className, now)
+			id, sealed.revisionTitle, sealed.revision, sealed.version, nullID(nn.AuthorID), nn.Comment, className, now)
 		if err != nil {
 			return err
 		}
@@ -490,16 +581,17 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 		var version int
 		var className string
 		err = tx.QueryRow(ctx, `
-			UPDATE nodes n SET title = $4, slug = $5, body = $6, plain_text = $7, key_version = $11,
-			                 search_tokens = $12,
+			UPDATE nodes n SET title = $4, slug_token = $5, body = $6, plain_text = $7, key_version = $11,
+			                 search_tokens = $12, title_tokens = $13,
 			                 classification_id = CASE WHEN kind = 'folder' THEN NULL
 			                                          ELSE COALESCE($10, classification_id) END,
 			                 version = version + 1, updated_by = $8, updated_at = $9
 			WHERE space_id = $1 AND public_id = $2 AND version = $3 AND deleted_at IS NULL
 			RETURNING id, version,
 			          COALESCE((SELECT name FROM classifications WHERE id = n.classification_id), '')`,
-			spaceID, publicID, u.BaseVersion, u.Title, u.Slug, sealed.body, sealed.plainText, nullID(u.AuthorID),
-			now, newClass, sealed.version, sealed.tokens).Scan(&id, &version, &className)
+			spaceID, publicID, u.BaseVersion, sealed.title, sealed.slugToken, sealed.body, sealed.plainText,
+			nullID(u.AuthorID), now, newClass, sealed.version, sealed.tokens, sealed.titleTokens,
+		).Scan(&id, &version, &className)
 		if errors.Is(err, pgx.ErrNoRows) {
 			var exists bool
 			if err := tx.QueryRow(ctx, `
@@ -518,7 +610,7 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO revisions (node_id, version, title, body, key_version, author_id, comment, classification, created_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-			id, version, u.Title, sealed.revision, sealed.version, nullID(u.AuthorID), u.Comment, className, now)
+			id, version, sealed.revisionTitle, sealed.revision, sealed.version, nullID(u.AuthorID), u.Comment, className, now)
 		if err != nil {
 			return err
 		}
@@ -537,7 +629,7 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 		if folder {
 			return nil
 		}
-		if err := setLinks(ctx, tx, spaceID, id, u.Content); err != nil {
+		if err := setLinks(ctx, tx, spaceID, id, u.Content, sealed.wikiTokens); err != nil {
 			return err
 		}
 		return addFileRefs(ctx, tx, spaceID, id, u.Files)
@@ -553,11 +645,16 @@ func (s *Store) MoveNode(ctx context.Context, spaceID int64, publicID, newParent
 			return err
 		}
 		var id int64
-		var kind, title string
+		var kind string
+		var sealedTitle []byte
 		if err := tx.QueryRow(ctx, `
 			SELECT id, kind, title FROM nodes WHERE space_id = $1 AND public_id = $2 AND deleted_at IS NULL`,
-			spaceID, publicID).Scan(&id, &kind, &title); err != nil {
+			spaceID, publicID).Scan(&id, &kind, &sealedTitle); err != nil {
 			return notFound(err)
+		}
+		title, err := s.openText(ctx, spaceID, titlePlace(spaceID, publicID), sealedTitle)
+		if err != nil {
+			return err
 		}
 		parentID, _, err := parentFor(ctx, tx, spaceID, newParentPublicID, kind)
 		if err != nil {
@@ -587,8 +684,12 @@ func (s *Store) MoveNode(ctx context.Context, spaceID int64, publicID, newParent
 		}
 		place := "To the top level."
 		if parentID != nil {
-			var parent string
-			if err := tx.QueryRow(ctx, "SELECT title FROM nodes WHERE id = $1", *parentID).Scan(&parent); err != nil {
+			var sealedParent []byte
+			if err := tx.QueryRow(ctx, "SELECT title FROM nodes WHERE id = $1", *parentID).Scan(&sealedParent); err != nil {
+				return err
+			}
+			parent, err := s.openText(ctx, spaceID, titlePlace(spaceID, newParentPublicID), sealedParent)
+			if err != nil {
 				return err
 			}
 			place = "Into \"" + parent + "\" (" + newParentPublicID + ")."
@@ -617,15 +718,19 @@ func (s *Store) SetNodeDefaultRole(ctx context.Context, tenantID, spaceID int64,
 			return err
 		}
 		var id int64
-		var title string
+		var sealedTitle []byte
 		err := tx.QueryRow(ctx, `
 			UPDATE nodes n SET default_role = $4
 			FROM spaces sp
 			WHERE sp.id = n.space_id AND sp.tenant_id = $1 AND n.space_id = $2 AND n.public_id = $3
 			  AND n.deleted_at IS NULL
-			RETURNING n.id, n.title`, tenantID, spaceID, publicID, role).Scan(&id, &title)
+			RETURNING n.id, n.title`, tenantID, spaceID, publicID, role).Scan(&id, &sealedTitle)
 		if err != nil {
 			return notFound(err)
+		}
+		title, err := s.openText(ctx, spaceID, titlePlace(spaceID, publicID), sealedTitle)
+		if err != nil {
+			return err
 		}
 		if err := s.audit(ctx, tx, auditEntry{TenantID: &tenantID, SpaceID: spaceID, Action: AuditNodeDefaultRole,
 			Target: title, TargetID: publicID, Details: roleText(role, "parent")}); err != nil {
@@ -681,20 +786,20 @@ const MaxTreeNodes = 10000
 // come first, then the nodes are sorted by title. The result has at most
 // MaxTreeNodes nodes.
 func (s *Store) SpaceNodes(ctx context.Context, spaceID int64) ([]NodeSummary, error) {
-	return s.summaries(ctx, `
-		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
-		WHERE space_id = $1 AND deleted_at IS NULL
-		ORDER BY kind = 'document', lower(title), id
+	return s.sortedSummaries(ctx, `
+		SELECT `+summaryCols+` FROM nodes n
+		WHERE n.space_id = $1 AND n.deleted_at IS NULL
+		ORDER BY n.kind = 'document', n.id
 		LIMIT $2`, spaceID, MaxTreeNodes)
 }
 
 // Children returns the children of a node, or the root nodes of the space
 // if parentID is nil.
 func (s *Store) Children(ctx context.Context, spaceID int64, parentID *int64) ([]NodeSummary, error) {
-	return s.summaries(ctx, `
-		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
-		WHERE space_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL
-		ORDER BY kind = 'document', lower(title), id`, spaceID, parentID)
+	return s.sortedSummaries(ctx, `
+		SELECT `+summaryCols+` FROM nodes n
+		WHERE n.space_id = $1 AND n.parent_id IS NOT DISTINCT FROM $2 AND n.deleted_at IS NULL
+		ORDER BY n.id`, spaceID, parentID)
 }
 
 // Ancestors returns the ancestors of a node, from the root to the parent.
@@ -707,7 +812,7 @@ func (s *Store) Ancestors(ctx context.Context, nodeID int64) ([]NodeSummary, err
 			WHERE n.parent_id IS NOT NULL
 		)
 		CYCLE id SET is_cycle USING path
-		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id
+		SELECT `+summaryCols+`
 		FROM up JOIN nodes n ON n.id = up.id
 		WHERE NOT up.is_cycle
 		ORDER BY up.depth DESC`, nodeID)
@@ -716,17 +821,22 @@ func (s *Store) Ancestors(ctx context.Context, nodeID int64) ([]NodeSummary, err
 
 // NodesBySlug returns the nodes in a space with the given slug. Wiki links
 // use it.
-func (s *Store) NodesBySlug(ctx context.Context, spaceID int64, slug string) ([]NodeSummary, error) {
-	return s.summaries(ctx, `
-		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
-		WHERE space_id = $1 AND slug = $2 AND deleted_at IS NULL
-		ORDER BY kind = 'folder', created_at, id LIMIT 50`, spaceID, slug)
+func (s *Store) NodesBySlug(ctx context.Context, spaceID int64, sl string) ([]NodeSummary, error) {
+	tk, err := s.spaceKeys(ctx, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.summaries(ctx, `
+		SELECT `+summaryCols+` FROM nodes n
+		WHERE n.space_id = $1 AND n.slug_token = $2 AND n.deleted_at IS NULL
+		ORDER BY n.kind = 'folder', n.created_at, n.id LIMIT 50`, spaceID, slugToken(tk.search, sl))
+	// Two slugs can have the same hash. The decrypted title tells.
+	return slices.DeleteFunc(list, func(n NodeSummary) bool { return n.Slug != sl }), err
 }
 
 // RecentChange is a document in the list of recent changes of a tenant.
 type RecentChange struct {
 	NodeSummary
-	SpaceID   int64
 	SpaceSlug string
 	SpaceName string
 }
@@ -735,8 +845,7 @@ type RecentChange struct {
 // caller must remove the documents that the user cannot read.
 func (s *Store) RecentChanges(ctx context.Context, tenantID int64, limit int) ([]RecentChange, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id,
-		       sp.id, sp.slug, sp.name
+		SELECT `+summaryCols+`, sp.slug, sp.name
 		FROM nodes n JOIN spaces sp ON sp.id = n.space_id
 		WHERE sp.tenant_id = $1 AND n.kind = 'document' AND n.deleted_at IS NULL
 		ORDER BY n.updated_at DESC LIMIT $2`, tenantID, limit)
@@ -747,8 +856,11 @@ func (s *Store) RecentChanges(ctx context.Context, tenantID int64, limit int) ([
 	var out []RecentChange
 	for rows.Next() {
 		var c RecentChange
-		if err := rows.Scan(&c.ID, &c.PublicID, &c.ParentID, &c.Kind, &c.Title, &c.Slug, &c.UpdatedAt,
-			&c.AccessPathID, &c.SpaceID, &c.SpaceSlug, &c.SpaceName); err != nil {
+		var title []byte
+		if err := rows.Scan(append(summaryDest(&c.NodeSummary, &title), &c.SpaceSlug, &c.SpaceName)...); err != nil {
+			return nil, err
+		}
+		if err := s.openSummary(ctx, &c.NodeSummary, title); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -756,6 +868,27 @@ func (s *Store) RecentChanges(ctx context.Context, tenantID int64, limit int) ([
 	return out, rows.Err()
 }
 
+// summaryCols are the columns of a NodeSummary for summaryDest. The
+// query must name the table of the nodes "n".
+const summaryCols = "n.id, n.public_id, n.space_id, n.parent_id, n.kind, n.title, n.updated_at, n.access_path_id"
+
+// summaryDest returns the scan targets for summaryCols. The encrypted
+// title goes into title. Then openSummary decrypts it.
+func summaryDest(n *NodeSummary, title *[]byte) []any {
+	return []any{&n.ID, &n.PublicID, &n.SpaceID, &n.ParentID, &n.Kind, title, &n.UpdatedAt, &n.AccessPathID}
+}
+
+// openSummary decrypts the title of a node and makes the slug.
+func (s *Store) openSummary(ctx context.Context, n *NodeSummary, title []byte) error {
+	t, err := s.openText(ctx, n.SpaceID, titlePlace(n.SpaceID, n.PublicID), title)
+	if err != nil {
+		return err
+	}
+	n.Title, n.Slug = t, slug.Make(t)
+	return nil
+}
+
+// summaries runs a query that returns summaryCols.
 func (s *Store) summaries(ctx context.Context, sql string, args ...any) ([]NodeSummary, error) {
 	rows, err := s.pool.Query(ctx, sql, args...)
 	if err != nil {
@@ -765,7 +898,11 @@ func (s *Store) summaries(ctx context.Context, sql string, args ...any) ([]NodeS
 	var out []NodeSummary
 	for rows.Next() {
 		var n NodeSummary
-		if err := rows.Scan(&n.ID, &n.PublicID, &n.ParentID, &n.Kind, &n.Title, &n.Slug, &n.UpdatedAt, &n.AccessPathID); err != nil {
+		var title []byte
+		if err := rows.Scan(summaryDest(&n, &title)...); err != nil {
+			return nil, err
+		}
+		if err := s.openSummary(ctx, &n, title); err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -773,10 +910,51 @@ func (s *Store) summaries(ctx context.Context, sql string, args ...any) ([]NodeS
 	return out, rows.Err()
 }
 
+// sortedSummaries runs a query that returns summaryCols, and sorts the
+// result: folders first, then by title. For the same title, the order of
+// the query stays.
+func (s *Store) sortedSummaries(ctx context.Context, sql string, args ...any) ([]NodeSummary, error) {
+	list, err := s.summaries(ctx, sql, args...)
+	sortByTitle(list, func(n NodeSummary) string { return n.Title })
+	slices.SortStableFunc(list, func(a, b NodeSummary) int {
+		switch {
+		case a.IsFolder() == b.IsFolder():
+			return 0
+		case a.IsFolder():
+			return -1
+		}
+		return 1
+	})
+	return list, err
+}
+
+// sortByTitle sorts list by title in a stable sort. The order is the
+// root collation of Unicode (CLDR), and the case of the letters has no
+// effect. The titles are encrypted, thus the database cannot sort them.
+func sortByTitle[T any](list []T, title func(T) string) {
+	if len(list) < 2 {
+		return
+	}
+	col := collate.New(language.Und, collate.IgnoreCase)
+	var buf collate.Buffer
+	type item struct {
+		key []byte
+		v   T
+	}
+	items := make([]item, len(list))
+	for i, v := range list {
+		items[i] = item{bytes.Clone(col.KeyFromString(&buf, title(v))), v}
+		buf.Reset()
+	}
+	slices.SortStableFunc(items, func(a, b item) int { return bytes.Compare(a.key, b.key) })
+	for i := range items {
+		list[i] = items[i].v
+	}
+}
+
 // SearchResult is one result of a full text search.
 type SearchResult struct {
 	NodeSummary
-	SpaceID   int64
 	SpaceSlug string
 	SpaceName string
 	// Snippet is a part of the text. The marks « and » enclose the
@@ -805,25 +983,23 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 	}
 	incTokens, excTokens := tokensOf(tk.search, include), tokensOf(tk.search, exclude)
 	rows, err := s.pool.Query(ctx, `
-		SELECT n.id, n.public_id, n.parent_id, n.kind, n.title, n.slug, n.updated_at, n.access_path_id,
-		       sp.id, sp.slug, sp.name, n.plain_text
+		SELECT `+summaryCols+`, sp.slug, sp.name, n.plain_text
 		FROM nodes n
 		JOIN spaces sp ON sp.id = n.space_id
 		WHERE sp.tenant_id = $1 AND sp.id = ANY($2) AND n.deleted_at IS NULL
 		  AND n.search_tokens @> $3 AND NOT (n.search_tokens && $4)
-		ORDER BY to_tsvector('simple', n.title) @@ plainto_tsquery('simple', $5) DESC, n.updated_at DESC
-		LIMIT $6`, tenantID, spaceIDs, incTokens, excTokens, strings.Join(include, " "), limit)
+		ORDER BY n.title_tokens @> $3 DESC, n.updated_at DESC
+		LIMIT $5`, tenantID, spaceIDs, incTokens, excTokens, limit)
 	if err != nil {
 		return nil, err
 	}
 	type found struct {
 		SearchResult
-		plainText []byte
+		title, plainText []byte
 	}
 	list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (found, error) {
 		var r found
-		err := row.Scan(&r.ID, &r.PublicID, &r.ParentID, &r.Kind, &r.Title, &r.Slug, &r.UpdatedAt,
-			&r.AccessPathID, &r.SpaceID, &r.SpaceSlug, &r.SpaceName, &r.plainText)
+		err := row.Scan(append(summaryDest(&r.NodeSummary, &r.title), &r.SpaceSlug, &r.SpaceName, &r.plainText)...)
 		return r, err
 	})
 	if err != nil {
@@ -831,6 +1007,9 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 	}
 	out := make([]SearchResult, 0, len(list))
 	for _, r := range list {
+		if err := s.openSummary(ctx, &r.NodeSummary, r.title); err != nil {
+			return nil, err
+		}
 		plain, err := s.open(ctx, tenantID, plainTextPlace(r.SpaceID, r.PublicID), r.plainText)
 		if err != nil {
 			return nil, err
@@ -846,8 +1025,9 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 func (s *Store) Revisions(ctx context.Context, nodeID int64) ([]Revision, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT r.version, r.title, COALESCE(NULLIF(u.display_name, ''), u.username, ''),
-		       r.comment, r.created_at
+		       r.comment, r.created_at, n.space_id, n.public_id
 		FROM revisions r
+		JOIN nodes n ON n.id = r.node_id
 		LEFT JOIN users u ON u.id = r.author_id
 		WHERE r.node_id = $1
 		ORDER BY r.version DESC`, nodeID)
@@ -858,7 +1038,14 @@ func (s *Store) Revisions(ctx context.Context, nodeID int64) ([]Revision, error)
 	var out []Revision
 	for rows.Next() {
 		var r Revision
-		if err := rows.Scan(&r.Version, &r.Title, &r.Author, &r.Comment, &r.CreatedAt); err != nil {
+		var title []byte
+		var spaceID int64
+		var publicID string
+		if err := rows.Scan(&r.Version, &title, &r.Author, &r.Comment, &r.CreatedAt, &spaceID, &publicID); err != nil {
+			return nil, err
+		}
+		var err error
+		if r.Title, err = s.openText(ctx, spaceID, revisionTitlePlace(spaceID, publicID, r.Version), title); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -869,7 +1056,7 @@ func (s *Store) Revisions(ctx context.Context, nodeID int64) ([]Revision, error)
 // Revision returns one revision of a node.
 func (s *Store) Revision(ctx context.Context, nodeID int64, version int) (*Revision, error) {
 	var r Revision
-	var body []byte
+	var title, body []byte
 	var spaceID int64
 	var publicID string
 	err := s.pool.QueryRow(ctx, `
@@ -879,9 +1066,12 @@ func (s *Store) Revision(ctx context.Context, nodeID int64, version int) (*Revis
 		JOIN nodes n ON n.id = r.node_id
 		LEFT JOIN users u ON u.id = r.author_id
 		WHERE r.node_id = $1 AND r.version = $2`, nodeID, version,
-	).Scan(&r.Version, &r.Title, &body, &r.Author, &r.Comment, &r.Classification, &r.CreatedAt, &spaceID, &publicID)
+	).Scan(&r.Version, &title, &body, &r.Author, &r.Comment, &r.Classification, &r.CreatedAt, &spaceID, &publicID)
 	if err != nil {
 		return nil, notFound(err)
+	}
+	if r.Title, err = s.openText(ctx, spaceID, revisionTitlePlace(spaceID, publicID, r.Version), title); err != nil {
+		return nil, err
 	}
 	if r.Body, err = s.openText(ctx, spaceID, revisionPlace(spaceID, publicID, r.Version), body); err != nil {
 		return nil, err
@@ -992,9 +1182,9 @@ func (s *Store) PathTreeNodes(ctx context.Context, spaceID int64, nodeIDs []int6
 	if nodeIDs == nil {
 		nodeIDs = []int64{}
 	}
-	return s.summaries(ctx, `
-		SELECT id, public_id, parent_id, kind, title, slug, updated_at, access_path_id FROM nodes
-		WHERE space_id = $1 AND (parent_id IS NULL OR parent_id = ANY($2)) AND deleted_at IS NULL
-		ORDER BY kind = 'document', lower(title), id
+	return s.sortedSummaries(ctx, `
+		SELECT `+summaryCols+` FROM nodes n
+		WHERE n.space_id = $1 AND (n.parent_id IS NULL OR n.parent_id = ANY($2)) AND n.deleted_at IS NULL
+		ORDER BY n.kind = 'document', n.id
 		LIMIT $3`, spaceID, nodeIDs, MaxTreeNodes)
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -195,8 +196,10 @@ func TestRewrapKeys(t *testing.T) {
 	if _, err := st2.Node(ctx, sp.ID, id); !errors.Is(err, store.ErrKey) {
 		t.Fatalf("before rewrap: %v", err)
 	}
+	// Two tenants with a data key and a search key each. A new tenant
+	// gets its keys when it is made.
 	n, err := st2.RewrapKeys(ctx, oldBox)
-	if err != nil || n != 2 {
+	if err != nil || n != 4 {
 		t.Fatalf("rewrap = %d, %v", n, err)
 	}
 	st3 := store.New(pool, newBoxValue)
@@ -209,5 +212,120 @@ func TestRewrapKeys(t *testing.T) {
 	// A second rewrap does nothing.
 	if n, err := st3.RewrapKeys(ctx, oldBox); err != nil || n != 0 {
 		t.Fatalf("second rewrap = %d, %v", n, err)
+	}
+}
+
+func TestTitleEncryption(t *testing.T) {
+	pool := testdb.New(t)
+	st := store.New(pool, testdb.Box(t))
+	tn := defaultTenant(t, st)
+	sp := defaultSpace(t, st, tn)
+	mk := func(parent, kind, title string, c store.Content) string {
+		t.Helper()
+		id, err := st.CreateNode(ctx, sp.ID, store.NewNode{ParentPublicID: parent, Kind: kind, Title: title, Content: c})
+		if err != nil {
+			t.Fatalf("create %s: %v", title, err)
+		}
+		return id
+	}
+	folder := mk("", store.KindFolder, "Zeta", store.Content{})
+	secretID := mk(folder, store.KindDocument, "Project Swordfish", store.Content{})
+	mk("", store.KindDocument, "banana", store.Content{})
+	mk("", store.KindDocument, "Ärende", store.Content{})
+	linker := mk("", store.KindDocument, "apple", store.Content{
+		Body: `{"type":"doc"}`, PlainText: "See swordfish.", WikiLinks: []string{"project-swordfish"}})
+	if err := st.MoveNode(ctx, sp.ID, secretID, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// The database has no title in plain text.
+	var leaks int
+	if err := pool.QueryRow(ctx, `
+		SELECT (SELECT count(*) FROM nodes WHERE position('Swordfish'::bytea in title) > 0)
+		     + (SELECT count(*) FROM revisions WHERE position('Swordfish'::bytea in title) > 0)
+		     + (SELECT count(*) FROM audit_events WHERE target LIKE '%Swordfish%' OR details LIKE '%Zeta%'
+		          OR position('Swordfish'::bytea in sealed) > 0)`).Scan(&leaks); err != nil {
+		t.Fatal(err)
+	}
+	if leaks != 0 {
+		t.Fatalf("%d values with a plain title", leaks)
+	}
+
+	// The tree sorts the folders first, then the titles. The case and
+	// the diacritics come after the base letters.
+	nodes, err := st.SpaceNodes(ctx, sp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var titles []string
+	for _, n := range nodes {
+		titles = append(titles, n.Title)
+	}
+	if want := []string{"Zeta", "apple", "Ärende", "banana", "Project Swordfish"}; !slices.Equal(titles, want) {
+		t.Fatalf("tree = %q, want %q", titles, want)
+	}
+
+	// Wiki links, backlinks and the link picker use the decrypted titles.
+	bySlug, err := st.NodesBySlug(ctx, sp.ID, "project-swordfish")
+	if err != nil || len(bySlug) != 1 || bySlug[0].PublicID != secretID || bySlug[0].Slug != "project-swordfish" {
+		t.Fatalf("NodesBySlug = %+v, %v", bySlug, err)
+	}
+	n, err := st.Node(ctx, sp.ID, secretID)
+	if err != nil || n.Title != "Project Swordfish" {
+		t.Fatalf("Node = %+v, %v", n, err)
+	}
+	back, err := st.Backlinks(ctx, n)
+	if err != nil || len(back) != 1 || back[0].PublicID != linker {
+		t.Fatalf("Backlinks = %+v, %v", back, err)
+	}
+	targets, err := st.FindLinkTargets(ctx, sp.ID, "SWORD", 10)
+	if err != nil || len(targets) != 1 || targets[0].PublicID != secretID {
+		t.Fatalf("FindLinkTargets = %+v, %v", targets, err)
+	}
+	targets, _ = st.FindLinkTargets(ctx, sp.ID, "a", 10)
+	if len(targets) != 3 || targets[0].Title != "apple" || targets[1].Title != "banana" {
+		t.Fatalf("FindLinkTargets(a) = %+v", targets)
+	}
+
+	// The search shows the result with the word in the title first.
+	results, err := st.Search(ctx, tn.ID, []int64{sp.ID}, "swordfish", 10)
+	if err != nil || len(results) != 2 || results[0].PublicID != secretID {
+		t.Fatalf("Search = %+v, %v", results, err)
+	}
+
+	// The audit log shows the decrypted titles.
+	events, err := st.AuditEvents(ctx, &tn.ID, 0, 10)
+	if err != nil || len(events) == 0 || events[0].Target != "Project Swordfish" ||
+		events[0].Details != `To the top level.` {
+		t.Fatalf("AuditEvents = %+v, %v", events, err)
+	}
+
+	// A new data key encrypts the titles and the audit log again.
+	if _, err := st.RotateDataKey(ctx, tn.ID); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		n, err := st.ReencryptBatch(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	info, err := st.TenantKeyInfo(ctx, tn.ID)
+	if err != nil || info.OldItems != 0 {
+		t.Fatalf("TenantKeyInfo = %+v, %v", info, err)
+	}
+	if events, err := st.AuditEvents(ctx, &tn.ID, 0, 10); err != nil || events[0].Target != "Project Swordfish" {
+		t.Fatalf("AuditEvents after rotation = %+v, %v", events, err)
+	}
+	if revs, err := st.Revisions(ctx, n.ID); err != nil || revs[0].Title != "Project Swordfish" {
+		t.Fatalf("Revisions = %+v, %v", revs, err)
+	}
+
+	// A title must have 1 to 200 characters.
+	if _, err := st.CreateNode(ctx, sp.ID, store.NewNode{Kind: store.KindDocument, Title: ""}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("empty title: %v", err)
 	}
 }

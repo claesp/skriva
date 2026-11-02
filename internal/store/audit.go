@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -73,25 +75,61 @@ type auditEntry struct {
 	Details  string
 }
 
+// sealedAudit is the plain text of audit_events.sealed.
+type sealedAudit struct {
+	Target  string `json:"target"`
+	Details string `json:"details"`
+}
+
+func auditPlace(id int64) string { return "audit_events.sealed:" + strconv.FormatInt(id, 10) }
+
 // audit writes an event into the audit log. The caller gives the
 // transaction of the change. Thus the change and the event are saved
 // together, or not at all. The event keeps the name of the actor and the
-// code of the space at this time.
+// code of the space at this time. The store encrypts the target and the
+// details of an event of a tenant, because they can contain titles.
 func (s *Store) audit(ctx context.Context, q querier, e auditEntry) error {
 	actor := e.ActorID
 	if actor == 0 {
 		actor = actorFrom(ctx)
 	}
+	tenantID := e.TenantID
+	if tenantID == nil && e.SpaceID != 0 {
+		t, err := s.tenantOfSpace(ctx, e.SpaceID)
+		if err != nil {
+			return err
+		}
+		tenantID = &t
+	}
+	var id int64
+	if err := q.QueryRow(ctx, "SELECT nextval(pg_get_serial_sequence('audit_events', 'id'))").Scan(&id); err != nil {
+		return err
+	}
+	target, details := e.Target, e.Details
+	var sealed []byte
+	var version *int
+	if tenantID != nil {
+		plain, err := json.Marshal(sealedAudit{Target: target, Details: details})
+		if err != nil {
+			return err
+		}
+		ct, v, err := s.seal(ctx, *tenantID, auditPlace(id), plain)
+		if err != nil {
+			return err
+		}
+		sealed, version, target, details = ct, &v, "", ""
+	}
 	_, err := q.Exec(ctx, `
-		INSERT INTO audit_events (tenant_id, created_at, actor_id, actor_name, action, space_slug,
-		                          target, target_id, details)
-		SELECT COALESCE($1, sp.tenant_id), $3, u.id,
+		INSERT INTO audit_events (id, tenant_id, created_at, actor_id, actor_name, action, space_slug,
+		                          target, target_id, details, sealed, key_version)
+		OVERRIDING SYSTEM VALUE
+		SELECT $9, $1, $3, u.id,
 		       COALESCE(NULLIF(u.display_name, ''), u.username, 'System'),
-		       $5, COALESCE(sp.slug, ''), $6, $7, $8
+		       $5, COALESCE(sp.slug, ''), $6, $7, $8, $10, $11
 		FROM (SELECT 1) one
 		LEFT JOIN spaces sp ON sp.id = $2
 		LEFT JOIN users u ON u.id = $4`,
-		e.TenantID, e.SpaceID, s.now(), actor, e.Action, e.Target, e.TargetID, e.Details)
+		tenantID, e.SpaceID, s.now(), actor, e.Action, target, e.TargetID, details, id, sealed, version)
 	return err
 }
 
@@ -112,7 +150,7 @@ type AuditEvent struct {
 // result contains only events with a smaller ID.
 func (s *Store) AuditEvents(ctx context.Context, tenantID *int64, before int64, limit int) ([]AuditEvent, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, created_at, actor_name, action, space_slug, target, target_id, details
+		SELECT id, created_at, actor_name, action, space_slug, target, target_id, details, sealed
 		FROM audit_events
 		WHERE tenant_id IS NOT DISTINCT FROM $1 AND ($2 = 0 OR id < $2)
 		ORDER BY id DESC
@@ -120,11 +158,34 @@ func (s *Store) AuditEvents(ctx context.Context, tenantID *int64, before int64, 
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (AuditEvent, error) {
-		var e AuditEvent
-		err := row.Scan(&e.ID, &e.CreatedAt, &e.Actor, &e.Action, &e.Space, &e.Target, &e.TargetID, &e.Details)
+	type row struct {
+		AuditEvent
+		sealed []byte
+	}
+	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
+		var e row
+		err := r.Scan(&e.ID, &e.CreatedAt, &e.Actor, &e.Action, &e.Space, &e.Target, &e.TargetID, &e.Details, &e.sealed)
 		return e, err
 	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AuditEvent, 0, len(list))
+	for _, e := range list {
+		if e.sealed != nil && tenantID != nil {
+			plain, err := s.open(ctx, *tenantID, auditPlace(e.ID), e.sealed)
+			if err != nil {
+				return nil, err
+			}
+			var a sealedAudit
+			if err := json.Unmarshal(plain, &a); err != nil {
+				return nil, err
+			}
+			e.Target, e.Details = a.Target, a.Details
+		}
+		out = append(out, e.AuditEvent)
+	}
+	return out, nil
 }
 
 // tx runs fn in a transaction.

@@ -1,9 +1,11 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -346,7 +348,7 @@ func (s *Store) Bindings(ctx context.Context, tenantID int64) ([]Binding, error)
 	rows, err := s.pool.Query(ctx, `
 		SELECT b.id, r.name,
 		       COALESCE(sp.id, 0), COALESCE(sp.slug, ''), COALESCE(sp.name, ''),
-		       COALESCE(n.id, 0), COALESCE(n.public_id, ''), COALESCE(n.title, ''),
+		       COALESCE(n.id, 0), COALESCE(n.public_id, ''), n.title,
 		       COALESCE(u.id, 0), COALESCE(u.username, ''),
 		       COALESCE(g.id, 0), COALESCE(g.name, ''), COALESCE(g.source, '')
 		FROM role_bindings b
@@ -356,7 +358,7 @@ func (s *Store) Bindings(ctx context.Context, tenantID int64) ([]Binding, error)
 		LEFT JOIN users u ON u.id = b.user_id
 		LEFT JOIN groups g ON g.id = b.group_id
 		WHERE b.tenant_id = $1
-		ORDER BY sp.name NULLS FIRST, n.title NULLS FIRST, r.name, g.name NULLS LAST, u.username`, tenantID)
+		ORDER BY sp.name NULLS FIRST, sp.id NULLS FIRST, n.id NULLS FIRST, r.name, g.name NULLS LAST, u.username`, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -364,14 +366,39 @@ func (s *Store) Bindings(ctx context.Context, tenantID int64) ([]Binding, error)
 	var out []Binding
 	for rows.Next() {
 		var b Binding
+		var title []byte
 		if err := rows.Scan(&b.ID, &b.RoleName, &b.SpaceID, &b.SpaceSlug, &b.SpaceName,
-			&b.NodeID, &b.NodePublicID, &b.NodeTitle, &b.UserID, &b.UserName,
+			&b.NodeID, &b.NodePublicID, &title, &b.UserID, &b.UserName,
 			&b.GroupID, &b.GroupName, &b.GroupSource); err != nil {
 			return nil, err
 		}
+		if b.NodeID != 0 {
+			var err error
+			if b.NodeTitle, err = s.openText(ctx, b.SpaceID, titlePlace(b.SpaceID, b.NodePublicID), title); err != nil {
+				return nil, err
+			}
+		}
 		out = append(out, b)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// The titles are encrypted, thus the bindings of the items are sorted
+	// here: in each space, the bindings of the space come first, then the
+	// bindings of the items by title. The database gave the order of the
+	// spaces.
+	spaceRank := map[int64]int{}
+	for i, b := range out {
+		if _, ok := spaceRank[b.SpaceID]; !ok {
+			spaceRank[b.SpaceID] = i
+		}
+	}
+	sortByTitle(out, func(b Binding) string { return b.NodeTitle })
+	slices.SortStableFunc(out, func(a, b Binding) int {
+		return cmp.Or(cmp.Compare(spaceRank[a.SpaceID], spaceRank[b.SpaceID]),
+			cmp.Compare(min(a.NodeID, 1), min(b.NodeID, 1)))
+	})
+	return out, nil
 }
 
 // Scope is the scope of a role binding. The zero value is the full
@@ -462,22 +489,29 @@ func bind(ctx context.Context, q querier, tenantID int64, roleName string, userI
 func (s *Store) auditBinding(ctx context.Context, tx pgx.Tx, tenantID, id int64, action string) error {
 	var role, subject, scope string
 	var spaceID *int64
+	var nodeID *string
+	var nodeTitle []byte
 	err := tx.QueryRow(ctx, `
 		SELECT r.name,
 		       CASE WHEN g.id IS NOT NULL THEN 'Group ' || g.name ELSE 'User ' || u.username END,
-		       CASE WHEN n.id IS NOT NULL THEN 'Item "' || n.title || '" (' || n.public_id || ')'
-		            WHEN sp.id IS NOT NULL THEN 'All of the space'
-		            ELSE 'All spaces' END,
-		       b.space_id
+		       CASE WHEN sp.id IS NOT NULL THEN 'All of the space' ELSE 'All spaces' END,
+		       b.space_id, n.public_id, n.title
 		FROM role_bindings b
 		JOIN roles r ON r.id = b.role_id
 		LEFT JOIN groups g ON g.id = b.group_id
 		LEFT JOIN users u ON u.id = b.user_id
 		LEFT JOIN spaces sp ON sp.id = b.space_id
 		LEFT JOIN nodes n ON n.id = b.node_id
-		WHERE b.tenant_id = $1 AND b.id = $2`, tenantID, id).Scan(&role, &subject, &scope, &spaceID)
+		WHERE b.tenant_id = $1 AND b.id = $2`, tenantID, id).Scan(&role, &subject, &scope, &spaceID, &nodeID, &nodeTitle)
 	if err != nil {
 		return err
+	}
+	if nodeID != nil && spaceID != nil {
+		title, err := s.openText(ctx, *spaceID, titlePlace(*spaceID, *nodeID), nodeTitle)
+		if err != nil {
+			return err
+		}
+		scope = "Item \"" + title + "\" (" + *nodeID + ")"
 	}
 	e := auditEntry{TenantID: &tenantID, Action: action, Target: subject, Details: "Role " + role + ". Scope: " + scope + "."}
 	if spaceID != nil {

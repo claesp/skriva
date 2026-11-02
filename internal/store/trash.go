@@ -48,11 +48,15 @@ func (s *Store) TrashNode(ctx context.Context, spaceID int64, publicID string, u
 			return err
 		}
 		var id int64
-		var title string
+		var sealedTitle []byte
 		if err := tx.QueryRow(ctx, `
 			SELECT id, title FROM nodes WHERE space_id = $1 AND public_id = $2 AND deleted_at IS NULL`,
-			spaceID, publicID).Scan(&id, &title); err != nil {
+			spaceID, publicID).Scan(&id, &sealedTitle); err != nil {
 			return notFound(err)
+		}
+		title, err := s.openText(ctx, spaceID, titlePlace(spaceID, publicID), sealedTitle)
+		if err != nil {
+			return err
 		}
 		tag, err := tx.Exec(ctx, `
 			WITH RECURSIVE sub(id) AS (
@@ -70,23 +74,43 @@ func (s *Store) TrashNode(ctx context.Context, spaceID int64, publicID string, u
 	})
 }
 
-// trashSelect reads TrashItem values. The query must continue with a
-// WHERE clause.
+// trashSelect reads TrashItem values with scanTrashItem. The query must
+// continue with a WHERE clause.
 const trashSelect = `
-	SELECT n.id, n.public_id, n.kind, n.title, n.access_path_id, n.deleted_at,
+	SELECT n.id, n.public_id, n.space_id, n.kind, n.title, n.access_path_id, n.deleted_at,
 	       COALESCE(NULLIF(u.display_name, ''), u.username, ''),
 	       (SELECT count(*) FROM nodes d WHERE d.trash_id = n.id AND d.id <> n.id),
-	       COALESCE(p.title, ''), COALESCE(p.deleted_at IS NOT NULL, false)
+	       p.public_id, p.title, COALESCE(p.deleted_at IS NOT NULL, false)
 	FROM nodes n
 	LEFT JOIN users u ON u.id = n.deleted_by
 	LEFT JOIN nodes p ON p.id = n.parent_id
 `
 
-func scanTrashItem(row pgx.CollectableRow) (TrashItem, error) {
-	var t TrashItem
-	err := row.Scan(&t.ID, &t.PublicID, &t.Kind, &t.Title, &t.AccessPathID, &t.DeletedAt,
-		&t.DeletedBy, &t.Descendants, &t.ParentTitle, &t.ParentInTrash)
+// trashRow is a TrashItem with the encrypted titles.
+type trashRow struct {
+	TrashItem
+	spaceID       int64
+	title, parent []byte
+	parentID      *string
+}
+
+func scanTrashItem(row pgx.CollectableRow) (trashRow, error) {
+	var t trashRow
+	err := row.Scan(&t.ID, &t.PublicID, &t.spaceID, &t.Kind, &t.title, &t.AccessPathID, &t.DeletedAt,
+		&t.DeletedBy, &t.Descendants, &t.parentID, &t.parent, &t.ParentInTrash)
 	return t, err
+}
+
+// openTrashItem decrypts the titles of an item in the trash.
+func (s *Store) openTrashItem(ctx context.Context, t *trashRow) error {
+	var err error
+	if t.Title, err = s.openText(ctx, t.spaceID, titlePlace(t.spaceID, t.PublicID), t.title); err != nil {
+		return err
+	}
+	if t.parentID != nil {
+		t.ParentTitle, err = s.openText(ctx, t.spaceID, titlePlace(t.spaceID, *t.parentID), t.parent)
+	}
+	return err
 }
 
 // MaxTrashItems is the maximum number of items that Trash returns.
@@ -102,7 +126,18 @@ func (s *Store) Trash(ctx context.Context, spaceID int64) ([]TrashItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, scanTrashItem)
+	list, err := pgx.CollectRows(rows, scanTrashItem)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TrashItem, 0, len(list))
+	for i := range list {
+		if err := s.openTrashItem(ctx, &list[i]); err != nil {
+			return nil, err
+		}
+		out = append(out, list[i].TrashItem)
+	}
+	return out, nil
 }
 
 // TrashedNode returns one item in the trash of a space.
@@ -116,7 +151,10 @@ func (s *Store) TrashedNode(ctx context.Context, spaceID int64, publicID string)
 	if err != nil {
 		return nil, notFound(err)
 	}
-	return &t, nil
+	if err := s.openTrashItem(ctx, &t); err != nil {
+		return nil, err
+	}
+	return &t.TrashItem, nil
 }
 
 // RestoreNode moves an item and its subtree out of the trash, back to
@@ -130,15 +168,19 @@ func (s *Store) RestoreNode(ctx context.Context, spaceID int64, publicID string)
 			return err
 		}
 		var id int64
-		var title string
+		var sealedTitle []byte
 		var parentInTrash bool
 		err := tx.QueryRow(ctx, `
 			SELECT n.id, n.title, COALESCE(p.deleted_at IS NOT NULL, false)
 			FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
 			WHERE n.space_id = $1 AND n.public_id = $2 AND n.trash_id = n.id`,
-			spaceID, publicID).Scan(&id, &title, &parentInTrash)
+			spaceID, publicID).Scan(&id, &sealedTitle, &parentInTrash)
 		if err != nil {
 			return notFound(err)
+		}
+		title, err := s.openText(ctx, spaceID, titlePlace(spaceID, publicID), sealedTitle)
+		if err != nil {
+			return err
 		}
 		if parentInTrash {
 			return ErrInvalid
@@ -162,12 +204,16 @@ func (s *Store) PurgeNode(ctx context.Context, spaceID int64, publicID string) e
 		if err := lockSpace(ctx, tx, spaceID); err != nil {
 			return err
 		}
-		var title string
+		var sealedTitle []byte
 		err := tx.QueryRow(ctx, `
 			DELETE FROM nodes WHERE space_id = $1 AND public_id = $2 AND trash_id = id RETURNING title`,
-			spaceID, publicID).Scan(&title)
+			spaceID, publicID).Scan(&sealedTitle)
 		if err != nil {
 			return notFound(err)
+		}
+		title, err := s.openText(ctx, spaceID, titlePlace(spaceID, publicID), sealedTitle)
+		if err != nil {
+			return err
 		}
 		if err := s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodePurge, Target: title,
 			TargetID: publicID}); err != nil {
@@ -202,7 +248,10 @@ func (s *Store) purgeTrash(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			type item struct{ id, title string }
+			type item struct {
+				id    string
+				title []byte
+			}
 			items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (item, error) {
 				var it item
 				err := row.Scan(&it.id, &it.title)
@@ -213,7 +262,11 @@ func (s *Store) purgeTrash(ctx context.Context) error {
 			}
 			// The cleanup task has no actor. Thus the log shows "System".
 			for _, it := range items {
-				if err := s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodePurge, Target: it.title,
+				title, err := s.openText(ctx, spaceID, titlePlace(spaceID, it.id), it.title)
+				if err != nil {
+					return err
+				}
+				if err := s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodePurge, Target: title,
 					TargetID: it.id, Details: fmt.Sprintf("After %d days in the trash.", TrashDays)}); err != nil {
 					return err
 				}

@@ -280,20 +280,34 @@ for the methods that the project compared.
   key encryption key (KEK), `SKRIVA_ENCRYPTION_KEY`. The KEK is not in
   the database. The server unwraps the keys of a tenant when it needs
   them, and keeps them in memory.
-- **Encrypted data.** The text of each document (`nodes.body`), its plain
-  text for the search results (`nodes.plain_text`), all old versions
-  (`revisions.body`) and the uploaded files (`files.data`). The
-  algorithm is AES-256-GCM. The associated data contains the tenant, the
+- **Encrypted data.** The title and the text of each folder and
+  document (`nodes.title`, `nodes.body`), its plain text for the search
+  results (`nodes.plain_text`), the titles and the text of all old
+  versions (`revisions.title`, `revisions.body`), the uploaded files
+  (`files.data`), and the target and the details of the audit events of
+  the tenants (`audit_events.sealed`). The algorithm is AES-256-GCM. The associated data contains the tenant, the
   table, the column and the row. Thus a person who can write to the
   database cannot move a value to a different row or tenant.
 - **Search.** The search index contains keyed hashes of the words
   (HMAC-SHA-256 with the search key, 8 bytes), not the words. The index
   tells which documents contain the same words, and how frequent a word
   is, but not the words. The search finds whole words only.
-- **Not encrypted.** The titles, the slugs, the targets of the links
-  between documents, the names of users, groups and spaces, and the
-  audit log. The titles are necessary for the tree, the sort order, the
-  links and the path above the title.
+- **Titles.** The database cannot sort or filter encrypted titles. Thus
+  the server decrypts the titles and sorts them in memory, for the tree,
+  the lists and the page picker of the editor. Wiki links and backlinks
+  use a keyed hash of the slug of the title (`nodes.slug_token`,
+  `node_links.target_token`), not the slug. The search ranks the results
+  with a separate index of the words of the title (`nodes.title_tokens`).
+  This tells a database administrator which word hashes are in titles,
+  but not the words.
+- **Slugs in URLs.** The URL of a document contains the slug of its
+  title, for example `/d/abc…/project-plan`. The server makes it from
+  the decrypted title. It is not in the database, but it can be in the
+  logs of a proxy and in the history of the browser.
+- **Not encrypted.** The names of users, groups, roles and spaces, the
+  structure of the tree, the times, the classification names of the
+  versions, and the events of the system administration (tenant names
+  and codes).
 - **Key rotation.** A system administrator can make a new data key for a
   tenant (tenant page, **Encryption**). New values use the new key at
   once. The cleanup task encrypts the old values again, and then deletes

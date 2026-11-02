@@ -3,9 +3,10 @@
 This document compares methods to encrypt the documents in the database
 at rest. It gives a recommendation. The data is from 2026-11-01. This is
 research. Skriva now implements method 5 (envelope encryption) for the
-content of the documents and the files, with the KEK from the
-configuration. See [Security: encryption at rest](security.md#encryption-at-rest).
-The titles, a KMS for the KEK, and the audit log are not done yet.
+titles and the content of the documents, the files and the audit log of
+the tenants, with the KEK from the configuration. See
+[Security: encryption at rest](security.md#encryption-at-rest).
+A KMS for the KEK is not done yet.
 
 ## The data to protect
 

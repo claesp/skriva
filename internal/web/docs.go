@@ -482,7 +482,7 @@ func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
 	ri := reqInfoFrom(r.Context())
 	sl := slug.Make(f.Title)
 	id, err := s.store.CreateNode(r.Context(), ri.Space.ID, store.NewNode{
-		ParentPublicID: f.ParentID, Kind: f.Kind, Title: f.Title, Slug: sl,
+		ParentPublicID: f.ParentID, Kind: f.Kind, Title: f.Title,
 		Content: f.content, Comment: f.Comment, AuthorID: ri.Session.User.ID,
 		ClassificationID: f.ClassificationID,
 	})
@@ -618,7 +618,7 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Nod
 	ri := reqInfoFrom(r.Context())
 	sl := slug.Make(f.Title)
 	err := s.store.UpdateNode(r.Context(), ri.Space.ID, n.PublicID, store.NodeUpdate{
-		BaseVersion: version, Title: f.Title, Slug: sl, Content: f.content,
+		BaseVersion: version, Title: f.Title, Content: f.content,
 		Comment: f.Comment, AuthorID: ri.Session.User.ID, RestoredFrom: f.RestoredFrom,
 		ClassificationID: f.ClassificationID,
 	})

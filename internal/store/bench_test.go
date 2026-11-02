@@ -29,12 +29,12 @@ func BenchmarkAccessLargeSpace(b *testing.B) {
 	if _, err := pool.Exec(ctx, `
 		WITH root AS (SELECT id FROM access_paths WHERE space_id = $1 AND path = '{}'),
 		folders AS (
-			INSERT INTO nodes (public_id, space_id, kind, title, slug, body, plain_text, key_version, access_path_id)
-			SELECT 'f' || lpad(g::text, 13, '0'), $1, 'folder', 'Folder ' || g, 'folder-' || g, '', '', 1, (SELECT id FROM root)
+			INSERT INTO nodes (public_id, space_id, kind, title, body, plain_text, key_version, access_path_id)
+			SELECT 'f' || lpad(g::text, 13, '0'), $1, 'folder', '', '', '', 1, (SELECT id FROM root)
 			FROM generate_series(1, 100) g RETURNING id, public_id)
-		INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug, body, plain_text, key_version,
+		INSERT INTO nodes (public_id, space_id, parent_id, kind, title, body, plain_text, key_version,
 		                   access_path_id, classification_id)
-		SELECT 'd' || lpad((f.id * 1000 + g)::text, 13, '0'), $1, f.id, 'document', 'Doc ' || g, 'doc-' || g, '', '', 1,
+		SELECT 'd' || lpad((f.id * 1000 + g)::text, 13, '0'), $1, f.id, 'document', '', '', '', 1,
 		       (SELECT id FROM root), (SELECT id FROM classifications WHERE tenant_id = $2 AND is_default)
 		FROM folders f, generate_series(1, 499) g`, sp.ID, tn.ID); err != nil {
 		b.Fatal(err)

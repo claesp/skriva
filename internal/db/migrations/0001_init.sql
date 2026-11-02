@@ -168,8 +168,14 @@ CREATE TABLE nodes (
     public_id      text        NOT NULL UNIQUE CHECK (public_id ~ '^[0-9a-z]{14}$'),
     parent_id      bigint,
     kind           text        NOT NULL CHECK (kind IN ('folder', 'document')),
-    title          text        NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
-    slug           text        NOT NULL CHECK (slug ~ '^([a-z0-9]+(-[a-z0-9]+)*)?$'),
+    -- The title, encrypted with the data key of the tenant (version
+    -- key_version). The server checks the length before it saves the
+    -- title. The server sorts and filters the titles in memory.
+    title          bytea       NOT NULL,
+    -- The keyed hash (HMAC-SHA-256 with the search key of the tenant, 8
+    -- bytes) of the slug of the title, for wiki links. NULL if the slug
+    -- is empty. The server makes the slug in the URL from the title.
+    slug_token     bigint,
     -- The text of a document in the JSON format of the editor,
     -- encrypted with the data key of the tenant (version key_version).
     -- The server checks the format before it saves the text.
@@ -181,6 +187,9 @@ CREATE TABLE nodes (
     -- The search index: keyed hashes (HMAC-SHA-256 with the search key
     -- of the tenant, 8 bytes) of the words of the title and the text.
     search_tokens  bigint[]    NOT NULL DEFAULT '{}',
+    -- The keyed hashes of the words of the title only. The search shows
+    -- the results with the words in the title first.
+    title_tokens   bigint[]    NOT NULL DEFAULT '{}',
     version        integer     NOT NULL DEFAULT 1,
     -- The default role of the node. NULL means that the node uses the
     -- default role of its parent (or of the space). An empty value means
@@ -212,7 +221,7 @@ CREATE TABLE nodes (
 );
 CREATE INDEX nodes_search_idx ON nodes USING gin (search_tokens);
 CREATE INDEX nodes_parent_idx ON nodes (space_id, parent_id);
-CREATE INDEX nodes_slug_idx ON nodes (space_id, slug);
+CREATE INDEX nodes_slug_idx ON nodes (space_id, slug_token) WHERE slug_token IS NOT NULL;
 CREATE INDEX nodes_space_updated_idx ON nodes (space_id, updated_at DESC);
 CREATE INDEX nodes_access_path_idx ON nodes (access_path_id);
 CREATE INDEX nodes_default_role_idx ON nodes (space_id) WHERE default_role IS NOT NULL;
@@ -225,8 +234,8 @@ CREATE INDEX nodes_trash_root_idx ON nodes (space_id, deleted_at) WHERE trash_id
 CREATE TABLE revisions (
     node_id    bigint      NOT NULL REFERENCES nodes (id) ON DELETE CASCADE,
     version    integer     NOT NULL,
-    title      text        NOT NULL,
-    -- The text, encrypted as nodes.body.
+    -- The title and the text, encrypted as nodes.title and nodes.body.
+    title      bytea       NOT NULL,
     body       bytea       NOT NULL,
     key_version integer    NOT NULL,
     author_id  bigint      REFERENCES users (id) ON DELETE SET NULL,
@@ -270,22 +279,22 @@ CREATE TABLE file_refs (
 CREATE INDEX file_refs_node_idx ON file_refs (node_id);
 
 -- The links in the current version of each node. A "doc:" link has the
--- target node. A wiki link has the slug of the target title, because the
--- target can be made later. The server replaces the rows of a node when
+-- target node. A wiki link has the keyed hash of the slug of the target
+-- title (as nodes.slug_token), because the target can be made later. The server replaces the rows of a node when
 -- it saves the node. The page of a node uses the rows to show the nodes
 -- that link to it.
 CREATE TABLE node_links (
     space_id    bigint NOT NULL,
     source_id   bigint NOT NULL,
     target_id   bigint,
-    target_slug text,
-    CHECK ((target_id IS NULL) <> (target_slug IS NULL)),
+    target_token bigint,
+    CHECK ((target_id IS NULL) <> (target_token IS NULL)),
     FOREIGN KEY (space_id, source_id) REFERENCES nodes (space_id, id) ON DELETE CASCADE,
     FOREIGN KEY (space_id, target_id) REFERENCES nodes (space_id, id) ON DELETE CASCADE,
-    UNIQUE NULLS NOT DISTINCT (source_id, target_id, target_slug)
+    UNIQUE NULLS NOT DISTINCT (source_id, target_id, target_token)
 );
 CREATE INDEX node_links_target_idx ON node_links (target_id) WHERE target_id IS NOT NULL;
-CREATE INDEX node_links_slug_idx ON node_links (space_id, target_slug) WHERE target_slug IS NOT NULL;
+CREATE INDEX node_links_token_idx ON node_links (space_id, target_token) WHERE target_token IS NOT NULL;
 
 -- A role binding gives a role to one user or to one group. A binding
 -- without a space applies in all spaces of the tenant. A binding with a
@@ -328,9 +337,18 @@ CREATE TABLE audit_events (
     actor_name text        NOT NULL,
     action     text        NOT NULL,
     space_slug text        NOT NULL DEFAULT '',
+    -- target and details are only for the events of the system
+    -- administration. An event of a tenant keeps them in sealed: a JSON
+    -- object, encrypted with the data key of the tenant (version
+    -- key_version). They can contain titles and names.
     target     text        NOT NULL DEFAULT '',
     target_id  text        NOT NULL DEFAULT '',
-    details    text        NOT NULL DEFAULT ''
+    details    text        NOT NULL DEFAULT '',
+    sealed     bytea,
+    key_version integer,
+    CHECK ((tenant_id IS NULL) = (sealed IS NULL)),
+    CHECK ((sealed IS NULL) = (key_version IS NULL)),
+    CHECK (sealed IS NULL OR (target = '' AND details = ''))
 );
 CREATE INDEX audit_events_tenant_idx ON audit_events (tenant_id, id DESC);
 CREATE INDEX audit_events_created_idx ON audit_events (created_at);

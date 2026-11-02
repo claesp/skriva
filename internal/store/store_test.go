@@ -651,14 +651,14 @@ func TestNodeVersions(t *testing.T) {
 	tn := defaultTenant(t, st)
 	sp := defaultSpace(t, st, tn)
 	u := login(t, st, tn, "erin")
-	id, err := st.CreateNode(ctx, sp.ID, store.NewNode{Kind: store.KindDocument, Title: "Home", Slug: "home", Content: content("Hello world"), Comment: "first", AuthorID: u.ID})
+	id, err := st.CreateNode(ctx, sp.ID, store.NewNode{Kind: store.KindDocument, Title: "Home", Content: content("Hello world"), Comment: "first", AuthorID: u.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 1, Title: "Home", Slug: "home", Content: content("Hello again"), Comment: "second", AuthorID: u.ID}); err != nil {
+	if err := st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 1, Title: "Home", Content: content("Hello again"), Comment: "second", AuthorID: u.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 1, Title: "Home", Slug: "home", Content: content("lost"), AuthorID: u.ID}); !errors.Is(err, store.ErrConflict) {
+	if err := st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 1, Title: "Home", Content: content("lost"), AuthorID: u.ID}); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("stale update: %v", err)
 	}
 	if err := st.UpdateNode(ctx, sp.ID, "000000000000", store.NodeUpdate{BaseVersion: 1, Title: "X", AuthorID: u.ID}); !errors.Is(err, store.ErrNotFound) {
@@ -690,7 +690,7 @@ func TestNodeVersions(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs[i] = st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 2, Title: "Home", Slug: "home", Content: content("v3"), AuthorID: u.ID})
+			errs[i] = st.UpdateNode(ctx, sp.ID, id, store.NodeUpdate{BaseVersion: 2, Title: "Home", Content: content("v3"), AuthorID: u.ID})
 		}()
 	}
 	wg.Wait()
@@ -1245,7 +1245,7 @@ func TestTrash(t *testing.T) {
 	sp := defaultSpace(t, st, tn)
 	mk := func(parent, kind, title string) string {
 		t.Helper()
-		id, err := st.CreateNode(ctx, sp.ID, store.NewNode{ParentPublicID: parent, Kind: kind, Title: title, Slug: title})
+		id, err := st.CreateNode(ctx, sp.ID, store.NewNode{ParentPublicID: parent, Kind: kind, Title: title})
 		if err != nil {
 			t.Fatal(err)
 		}

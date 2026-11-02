@@ -129,6 +129,12 @@ func (s *Store) CreateTenant(ctx context.Context, code string, ts TenantSettings
 		if _, err := tx.Exec(ctx, "SELECT add_default_classifications($1)", t.ID); err != nil {
 			return err
 		}
+		// The events of the tenant are encrypted with the keys of the
+		// tenant. Other connections cannot see the new tenant yet.
+		ctx, err := s.withNewKeys(ctx, tx, t.ID)
+		if err != nil {
+			return err
+		}
 		if err := s.audit(ctx, tx, auditEntry{Action: AuditTenantCreate, Target: t.Name, TargetID: code}); err != nil {
 			return err
 		}
@@ -143,6 +149,12 @@ func (s *Store) CreateTenant(ctx context.Context, code string, ts TenantSettings
 // UpdateTenant changes the settings of a tenant. If newSecret is nil, the
 // client secret does not change. A pointer to "" removes the secret.
 func (s *Store) UpdateTenant(ctx context.Context, id int64, ts TenantSettings, newSecret *string) (*Tenant, error) {
+	// The transaction locks the row of the tenant. Then a new key of the
+	// tenant cannot be saved on a different connection (the foreign key
+	// waits for the lock). Thus the keys must exist before.
+	if _, err := s.tenantKeys(ctx, id); err != nil {
+		return nil, notFound(err)
+	}
 	var t *Tenant
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var code string

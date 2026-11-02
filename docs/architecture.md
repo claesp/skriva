@@ -144,7 +144,7 @@ space `default0` ("Default").
 | `classifications`  | The levels of information classification of each tenant. `nodes.classification_id` gives the level of a document. |
 | `files`            | Uploaded images. The data is in the table. |
 | `file_refs`        | The nodes that use each file, in one or more versions. |
-| `node_links`       | The links in the current version of each node: the target node of a `doc:` link, or the slug of a wiki link. |
+| `node_links`       | The links in the current version of each node: the target node of a `doc:` link, or the keyed hash of the slug of a wiki link. |
 | `users`            | Users. The key is (tenant, issuer, subject). A user with no tenant is a system administrator. |
 | `groups`           | Groups of a tenant. The source is `oidc` or `local`. |
 | `group_members`    | The members of each group. |
@@ -216,9 +216,10 @@ example:
 ]}
 ```
 
-The column `nodes.body` and the column `revisions.body` have the type
-`jsonb`. The column `nodes.plain_text` contains the plain text of the
-document. The search index uses the title and the plain text.
+The columns `nodes.body` and `revisions.body` contain this JSON,
+encrypted. The column `nodes.plain_text` contains the plain text of the
+document, encrypted. The search index uses the title and the plain
+text. See "Encryption of the content".
 
 The package `internal/doc` has a list of the permitted nodes, marks and
 attributes:
@@ -272,10 +273,11 @@ pages that the user can read.
 
 When the server saves a node, it replaces the rows of the node in
 `node_links`. A `doc:` link gives a row with the target node, if the
-target is in the same space. A wiki link gives a row with the slug of
-the title, because the target can be made later. The page of a node
-shows the nodes that link to it: the rows with the node as target, and
-the rows with the current slug of the node. The query uses two indexes:
+target is in the same space. A wiki link gives a row with the keyed
+hash of the slug of the title (`target_token`), because the target can
+be made later. The page of a node shows the nodes that link to it: the
+rows with the node as target, and the rows with the hash of the current
+slug of the node (`nodes.slug_token`). The query uses two indexes:
 one for each type of row.
 
 ### Information classification
@@ -392,6 +394,21 @@ plain text.
 - The keys stay in memory for 5 minutes. Then the store reads the
   current version again, because a different server can rotate the key.
   A retired key is deleted only after one hour, when no value uses it.
+- The title of a node is encrypted as the text. The store decrypts the
+  titles of a list and sorts them in memory: folders first, then the
+  titles in the root collation of Unicode (CLDR), case ignored. The
+  page picker of the editor (`FindLinkTargets`) decrypts the titles of
+  the space (at most 10000) and filters them in memory. For a space with
+  10000 items, this takes approximately 100 ms on a development
+  computer. The tree of a large space (more than 2000 items) reads only
+  the levels on the path.
+- The audit events of a tenant keep the target and the details in the
+  column `sealed`: a JSON object, encrypted with the place
+  `audit_events.sealed:<id>`. The store takes the ID from the sequence
+  before the insert. The events of the system administration are not
+  encrypted.
+- A new tenant gets its keys in the transaction that makes the tenant,
+  because other connections cannot see the tenant before the commit.
 - The KEK is an interface (`store.KEK`). The current implementation uses
   the key from the configuration. A key management system (for example
   HashiCorp Vault Transit) can implement the same interface.
@@ -404,7 +421,7 @@ hash of each word of the title and the text: the first 8 bytes of
 HMAC-SHA-256 with the search key of the tenant. A word is a sequence of
 letters and digits, in lower case. A search makes the hashes of the
 search words and finds the rows that contain all of them (`@>`). Items
-with the words in the title come first. The store decrypts the plain
+with the words in the title (`nodes.title_tokens`) come first. The store decrypts the plain
 text of the results and makes the parts of the text with the words.
 The search finds whole words only, not word parts or phrases.
 
