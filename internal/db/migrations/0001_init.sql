@@ -2,7 +2,7 @@
 -- identity provider, users, groups, custom roles and spaces.
 CREATE TABLE tenants (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    code                text        NOT NULL UNIQUE CHECK (code ~ '^[a-z0-9]{4}$'),
+    code                text        NOT NULL UNIQUE CHECK (code ~ '^[a-z0-9][a-z0-9-]{0,14}[a-z0-9]$'),
     name                text        NOT NULL CHECK (length(name) BETWEEN 1 AND 200),
     is_default          boolean     NOT NULL DEFAULT false,
     disabled            boolean     NOT NULL DEFAULT false,
@@ -75,7 +75,7 @@ $$;
 CREATE TABLE spaces (
     id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id    bigint      NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
-    slug         text        NOT NULL CHECK (slug ~ '^[a-z0-9]{8}$'),
+    slug         text        NOT NULL CHECK (slug ~ '^[a-z0-9][a-z0-9-]{0,14}[a-z0-9]$'),
     name         text        NOT NULL CHECK (length(name) BETWEEN 1 AND 200),
     description  text        NOT NULL DEFAULT '',
     -- The default role in the space. NULL means that the space uses the
@@ -280,8 +280,8 @@ CREATE INDEX file_refs_node_idx ON file_refs (node_id);
 
 -- The links in the current version of each node. A "doc:" link has the
 -- target node. A wiki link has the keyed hash of the slug of the target
--- title (as nodes.slug_token), because the target can be made later. The server replaces the rows of a node when
--- it saves the node. The page of a node uses the rows to show the nodes
+-- title (as nodes.slug_token), because the target can be made later. The
+-- server replaces the rows of a node when it saves the node. The page of a node uses the rows to show the nodes
 -- that link to it.
 CREATE TABLE node_links (
     space_id    bigint NOT NULL,

@@ -142,12 +142,12 @@ func TestTenantCRUDAndSecret(t *testing.T) {
 
 	// nil keeps the secret.
 	ts.Name = "Acme Inc"
-	tn, err = st.UpdateTenant(ctx, tn.ID, ts, nil)
+	tn, err = st.UpdateTenant(ctx, tn.ID, tn.Code, ts, nil)
 	if err != nil || tn.Name != "Acme Inc" || !tn.HasClientSecret {
 		t.Fatalf("UpdateTenant = %+v, %v", tn, err)
 	}
 	empty := ""
-	tn, err = st.UpdateTenant(ctx, tn.ID, ts, &empty)
+	tn, err = st.UpdateTenant(ctx, tn.ID, tn.Code, ts, &empty)
 	if err != nil || tn.HasClientSecret {
 		t.Fatalf("remove secret: %+v, %v", tn, err)
 	}
@@ -170,7 +170,7 @@ func TestDisabledTenantHasNoSessions(t *testing.T) {
 	}
 	ts := tn.TenantSettings
 	ts.Disabled = true
-	if _, err := st.UpdateTenant(ctx, tn.ID, ts, nil); err != nil {
+	if _, err := st.UpdateTenant(ctx, tn.ID, tn.Code, ts, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.Session(ctx, token, &tn.ID); !errors.Is(err, store.ErrNotFound) {
@@ -369,7 +369,7 @@ func TestPermissions(t *testing.T) {
 	// A tenant without a default role gives no permissions.
 	ts := tn.TenantSettings
 	ts.DefaultRole = ""
-	if _, err := st.UpdateTenant(ctx, tn.ID, ts, nil); err != nil {
+	if _, err := st.UpdateTenant(ctx, tn.ID, tn.Code, ts, nil); err != nil {
 		t.Fatal(err)
 	}
 	perms, _ = st.UserPermissions(ctx, tn.ID, u.ID)

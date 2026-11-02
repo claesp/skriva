@@ -19,7 +19,7 @@ var roleNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 // function: a list, the data of one item, or one form. A GET request to a
 // "new", "delete" or "default-role" path shows the form. The POST request
 // does the action.
-func (s *Server) adminRoutes(mux *http.ServeMux) {
+func (s *Server) adminRoutes(mux routeMux) {
 	p := "/{tenant}/admin"
 	m := rbac.TenantManage
 	mux.Handle("GET "+p+"/{$}", s.require(m, s.handleAdminHome))
@@ -618,7 +618,7 @@ func (s *Server) handleAdminBindingNew(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if slug := q.Get("space"); slug != "" {
-		if !spaceSlugRE.MatchString(slug) {
+		if !store.ValidCode(slug) {
 			s.notFound(w, r)
 			return
 		}
@@ -684,7 +684,7 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 	// binding for one item.
 	var scope store.Scope
 	if slug := r.PostFormValue("space"); slug != "" {
-		if !spaceSlugRE.MatchString(slug) {
+		if !store.ValidCode(slug) {
 			s.badRequest(w, r, "The space is not valid.")
 			return
 		}
@@ -741,13 +741,13 @@ func (s *Server) handleAdminBindingDelete(w http.ResponseWriter, r *http.Request
 
 // spaceForm reads and checks the fields of a space form. It returns an
 // error text, or "".
-func spaceForm(r *http.Request, withSlug bool) (slug, name, desc, msg string) {
+func (s *Server) spaceForm(r *http.Request) (slug, name, desc, msg string) {
 	slug = strings.TrimSpace(r.PostFormValue("slug"))
 	name = strings.TrimSpace(r.PostFormValue("name"))
 	desc = strings.TrimSpace(r.PostFormValue("description"))
 	switch {
-	case withSlug && !spaceSlugRE.MatchString(slug):
-		msg = "The space code must have exactly 8 characters from a-z and 0-9."
+	case !s.validSpaceSlug(slug):
+		msg = spaceCodeError
 	case name == "" || utf8.RuneCountInString(name) > 200:
 		msg = "The name is necessary and must have 200 characters or less."
 	case utf8.RuneCountInString(desc) > 500:
@@ -770,7 +770,7 @@ func (s *Server) handleAdminSpaceNew(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminSpaceCreate(w http.ResponseWriter, r *http.Request) {
-	slug, name, desc, msg := spaceForm(r, true)
+	slug, name, desc, msg := s.spaceForm(r)
 	if msg != "" {
 		s.badRequest(w, r, msg)
 		return
@@ -818,16 +818,20 @@ func (s *Server) handleAdminSpaceEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminSpaceUpdate(w http.ResponseWriter, r *http.Request) {
-	_, name, desc, msg := spaceForm(r, false)
+	newSlug, name, desc, msg := s.spaceForm(r)
 	if msg != "" {
 		s.badRequest(w, r, msg)
 		return
 	}
 	slug := r.PathValue("slug")
-	if !s.storeResult(w, r, s.store.UpdateSpace(r.Context(), tenantOf(r).ID, slug, name, desc)) {
+	if !s.storeResult(w, r, s.store.UpdateSpace(r.Context(), tenantOf(r).ID, slug, newSlug, name, desc)) {
 		return
 	}
-	http.Redirect(w, r, adminPath(r)+"/spaces/"+slug, http.StatusSeeOther)
+	if newSlug != slug {
+		s.log.Info("space code changed", "tenant", tenantOf(r).Code, "from", slug, "to", newSlug,
+			"user_id", reqInfoFrom(r.Context()).Session.User.ID)
+	}
+	http.Redirect(w, r, adminPath(r)+"/spaces/"+newSlug, http.StatusSeeOther)
 }
 
 func (s *Server) handleAdminSpaceDeleteForm(w http.ResponseWriter, r *http.Request) {

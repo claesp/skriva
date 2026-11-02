@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,7 +62,7 @@ func (s *Server) scope(w http.ResponseWriter, r *http.Request) (*authScope, bool
 		tenantID:      &t.ID,
 		base:          tenantPath(t),
 		sessionCookie: s.tenantCookie(t),
-		stateCookie:   s.cookieName("skriva_login_" + t.Code),
+		stateCookie:   s.cookieName("skriva_login_t" + strconv.FormatInt(t.ID, 10)),
 		sessionTTL:    t.SessionTTL,
 		auth:          auth,
 	}, true

@@ -15,7 +15,7 @@ const (
 	searchPageSize = 50
 )
 
-func (s *Server) tenantRoutes(mux *http.ServeMux) {
+func (s *Server) tenantRoutes(mux routeMux) {
 	mux.HandleFunc("GET /{tenant}/login", s.handleLogin)
 	mux.HandleFunc("GET /{tenant}/auth/callback", s.handleCallback)
 	mux.HandleFunc("GET /{tenant}/signed-out", s.handleSignedOut)

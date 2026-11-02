@@ -59,9 +59,8 @@ document, on the two levels:
 
 1. Sign in at `/admin/`.
 2. Click **New tenant** (+).
-3. Type the code. The code has exactly 4 characters from `a-z` and
-   `0-9`. It is part of all URLs of the tenant. You cannot change it
-   later.
+3. Type the code. See "Codes" below. The code is part of all URLs of
+   the tenant.
 4. Type the name.
 5. Type the settings of the identity provider. See the table below.
 6. Type the admin group. The members of this OIDC group get the `admin`
@@ -72,8 +71,28 @@ document, on the two levels:
    two URIs.
 9. Click **Spaces** (four squares) in the toolbar. Then click **New
    space** (+) above the table.
-10. Type the name and the code of the space. The code has exactly 8
-    characters from `a-z` and `0-9`. Click **Save**.
+10. Type the name and the code of the space. See "Codes" below. Click
+    **Save**.
+
+### Codes
+
+The tenants and the spaces have a code. The code is part of the URLs,
+for example `/acme/handbook/`.
+
+- A code has 2 to 16 characters from `a-z`, `0-9` and `-`. The first
+  and the last character cannot be `-`.
+- A tenant code cannot be the name of a system route: `admin`,
+  `static`, `healthz` or `readyz`.
+- A space code cannot be the name of a page of the tenant, for example
+  `admin`, `login`, `logout`, `search`, `auth` or `signed-out`.
+- You can change a code later, in the settings of the tenant or of the
+  space. A new code changes all URLs. Old links and bookmarks to the
+  old code stop working. The links in the documents continue to work,
+  because they do not contain the codes.
+- A new tenant code also changes the redirect URI and the post-logout
+  redirect URI. Change them at the identity provider before you change
+  the code. Otherwise the users cannot sign in. The sessions of the
+  users stay valid.
 
 ### Tenant settings
 
@@ -183,8 +202,7 @@ that are older than 365 days.
 
 Users with the permission `space.manage` manage the spaces:
 
-- Make a space. The code has exactly 8 characters from `a-z` and `0-9`.
-  You cannot change the code later.
-- Change the name and the description of a space.
+- Make a space. See [Codes](#codes) for the format of the code.
+- Change the code, the name and the description of a space.
 - Delete a space. Type the space code to confirm. This deletes all
   folders and documents in the space.

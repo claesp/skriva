@@ -84,19 +84,30 @@ func (s *Store) CreateSpace(ctx context.Context, tenantID int64, slug, name, des
 	return err
 }
 
-// UpdateSpace changes the name and the description of a space. The slug
-// is permanent because it is part of the URLs.
-func (s *Store) UpdateSpace(ctx context.Context, tenantID int64, slug, name, description string) error {
-	return s.tx(ctx, func(tx pgx.Tx) error {
+// UpdateSpace changes the slug, the name and the description of a space.
+// The slug is part of the URLs, thus a new slug changes all URLs of the
+// space. It returns ErrConflict if a different space of the tenant has
+// the new slug.
+func (s *Store) UpdateSpace(ctx context.Context, tenantID int64, slug, newSlug, name, description string) error {
+	err := s.tx(ctx, func(tx pgx.Tx) error {
 		var id int64
 		err := tx.QueryRow(ctx, `
-			UPDATE spaces SET name = $3, description = $4 WHERE tenant_id = $1 AND slug = $2 RETURNING id`,
-			tenantID, slug, name, description).Scan(&id)
+			UPDATE spaces SET slug = $5, name = $3, description = $4 WHERE tenant_id = $1 AND slug = $2 RETURNING id`,
+			tenantID, slug, name, description, newSlug).Scan(&id)
 		if err != nil {
 			return notFound(err)
 		}
-		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, SpaceID: id, Action: AuditSpaceUpdate, Target: name})
+		var details string
+		if newSlug != slug {
+			details = "The code changed from " + slug + " to " + newSlug + "."
+		}
+		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, SpaceID: id, Action: AuditSpaceUpdate, Target: name,
+			Details: details})
 	})
+	if sqlState(err) == codeUniqueViolation {
+		return ErrConflict
+	}
+	return err
 }
 
 // SetSpaceDefaultRole sets the default role in a space. Nil means that

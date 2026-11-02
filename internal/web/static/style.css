@@ -335,6 +335,8 @@ form.stack { display: flex; flex-direction: column; gap: 0.9rem; }
 form.stack label { display: flex; flex-direction: column; gap: 0.25rem; font-weight: 600; }
 form.stack label :is(input, select, textarea) { font-weight: 400; }
 form.stack label.check { flex-direction: row; align-items: baseline; font-weight: 400; }
+/* A help text below a field belongs to the field: it has no margin. */
+form.stack p.help { margin: -0.65rem 0 0; line-height: 1.4; }
 form.narrow { max-width: 30rem; }
 fieldset { border: 1px solid var(--line); border-radius: 4px; }
 /* The buttons of a form are at the right side. The main button is the

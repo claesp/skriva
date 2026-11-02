@@ -3,8 +3,8 @@
 <form method="post" action="{{.TenantPath}}/admin/spaces" class="stack">
   {{template "csrf" .CSRF}}
   <label>Name <input name="name" required maxlength="200" autofocus></label>
-  <label>Code (exactly 8 characters: a-z, 0-9). The code is part of the URLs. You cannot change it later.
-    <input name="slug" required minlength="8" maxlength="8" pattern="[a-z0-9]{8}"></label>
+  <label>Code <input name="slug" required minlength="2" maxlength="16" pattern="[a-z0-9][a-z0-9\-]{0,14}[a-z0-9]" aria-describedby="code-help"></label>
+  <p id="code-help" class="help"><small>2 to 16 characters: a-z, 0-9 and "-". The code is part of the URLs.</small></p>
   <label>Description <input name="description" maxlength="500"></label>
   {{template "savebutton"}}
 </form>

@@ -103,7 +103,7 @@ func newEnv(t *testing.T) *env {
 	ts := dft.TenantSettings
 	ts.OIDCIssuer, ts.OIDCClientID = "https://idp.example", "skriva"
 	ts.AdminGroup = "admins"
-	if dft, err = st.UpdateTenant(ctx, dft.ID, ts, nil); err != nil {
+	if dft, err = st.UpdateTenant(ctx, dft.ID, dft.Code, ts, nil); err != nil {
 		t.Fatal(err)
 	}
 	for group, role := range map[string]string{"editors": "editor", "maintainers": "maintainer"} {
@@ -420,7 +420,7 @@ func TestLoginStateIsOneTime(t *testing.T) {
 	cb := "/dflt/auth/callback?code=alice&state=" + url.QueryEscape(state)
 	wantStatus(t, c.get(cb), http.StatusSeeOther)
 	u, _ := url.Parse(e.srv.URL)
-	c.http.Jar.SetCookies(u, []*http.Cookie{{Name: "skriva_login_dflt", Value: state, Path: "/"}})
+	c.http.Jar.SetCookies(u, []*http.Cookie{{Name: "skriva_login_t" + strconv.FormatInt(e.dft.ID, 10), Value: state, Path: "/"}})
 	wantStatus(t, c.get(cb), http.StatusBadRequest)
 }
 
@@ -780,11 +780,13 @@ func TestTenantAdmin(t *testing.T) {
 	}
 
 	// Spaces.
-	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Team"}, "slug": {"short"}}), http.StatusBadRequest)
+	for _, bad := range []string{"a", "-team", "team-", "Team", "seventeen-letters", "admin", "login", "search"} {
+		wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Team"}, "slug": {bad}}), http.StatusBadRequest)
+	}
 	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Team"}, "slug": {"teamspce"}}), http.StatusSeeOther)
 	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Again"}, "slug": {"teamspce"}}), http.StatusConflict)
 	wantStatus(t, alice.get("/dflt/teamspce/"), http.StatusOK)
-	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce", url.Values{"name": {"Team space"}}), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce", url.Values{"name": {"Team space"}, "slug": {"teamspce"}}), http.StatusSeeOther)
 	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce/delete", url.Values{"confirm": {"wrong"}}), http.StatusBadRequest)
 	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce/delete", url.Values{"confirm": {"teamspce"}}), http.StatusSeeOther)
 	wantStatus(t, alice.get("/dflt/teamspce/"), http.StatusNotFound)
@@ -961,7 +963,7 @@ func TestSystemAdmin(t *testing.T) {
 	u, _ := url.Parse(e.srv.URL)
 	var acmeToken string
 	for _, ck := range idp.http.Jar.Cookies(u) {
-		if ck.Name == "skriva_acme" {
+		if ck.Name == "skriva_t"+strconv.FormatInt(acme.ID, 10) {
 			acmeToken = ck.Value
 		}
 	}
@@ -969,7 +971,7 @@ func TestSystemAdmin(t *testing.T) {
 		t.Fatal("no session cookie for tenant acme")
 	}
 	other := e.anon()
-	other.http.Jar.SetCookies(u, []*http.Cookie{{Name: "skriva_dflt", Value: acmeToken, Path: "/"}})
+	other.http.Jar.SetCookies(u, []*http.Cookie{{Name: "skriva_t" + strconv.FormatInt(e.dft.ID, 10), Value: acmeToken, Path: "/"}})
 	wantStatus(t, other.get("/dflt/"), http.StatusSeeOther)
 	// The default tenant cannot see the space of tenant acme.
 	wantStatus(t, alice.get("/dflt/acmedocs/"), http.StatusNotFound)
@@ -1046,7 +1048,7 @@ func TestSpacePermissions(t *testing.T) {
 		"role": {"editor"}, "subject": {subject}, "space": {"nospace0"},
 	}), http.StatusNotFound)
 	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
-		"role": {"editor"}, "subject": {subject}, "space": {"bad"},
+		"role": {"editor"}, "subject": {subject}, "space": {"Bad!"},
 	}), http.StatusBadRequest)
 	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
 		"role": {"editor"}, "subject": {subject}, "space": {"secret00"},
@@ -1739,5 +1741,55 @@ func TestTenantKeyRotation(t *testing.T) {
 	wantStatus(t, bob.save(id, "Plan", "new text", 1), http.StatusSeeOther)
 	if b := readBody(t, bob.get(sp+"/search?q=new")); !strings.Contains(b, "Plan") {
 		t.Fatalf("search after rotation:\n%s", b)
+	}
+}
+
+// TestChangeCodes changes the code of a tenant and the code of a space.
+// The URLs change, and the sessions and the client secret stay valid.
+func TestChangeCodes(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	id := alice.create("document", "", "Plan", "text")
+
+	// A space code with 2 characters and a code with "-".
+	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"HR"}, "slug": {"hr"}}), http.StatusSeeOther)
+	wantStatus(t, alice.get("/dflt/hr/"), http.StatusOK)
+	wantStatus(t, alice.post("/dflt/admin/spaces/hr", url.Values{"name": {"HR"}, "slug": {"default0"}}), http.StatusConflict)
+	wantStatus(t, alice.post("/dflt/admin/spaces/hr", url.Values{"name": {"HR"}, "slug": {"admin"}}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/spaces/default0", url.Values{"name": {"Main"}, "slug": {"main-docs"}}), http.StatusSeeOther)
+	wantStatus(t, alice.get("/dflt/default0/"), http.StatusNotFound)
+	if b := readBody(t, alice.get("/dflt/main-docs/d/"+id+"/plan")); !strings.Contains(b, "text") {
+		t.Fatalf("document after the space code changed:\n%s", b)
+	}
+	// The tenant-level routes still work.
+	wantStatus(t, alice.get("/dflt/search?q=plan"), http.StatusOK)
+
+	// The code of the tenant.
+	root := e.loginAt("/admin", "root")
+	form := url.Values{
+		"name": {"Default"}, "oidc_issuer": {e.dft.OIDCIssuer}, "oidc_client_id": {e.dft.OIDCClientID},
+		"oidc_client_secret": {"s3cret"}, "oidc_scopes": {"openid"}, "oidc_groups_claim": {"groups"},
+		"admin_group": {"admins"}, "default_role": {"viewer"}, "session_ttl": {"12h"}, "max_doc_kib": {"1024"},
+	}
+	for _, bad := range []string{"x", "admin", "static", "Main"} {
+		form.Set("code", bad)
+		wantStatus(t, root.post("/admin/tenants/dflt", form), http.StatusUnprocessableEntity)
+	}
+	form.Set("code", "main")
+	wantStatus(t, root.post("/admin/tenants/dflt", form), http.StatusSeeOther)
+	wantStatus(t, alice.get("/dflt/"), http.StatusNotFound)
+	// The session cookie uses the ID of the tenant, thus alice is still
+	// signed in.
+	wantStatus(t, alice.get("/main/main-docs/d/"+id+"/plan"), http.StatusOK)
+	tn, err := e.st.TenantByCode(ctx, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, err := e.st.ClientSecret(ctx, tn); err != nil || s != "s3cret" {
+		t.Fatalf("client secret = %q, %v", s, err)
+	}
+	events, err := e.st.AuditEvents(ctx, nil, 0, 1)
+	if err != nil || len(events) != 1 || !strings.Contains(events[0].Details, "from dflt to main") {
+		t.Fatalf("audit = %+v, %v", events, err)
 	}
 }

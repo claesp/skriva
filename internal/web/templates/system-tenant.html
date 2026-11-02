@@ -1,14 +1,12 @@
 {{define "content"}}
 {{with .Data}}
-{{if .IsNew}}{{template "formhead" (crumb "/admin/" "Tenants" "New tenant" "new")}}{{else}}{{template "formhead" (crumb3 "/admin/" "Tenants" (print "/admin/tenants/" .Code) .Code "Settings" "edit")}}{{end}}
+{{if .IsNew}}{{template "formhead" (crumb "/admin/" "Tenants" "New tenant" "new")}}{{else}}{{template "formhead" (crumb3 "/admin/" "Tenants" (print "/admin/tenants/" .Path) .Path "Settings" "edit")}}{{end}}
 {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
-<form method="post" action="/admin/tenants{{if not .IsNew}}/{{.Code}}{{end}}" class="stack">
+<form method="post" action="/admin/tenants{{if not .IsNew}}/{{.Path}}{{end}}" class="stack">
   {{template "csrf" $.CSRF}}
-  {{if .IsNew}}
   <span id="general"></span>
-  <label>Code (exactly 4 characters: a-z, 0-9). The code is part of the URLs. You cannot change it later.
-    <input name="code" value="{{.Code}}" required minlength="4" maxlength="4" pattern="[a-z0-9]{4}" autofocus></label>
-  {{end}}
+  <label>Code <input name="code" value="{{.Code}}" required minlength="2" maxlength="16" pattern="[a-z0-9][a-z0-9\-]{0,14}[a-z0-9]" aria-describedby="code-help"{{if .IsNew}} autofocus{{end}}></label>
+  <p id="code-help" class="help"><small>2 to 16 characters: a-z, 0-9 and "-". The code is part of the URLs.{{if not .IsNew}} A new code changes all URLs of the tenant and the redirect URIs below. Change the redirect URIs at the identity provider first.{{end}}</small></p>
   <label>Name <input name="name" value="{{.Name}}" required maxlength="200"></label>
   <label class="check"><input type="checkbox" name="disabled"{{if .Disabled}} checked{{end}}> Disabled. Nobody can use a disabled tenant.</label>
 

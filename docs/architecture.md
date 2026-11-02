@@ -64,12 +64,19 @@ These rules apply to the tree:
 | `/{tenant}/{space}/link-targets?q=` | JSON: the pages for the list of pages in the link bar of the editor. |
 | `/{tenant}/{space}/files/{id}` | An uploaded image. A `POST` to `/{tenant}/{space}/files` uploads an image. |
 
-- The tenant code has exactly 4 characters from `a-z` and `0-9`, for
-  example `acme`.
-- The space code has exactly 8 characters from `a-z` and `0-9`, for
-  example `handbook`.
-- An administrator selects the tenant code and the space code. The codes
-  do not change after they are made.
+- The tenant code and the space code have 2 to 16 characters from
+  `a-z`, `0-9` and `-`, for example `acme` and `handbook`. The first and
+  the last character cannot be `-`.
+- An administrator selects the codes, and can change them later. The
+  session cookie and the encryption of the client secret use the ID of
+  the tenant, not the code. Thus a new code does not end the sessions.
+- The first segment of each route at the top level (for example
+  `admin`) cannot be a tenant code. The first segment of each route at
+  the tenant level (for example `login`) cannot be a space code. The
+  server records these names when it registers the routes (`namesMux`
+  in `internal/web/server.go`). A new route at the tenant level hides a
+  space with the same code. Thus check the space codes before you add
+  a route.
 - The `{id}` is a random value with 14 characters from `0-9` and `a-z`,
   for example `k3x9p2qa7tm4zb`. The value has approximately 72 bits of
   entropy. Thus nobody can guess the ID of a document. All parts of the
@@ -119,9 +126,10 @@ space `default0` ("Default").
    protection.
 2. The dispatcher reads the first part of the path.
    - `/admin/...` goes to the system router.
-   - A 4-character code goes to the tenant. The dispatcher loads the
-     tenant and the session for that tenant.
-3. If the second part of the path has 8 characters, the dispatcher loads
+   - A tenant code goes to the tenant. The dispatcher loads the tenant
+     and the session for that tenant.
+3. If the second part of the path is a space code and not the name of a
+   tenant-level route, the dispatcher loads
    the space and the permission data of the user in that space. The
    data contains the cached access paths, the default roles of the
    items with their own default role and the item bindings of the user.

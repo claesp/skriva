@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,9 +70,20 @@ func scanTenant(row pgx.Row) (*Tenant, error) {
 	return &t, nil
 }
 
-func secretContext(code string) string {
-	return "skriva/tenant/" + code + "/oidc_client_secret"
+// secretContext binds the client secret to the tenant. It uses the ID,
+// because the code can change.
+func secretContext(tenantID int64) string {
+	return "skriva/tenant/" + strconv.FormatInt(tenantID, 10) + "/oidc_client_secret"
 }
+
+// codeRE is the format of a tenant code and of a space slug: 2 to 16
+// characters from a-z, 0-9 and "-". The first and the last character
+// cannot be "-". The database has the same check.
+var codeRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,14}[a-z0-9]$`)
+
+// ValidCode reports whether s has the format of a tenant code or of a
+// space slug. The web package also refuses the names of its routes.
+func ValidCode(s string) bool { return codeRE.MatchString(s) }
 
 // TenantByCode returns the tenant with the given code.
 func (s *Store) TenantByCode(ctx context.Context, code string) (*Tenant, error) {
@@ -106,10 +119,6 @@ func (s *Store) Tenants(ctx context.Context) ([]*Tenant, error) {
 func (s *Store) CreateTenant(ctx context.Context, code string, ts TenantSettings, clientSecret string) (*Tenant, error) {
 	var t *Tenant
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		var secretData []byte
-		if clientSecret != "" {
-			secretData = s.box.Seal([]byte(clientSecret), secretContext(code))
-		}
 		var err error
 		t, err = scanTenant(tx.QueryRow(ctx, `
 			INSERT INTO tenants (code, name, disabled, oidc_issuer, oidc_client_id, oidc_client_secret,
@@ -117,7 +126,7 @@ func (s *Store) CreateTenant(ctx context.Context, code string, ts TenantSettings
 			                     session_ttl_seconds, max_doc_bytes)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			RETURNING `+tenantColumns,
-			code, ts.Name, ts.Disabled, ts.OIDCIssuer, ts.OIDCClientID, secretData,
+			code, ts.Name, ts.Disabled, ts.OIDCIssuer, ts.OIDCClientID, nil,
 			strings.Join(ts.OIDCScopes, " "), ts.OIDCGroupsClaim, ts.AdminGroup, ts.DefaultRole,
 			int(ts.SessionTTL/time.Second), ts.MaxDocBytes))
 		if err != nil {
@@ -125,6 +134,13 @@ func (s *Store) CreateTenant(ctx context.Context, code string, ts TenantSettings
 		}
 		if err := checkRole(ctx, tx, t.ID, ts.DefaultRole); err != nil {
 			return err
+		}
+		if clientSecret != "" {
+			if _, err := tx.Exec(ctx, "UPDATE tenants SET oidc_client_secret = $2 WHERE id = $1",
+				t.ID, s.box.Seal([]byte(clientSecret), secretContext(t.ID))); err != nil {
+				return err
+			}
+			t.HasClientSecret = true
 		}
 		if _, err := tx.Exec(ctx, "SELECT add_default_classifications($1)", t.ID); err != nil {
 			return err
@@ -148,7 +164,11 @@ func (s *Store) CreateTenant(ctx context.Context, code string, ts TenantSettings
 
 // UpdateTenant changes the settings of a tenant. If newSecret is nil, the
 // client secret does not change. A pointer to "" removes the secret.
-func (s *Store) UpdateTenant(ctx context.Context, id int64, ts TenantSettings, newSecret *string) (*Tenant, error) {
+//
+// code is the new code of the tenant. The code is part of the URLs, thus
+// a new code changes all URLs of the tenant. It returns ErrConflict if a
+// different tenant has the code.
+func (s *Store) UpdateTenant(ctx context.Context, id int64, code string, ts TenantSettings, newSecret *string) (*Tenant, error) {
 	// The transaction locks the row of the tenant. Then a new key of the
 	// tenant cannot be saved on a different connection (the foreign key
 	// waits for the lock). Thus the keys must exist before.
@@ -157,8 +177,8 @@ func (s *Store) UpdateTenant(ctx context.Context, id int64, ts TenantSettings, n
 	}
 	var t *Tenant
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		var code string
-		if err := tx.QueryRow(ctx, "SELECT code FROM tenants WHERE id = $1 FOR UPDATE", id).Scan(&code); err != nil {
+		var oldCode string
+		if err := tx.QueryRow(ctx, "SELECT code FROM tenants WHERE id = $1 FOR UPDATE", id).Scan(&oldCode); err != nil {
 			return notFound(err)
 		}
 		if err := checkRole(ctx, tx, id, ts.DefaultRole); err != nil {
@@ -168,19 +188,19 @@ func (s *Store) UpdateTenant(ctx context.Context, id int64, ts TenantSettings, n
 		t, err = scanTenant(tx.QueryRow(ctx, `
 			UPDATE tenants SET name = $2, disabled = $3, oidc_issuer = $4, oidc_client_id = $5,
 			       oidc_scopes = $6, oidc_groups_claim = $7, admin_group = $8, default_role = $9,
-			       session_ttl_seconds = $10, max_doc_bytes = $11, updated_at = $12
+			       session_ttl_seconds = $10, max_doc_bytes = $11, updated_at = $12, code = $13
 			WHERE id = $1
 			RETURNING `+tenantColumns,
 			id, ts.Name, ts.Disabled, ts.OIDCIssuer, ts.OIDCClientID,
 			strings.Join(ts.OIDCScopes, " "), ts.OIDCGroupsClaim, ts.AdminGroup, ts.DefaultRole,
-			int(ts.SessionTTL/time.Second), ts.MaxDocBytes, s.now()))
+			int(ts.SessionTTL/time.Second), ts.MaxDocBytes, s.now(), code))
 		if err != nil {
 			return err
 		}
 		if newSecret != nil {
 			var data []byte
 			if *newSecret != "" {
-				data = s.box.Seal([]byte(*newSecret), secretContext(code))
+				data = s.box.Seal([]byte(*newSecret), secretContext(id))
 			}
 			if _, err := tx.Exec(ctx, "UPDATE tenants SET oidc_client_secret = $2 WHERE id = $1", id, data); err != nil {
 				return err
@@ -200,11 +220,17 @@ func (s *Store) UpdateTenant(ctx context.Context, id int64, ts TenantSettings, n
 		if newSecret != nil {
 			details += " The client secret changed."
 		}
+		if code != oldCode {
+			details += " The code changed from " + oldCode + " to " + code + "."
+		}
 		if err := s.audit(ctx, tx, auditEntry{Action: AuditTenantUpdate, Target: t.Name, TargetID: code, Details: details}); err != nil {
 			return err
 		}
 		return s.ensureAdminGroup(ctx, tx, t)
 	})
+	if sqlState(err) == codeUniqueViolation {
+		return nil, ErrConflict
+	}
 	return t, err
 }
 
@@ -238,7 +264,7 @@ func (s *Store) ClientSecret(ctx context.Context, t *Tenant) (string, error) {
 	if data == nil {
 		return "", nil
 	}
-	plain, err := s.box.Open(data, secretContext(t.Code))
+	plain, err := s.box.Open(data, secretContext(t.ID))
 	if err != nil {
 		return "", err
 	}
@@ -316,15 +342,15 @@ func (s *Store) rewrapClientSecrets(ctx context.Context, tx pgx.Tx, previous *se
 		return err
 	}
 	for _, x := range list {
-		if _, err := s.box.Open(x.data, secretContext(x.code)); err == nil {
+		if _, err := s.box.Open(x.data, secretContext(x.id)); err == nil {
 			continue
 		}
-		plain, err := previous.Open(x.data, secretContext(x.code))
+		plain, err := previous.Open(x.data, secretContext(x.id))
 		if err != nil {
 			return fmt.Errorf("client secret of tenant %s: %w", x.code, err)
 		}
 		if _, err := tx.Exec(ctx, "UPDATE tenants SET oidc_client_secret = $2 WHERE id = $1",
-			x.id, s.box.Seal(plain, secretContext(x.code))); err != nil {
+			x.id, s.box.Seal(plain, secretContext(x.id))); err != nil {
 			return err
 		}
 	}

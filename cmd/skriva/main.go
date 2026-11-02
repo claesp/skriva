@@ -166,7 +166,7 @@ func bootstrap(ctx context.Context, st *store.Store, cfg *config.Config, log *sl
 		if ts.AdminGroup == "" {
 			ts.AdminGroup = cfg.AdminGroup
 		}
-		if t, err = st.UpdateTenant(ctx, t.ID, ts, newSecret); err != nil {
+		if t, err = st.UpdateTenant(ctx, t.ID, t.Code, ts, newSecret); err != nil {
 			return fmt.Errorf("update default tenant: %w", err)
 		}
 	}

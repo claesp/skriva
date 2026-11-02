@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -295,8 +296,10 @@ func (s *Server) cookieName(name string) string {
 
 // tenantCookie is the name of the session cookie for a tenant. Each
 // tenant has its own cookie. Thus a browser can have sessions in more
-// than one tenant.
-func (s *Server) tenantCookie(t *store.Tenant) string { return s.cookieName("skriva_" + t.Code) }
+// than one tenant. The name uses the ID, because the code can change.
+func (s *Server) tenantCookie(t *store.Tenant) string {
+	return s.cookieName("skriva_t" + strconv.FormatInt(t.ID, 10))
+}
 
 func (s *Server) systemCookie() string { return s.cookieName("skriva_system") }
 

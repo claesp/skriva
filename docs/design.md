@@ -118,6 +118,10 @@ and these guidelines for long-form text:
   do not move. The toolbar is sticky, thus the button is always
   visible. The button is outside the form and uses the `form`
   attribute. This needs no script.
+- A help text for a field of a form is a `<p class="help">` with a
+  `<small>` text, directly below the field. The input refers to it
+  with `aria-describedby`. The label contains only the name of the
+  field.
 - The toolbar of the editor uses the same icon buttons as the toolbar
   of a page. It stays below the bar of the page when the user scrolls.
   The buttons for tables are visible only when the cursor is in a table.

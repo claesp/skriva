@@ -8,9 +8,14 @@
 //	/{tenant}/{space}/...           folders and documents of a space
 //	/{tenant}/{space}/d/{id}/{slug} one document or folder
 //
-// A tenant code has 4 characters. A space slug has 8 characters. The
-// dispatcher uses the length to find the correct router. Thus no
-// tenant-level route can have a name with 8 characters.
+// A tenant code and a space slug have 2 to 16 characters from a-z, 0-9
+// and "-". The first segment of a tenant-level route (for example
+// "admin" or "login") cannot be a space slug, and the first segment of a
+// system route (for example "admin" or "static") cannot be a tenant code.
+// The server records these names when it registers the routes
+// (namesMux). The dispatcher sends a request to the tenant router if
+// the second segment is the name of a tenant-level route, and to the
+// space router if not.
 package web
 
 import (
@@ -19,7 +24,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -28,9 +32,65 @@ import (
 	"github.com/clpe/skriva/internal/store"
 )
 
-var (
-	tenantCodeRE = regexp.MustCompile(`^[a-z0-9]{4}$`)
-	spaceSlugRE  = regexp.MustCompile(`^[a-z0-9]{8}$`)
+// routeMux is the part of http.ServeMux that the route functions use.
+type routeMux interface {
+	Handle(pattern string, handler http.Handler)
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}
+
+// namesMux is an http.ServeMux that records the names of the routes: the
+// first fixed segment after prefix. For the prefix "/{tenant}", the
+// pattern "GET /{tenant}/login" gives the name "login".
+type namesMux struct {
+	*http.ServeMux
+	prefix string
+	names  map[string]bool
+}
+
+func newNamesMux(mux *http.ServeMux, prefix string, names map[string]bool) *namesMux {
+	return &namesMux{ServeMux: mux, prefix: prefix + "/", names: names}
+}
+
+func (m *namesMux) record(pattern string) {
+	if i := strings.IndexByte(pattern, ' '); i >= 0 {
+		pattern = pattern[i+1:]
+	}
+	rest, ok := strings.CutPrefix(pattern, m.prefix)
+	if !ok {
+		return
+	}
+	name, _, _ := strings.Cut(rest, "/")
+	if name != "" && !strings.HasPrefix(name, "{") {
+		m.names[name] = true
+	}
+}
+
+func (m *namesMux) Handle(pattern string, h http.Handler) {
+	m.record(pattern)
+	m.ServeMux.Handle(pattern, h)
+}
+
+func (m *namesMux) HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request)) {
+	m.record(pattern)
+	m.ServeMux.HandleFunc(pattern, h)
+}
+
+// validTenantCode reports whether code can be the code of a tenant.
+func (s *Server) validTenantCode(code string) bool {
+	return store.ValidCode(code) && !s.systemNames[code]
+}
+
+// validSpaceSlug reports whether slug can be the slug of a space.
+func (s *Server) validSpaceSlug(slug string) bool {
+	return store.ValidCode(slug) && !s.tenantNames[slug]
+}
+
+// Texts for an invalid code.
+const (
+	tenantCodeError = "The code must have 2 to 16 characters from a-z, 0-9 and \"-\". " +
+		"It cannot start or end with \"-\". Some words (for example \"admin\" and \"static\") are not permitted."
+	spaceCodeError = "The code must have 2 to 16 characters from a-z, 0-9 and \"-\". " +
+		"It cannot start or end with \"-\". Some words (for example \"admin\" and \"login\") are not permitted."
 )
 
 // Authenticator is the interface to an identity provider.
@@ -76,6 +136,11 @@ type Server struct {
 	systemMux *http.ServeMux
 	tenantMux *http.ServeMux
 	spaceMux  *http.ServeMux
+
+	// systemNames and tenantNames are the names of the routes at the top
+	// level and at the tenant level. See namesMux.
+	systemNames map[string]bool
+	tenantNames map[string]bool
 }
 
 // New makes a Server.
@@ -102,10 +167,14 @@ func New(st *store.Store, opts Options, log *slog.Logger) (*Server, error) {
 		systemMux:  http.NewServeMux(),
 		tenantMux:  http.NewServeMux(),
 		spaceMux:   http.NewServeMux(),
+
+		systemNames: map[string]bool{},
+		tenantNames: map[string]bool{},
 	}
 	s.systemRoutes(s.systemMux)
-	s.tenantRoutes(s.tenantMux)
-	s.adminRoutes(s.tenantMux)
+	tenant := newNamesMux(s.tenantMux, "/{tenant}", s.tenantNames)
+	s.tenantRoutes(tenant)
+	s.adminRoutes(tenant)
 	s.spaceRoutes(s.spaceMux)
 	s.handler = s.routes()
 	return s, nil
@@ -117,7 +186,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routes() http.Handler {
-	mux := http.NewServeMux()
+	mux := newNamesMux(http.NewServeMux(), "", s.systemNames)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleReady)
 	mux.Handle("GET /static/", s.staticHandler())
@@ -151,12 +220,12 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dispatchTenant(w http.ResponseWriter, r *http.Request) {
 	segs := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 3)
 	code := segs[0]
-	if !tenantCodeRE.MatchString(code) {
+	if !s.validTenantCode(code) {
 		s.notFound(w, r)
 		return
 	}
 	if len(segs) == 1 {
-		http.Redirect(w, r, "/"+code+"/", http.StatusMovedPermanently) // #nosec G710 -- code matches tenantCodeRE.
+		http.Redirect(w, r, "/"+code+"/", http.StatusMovedPermanently) // #nosec G710 -- code is a valid tenant code.
 		return
 	}
 
@@ -189,7 +258,7 @@ func (s *Server) dispatchTenant(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if spaceSlugRE.MatchString(segs[1]) {
+	if s.validSpaceSlug(segs[1]) {
 		sp, err := s.store.Space(r.Context(), t.ID, segs[1])
 		if errors.Is(err, store.ErrNotFound) {
 			s.notFound(w, r)

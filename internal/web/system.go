@@ -53,7 +53,10 @@ func (s *Server) handleTenants(w http.ResponseWriter, r *http.Request) {
 type tenantForm struct {
 	IsNew     bool
 	IsDefault bool
-	Code      string
+	// Code is the value of the code field. Path is the current code of
+	// the tenant for the URLs of the form, or "" for a new tenant.
+	Code string
+	Path string
 	store.TenantSettings
 	Scopes      string
 	SessionTTL  string
@@ -82,7 +85,7 @@ func (s *Server) newTenantForm(r *http.Request, t *store.Tenant) (*tenantForm, e
 	} else {
 		tenantID = t.ID
 		f.IsDefault = t.IsDefault
-		f.Code = t.Code
+		f.Code, f.Path = t.Code, t.Code
 		f.TenantSettings = t.TenantSettings
 		f.HasSecret = t.HasClientSecret
 	}
@@ -178,7 +181,7 @@ func validIssuer(u string) bool {
 func (s *Server) renderTenantForm(w http.ResponseWriter, r *http.Request, status int, f *tenantForm) {
 	title := "New tenant"
 	if !f.IsNew {
-		title = "Tenant " + f.Code
+		title = "Tenant " + f.Path
 	}
 	s.renderAdmin(w, r, status, "tenants", "system-tenant", title, f)
 }
@@ -200,8 +203,8 @@ func (s *Server) handleTenantCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	f.Code = strings.TrimSpace(r.PostFormValue("code"))
 	f.Error = readTenantForm(r, f)
-	if f.Error == "" && !tenantCodeRE.MatchString(f.Code) {
-		f.Error = "The tenant code must have exactly 4 characters from a-z and 0-9."
+	if f.Error == "" && !s.validTenantCode(f.Code) {
+		f.Error = tenantCodeError
 	}
 	if f.Error != "" {
 		s.renderTenantForm(w, r, http.StatusUnprocessableEntity, f)
@@ -228,7 +231,7 @@ func (s *Server) handleTenantCreate(w http.ResponseWriter, r *http.Request) {
 // loadTenant loads the tenant from the {code} path value.
 func (s *Server) loadTenant(w http.ResponseWriter, r *http.Request) (*store.Tenant, bool) {
 	code := r.PathValue("code")
-	if !tenantCodeRE.MatchString(code) {
+	if !store.ValidCode(code) {
 		s.notFound(w, r)
 		return nil, false
 	}
@@ -297,7 +300,12 @@ func (s *Server) handleTenantUpdate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	if f.Error = readTenantForm(r, f); f.Error != "" {
+	f.Code = strings.TrimSpace(r.PostFormValue("code"))
+	f.Error = readTenantForm(r, f)
+	if f.Error == "" && !s.validTenantCode(f.Code) {
+		f.Error = tenantCodeError
+	}
+	if f.Error != "" {
 		s.renderTenantForm(w, r, http.StatusUnprocessableEntity, f)
 		return
 	}
@@ -309,18 +317,23 @@ func (s *Server) handleTenantUpdate(w http.ResponseWriter, r *http.Request) {
 		empty := ""
 		newSecret = &empty
 	}
-	_, err = s.store.UpdateTenant(r.Context(), t.ID, f.TenantSettings, newSecret)
-	if errors.Is(err, store.ErrInvalid) {
+	nt, err := s.store.UpdateTenant(r.Context(), t.ID, f.Code, f.TenantSettings, newSecret)
+	switch {
+	case errors.Is(err, store.ErrInvalid):
 		f.Error = "The default role does not exist."
+	case errors.Is(err, store.ErrConflict):
+		f.Error = "A tenant with this code exists already."
+	}
+	if f.Error != "" {
 		s.renderTenantForm(w, r, http.StatusUnprocessableEntity, f)
 		return
 	}
 	if !s.storeResult(w, r, err) {
 		return
 	}
-	s.log.Info("tenant changed", "tenant", t.Code, "secret_changed", newSecret != nil,
+	s.log.Info("tenant changed", "tenant", nt.Code, "old_code", t.Code, "secret_changed", newSecret != nil,
 		"user_id", reqInfoFrom(r.Context()).Session.User.ID)
-	http.Redirect(w, r, "/admin/tenants/"+t.Code, http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/tenants/"+nt.Code, http.StatusSeeOther)
 }
 
 func (s *Server) handleTenantDeleteForm(w http.ResponseWriter, r *http.Request) {
@@ -396,7 +409,7 @@ func (s *Server) handleTenantSpaceCreate(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	slug, name, desc, msg := spaceForm(r, true)
+	slug, name, desc, msg := s.spaceForm(r)
 	if msg != "" {
 		s.badRequest(w, r, msg)
 		return
