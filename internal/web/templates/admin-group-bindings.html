@@ -2,9 +2,8 @@
 {{template "grouphead" .}}
 {{with .Data}}
 {{$g := print $.TenantPath "/admin/groups/" .Group.ID}}
-<div class="pagehead"><h1>Role bindings</h1></div>
+{{template "pagehead" (head "Role bindings" (tool (print $.TenantPath "/admin/bindings/new?subject=group:" .Group.ID "&return_to=" $g "/bindings") "new" "New role binding"))}}
 <p>The members of {{.Group.Name}} have these roles.</p>
-{{template "tablebar" (tool (print $.TenantPath "/admin/bindings/new?subject=group:" .Group.ID "&return_to=" $g "/bindings") "new" "New role binding")}}
 {{template "bindingtable" .Table}}
 {{end}}
 {{end}}

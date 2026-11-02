@@ -1,6 +1,5 @@
 {{define "content"}}
-{{template "listhead" (head "Spaces" "" "")}}
-{{template "tablebar" (tool (print .TenantPath "/admin/spaces/new") "new" "New space")}}
+{{template "listhead" (head "Spaces" (tool (print .TenantPath "/admin/spaces/new") "new" "New space"))}}
 <table>
   <thead><tr><th>Name</th><th>Code</th><th class="num">Items</th><th>Description</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>

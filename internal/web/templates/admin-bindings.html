@@ -1,6 +1,5 @@
 {{define "content"}}
-{{template "listhead" (head "Role bindings" "" "")}}
+{{template "listhead" (head "Role bindings" (tool (print .TenantPath "/admin/bindings/new") "new" "New role binding"))}}
 <p>A binding for all spaces gives all permissions of the role. A binding for one space, folder or document gives only the document permissions (<code>doc.*</code>) of the role.</p>
-{{template "tablebar" (tool (print .TenantPath "/admin/bindings/new") "new" "New role binding")}}
 {{template "bindingtable" .Data}}
 {{end}}

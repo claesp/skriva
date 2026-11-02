@@ -10,12 +10,7 @@
   <li>The document permissions of the role bindings for this {{.Node.Kind}}.</li>
 </ul>
 {{template "defaultroletable" (defaultrole .DefaultRoleText (print $back "/default-role"))}}
-<h2>Role bindings</h2>
-<div class="tablebar">
-  <nav class="toolbar" aria-label="Role bindings"><span class="group">
-    {{template "tool" (tool (print $.TenantPath "/admin/bindings/new?space=" $.Space.Slug "&node=" .Node.PublicID "&return_to=" $back) "new" "New role binding")}}
-  </span></nav>
-</div>
+{{template "sectionhead" (section "Role bindings" "" (tool (print $.TenantPath "/admin/bindings/new?space=" $.Space.Slug "&node=" .Node.PublicID "&return_to=" $back) "new" "New role binding"))}}
 {{template "bindingtable" .Table}}
 <p><small>Bindings for this {{.Node.Kind}} give only document permissions (<code>doc.*</code>).</small></p>
 {{end}}

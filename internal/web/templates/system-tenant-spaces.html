@@ -1,7 +1,6 @@
 {{define "content"}}
 {{template "tenanthead" .}}
-<div class="pagehead"><h1>Spaces</h1></div>
-{{template "tablebar" (tool (print "/admin/tenants/" .Data.Code "/spaces/new") "new" "New space")}}
+{{template "pagehead" (head "Spaces" (tool (print "/admin/tenants/" .Data.Code "/spaces/new") "new" "New space"))}}
 <table>
   <thead><tr><th>Name</th><th>Code</th><th class="num">Items</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>

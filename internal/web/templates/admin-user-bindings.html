@@ -1,9 +1,8 @@
 {{define "content"}}
 {{template "userhead" .}}
 {{with .Data}}
-<div class="pagehead"><h1>Role bindings</h1></div>
+{{template "pagehead" (head "Role bindings" (tool (print $.TenantPath "/admin/bindings/new?subject=user:" .User.ID "&return_to=" $.TenantPath "/admin/users/" .User.ID "/bindings") "new" "New role binding"))}}
 <p>These are the direct role bindings of {{.User.Username}}. The user also has the role bindings of the groups.</p>
-{{template "tablebar" (tool (print $.TenantPath "/admin/bindings/new?subject=user:" .User.ID "&return_to=" $.TenantPath "/admin/users/" .User.ID "/bindings") "new" "New role binding")}}
 {{template "bindingtable" .Table}}
 {{end}}
 {{end}}

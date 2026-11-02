@@ -23,8 +23,7 @@
   <div class="buttons"><button type="submit">Search</button></div>
 </form>
 {{if .Query}}
-<h2>Results</h2>
-{{if $.Space}}{{template "tablebar" (tool (print $.TenantPath "/search?q=" (urlquery .Query)) "space" "Search in all spaces")}}{{end}}
+{{if $.Space}}{{template "sectionhead" (section "Results" "" (tool (print $.TenantPath "/search?q=" (urlquery .Query)) "space" "Search in all spaces"))}}{{else}}<h2>Results</h2>{{end}}
 {{with .Results}}
 <ol class="results">
   {{range .}}

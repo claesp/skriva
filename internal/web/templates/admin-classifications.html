@@ -1,7 +1,6 @@
 {{define "content"}}
-{{template "listhead" (head "Classifications" "" "")}}
+{{template "listhead" (head "Classifications" (tool (print .TenantPath "/admin/classifications/new") "new" "New classification"))}}
 <p>The levels of information classification of the documents, from the lowest to the highest. All spaces of the tenant use these levels. A new document gets the default level.</p>
-{{template "tablebar" (tool (print .TenantPath "/admin/classifications/new") "new" "New classification")}}
 <table>
   <thead><tr><th class="num">Order</th><th>Name</th><th class="optional">Description</th><th class="num">Documents</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>

@@ -1,5 +1,5 @@
 {{define "content"}}
-{{template "listhead" (head "Audit log" "" "")}}
+{{template "listhead" (head "Audit log")}}
 <p>{{if .System}}The changes to the tenants, and the sign-ins of the system administrators.{{else}}The changes to the access rights, to the spaces, to the trash and to the place of the items, the restored versions and the sign-ins.{{end}}
 The log keeps each event for {{.Data.Days}} days. The changes to the text of a document are in the history of the document.</p>
 <div class="tablescroll" role="region" aria-label="Events" tabindex="0">

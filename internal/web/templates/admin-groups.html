@@ -1,7 +1,6 @@
 {{define "content"}}
-{{template "listhead" (head "Groups" "" "")}}
+{{template "listhead" (head "Groups" (tool (print .TenantPath "/admin/groups/new") "new" "New local group"))}}
 <p>OIDC groups come from the identity provider. The application updates their members at each sign-in. You can change the members of local groups.</p>
-{{template "tablebar" (tool (print .TenantPath "/admin/groups/new") "new" "New local group")}}
 <table>
   <thead><tr><th>Name</th><th>Source</th><th class="num">Members</th><th>Description</th></tr></thead>
   <tbody>

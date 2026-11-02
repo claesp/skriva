@@ -118,6 +118,11 @@ and these guidelines for long-form text:
   do not move. The toolbar is sticky, thus the button is always
   visible. The button is outside the form and uses the `form`
   attribute. This needs no script.
+- The buttons for a page (for example **New**) are at the right side of
+  the title of the page, on the same line (template `pagehead`). The
+  buttons for a section (for example **Change**) are at the right side
+  of the title of the section (template `sectionhead`). Thus they need
+  no line of their own.
 - A table must fit in a phone window. A column with less important
   data (for example a description) has the class `optional`. Narrow
   windows do not show it.

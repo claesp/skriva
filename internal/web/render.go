@@ -59,12 +59,20 @@ type postArgs struct {
 	ReturnTo string
 }
 
-// headArgs is the argument of the "listhead" template. An empty NewURL
-// shows no button.
+// headArgs is the argument of the "listhead" and "pagehead" templates:
+// the title of the page and the buttons at the right side of the title.
 type headArgs struct {
-	Title    string
-	NewURL   string
-	NewLabel string
+	Title string
+	Tools []toolArgs
+}
+
+// sectionArgs is the argument of the "sectionhead" template: the title
+// of a section, its ID (or "") and the buttons at the right side of the
+// title.
+type sectionArgs struct {
+	Title string
+	ID    string
+	Tools []toolArgs
 }
 
 // crumbArgs is the argument of the "formhead" template. RootURL and
@@ -106,7 +114,8 @@ var funcs = template.FuncMap{
 	"post": func(action, icon, label, csrf, returnTo string) postArgs {
 		return postArgs{action, icon, label, csrf, returnTo}
 	},
-	"head": func(title, newURL, newLabel string) headArgs { return headArgs{title, newURL, newLabel} },
+	"head":    func(title string, tools ...toolArgs) headArgs { return headArgs{title, tools} },
+	"section": func(title, id string, tools ...toolArgs) sectionArgs { return sectionArgs{title, id, tools} },
 	"crumb": func(parentURL, parentLabel, title, icon string) crumbArgs {
 		return crumbArgs{ParentURL: parentURL, ParentLabel: parentLabel, Title: title, Icon: icon}
 	},

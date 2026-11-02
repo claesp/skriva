@@ -392,8 +392,12 @@ time[title] { cursor: help; }
 .error { color: var(--danger); font-weight: 600; }
 .notice { padding: 0.5rem 0.75rem; background: var(--panel); border-left: 3px solid var(--accent); font-size: var(--ui-size); }
 /* A toolbar for the actions of the table below it. */
-.tablebar { display: flex; justify-content: flex-end; }
-.tablebar + table { margin-top: 0.25rem; }
+/* The title of a page or of a section with its buttons at the right
+   side, on the same line. */
+.pagehead > .toolbar { align-self: center; margin-left: auto; }
+.sectionhead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem;
+  margin: 1.75rem 0 0.5rem; }
+.sectionhead h2 { margin: 0; }
 table.settings th { width: 12rem; color: var(--muted); font-weight: 400; }
 /* The comparison of two versions. The changed lines have a color and a
    sign. The changed words in a line are marked more strongly. */

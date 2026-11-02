@@ -10,8 +10,7 @@
   <li>The document permissions of the role bindings for this space.</li>
 </ul>
 {{template "defaultroletable" (defaultrole .DefaultRoleText (print $s "/default-role"))}}
-<h2>Role bindings</h2>
-{{template "tablebar" (tool (print $.TenantPath "/admin/bindings/new?space=" .Space.Slug "&return_to=" $s "/access") "new" "New role binding")}}
+{{template "sectionhead" (section "Role bindings" "" (tool (print $.TenantPath "/admin/bindings/new?space=" .Space.Slug "&return_to=" $s "/access") "new" "New role binding"))}}
 {{template "bindingtable" .Table}}
 {{end}}
 {{end}}

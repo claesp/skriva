@@ -39,7 +39,13 @@
 
 {{/* A toolbar above a table, for the actions of the table. The argument
    is a toolArgs. */}}
-{{define "tablebar"}}<div class="tablebar"><nav class="toolbar" aria-label="Actions"><span class="group">{{template "tool" .}}</span></nav></div>{{end}}
+{{/* The title of a page, with the buttons for the page at the right
+   side. The argument is a headArgs. */}}
+{{define "pagehead"}}<div class="pagehead"><h1>{{.Title}}</h1>{{if .Tools}}<nav class="toolbar" aria-label="Actions"><span class="group">{{range .Tools}}{{template "tool" .}}{{end}}</span></nav>{{end}}</div>{{end}}
+
+{{/* The title of a section, with the buttons for the section at the
+   right side. The argument is a sectionArgs. */}}
+{{define "sectionhead"}}<div class="sectionhead"><h2{{with .ID}} id="{{.}}"{{end}}>{{.Title}}</h2>{{if .Tools}}<nav class="toolbar" aria-label="Actions: {{.Title}}"><span class="group">{{range .Tools}}{{template "tool" .}}{{end}}</span></nav>{{end}}</div>{{end}}
 
 {{/* The administration pages have the layout of the pages of a document:
    a bar with the path and the toolbar over the full width, the menu at
@@ -130,7 +136,7 @@
   <nav class="breadcrumbs" aria-label="Path">{{.Title}}</nav>
 </div>
 <div class="main reading">
-<div class="pagehead"><h1>{{.Title}}</h1></div>
+{{template "pagehead" .}}
 {{end}}
 
 {{/* The head of a form page. The path ends with the title of the form. The

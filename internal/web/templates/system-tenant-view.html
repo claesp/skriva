@@ -3,8 +3,7 @@
 {{with .Data}}
 {{$edit := print "/admin/tenants/" .Code "/edit"}}
 <div class="pagehead"><h1>{{.Name}}{{if .IsDefault}} <span class="tag">default</span>{{end}}</h1></div>
-<h2>General</h2>
-{{template "tablebar" (tool (print $edit "#general") "edit" "Change the settings")}}
+{{template "sectionhead" (section "General" "" (tool (print $edit "#general") "edit" "Change the settings"))}}
 <table class="settings">
   <tbody>
     <tr><th scope="row">Code</th><td><code>{{.Code}}</code></td></tr>
@@ -12,8 +11,7 @@
     <tr><th scope="row">Status</th><td>{{if .Disabled}}<span class="tag danger">Disabled</span>{{else}}Active{{end}}</td></tr>
   </tbody>
 </table>
-<h2>Identity provider</h2>
-{{template "tablebar" (tool (print $edit "#idp") "edit" "Change the identity provider")}}
+{{template "sectionhead" (section "Identity provider" "" (tool (print $edit "#idp") "edit" "Change the identity provider"))}}
 <table class="settings">
   <tbody>
     <tr><th scope="row">Issuer URL</th><td>{{with .OIDCIssuer}}<code>{{.}}</code>{{else}}<span class="tag danger">Not set</span>{{end}}</td></tr>
@@ -25,16 +23,14 @@
     <tr><th scope="row">Post-logout redirect URI</th><td><code>{{.LogoutURI}}</code></td></tr>
   </tbody>
 </table>
-<h2>Access</h2>
-{{template "tablebar" (tool (print $edit "#access") "edit" "Change the access")}}
+{{template "sectionhead" (section "Access" "" (tool (print $edit "#access") "edit" "Change the access"))}}
 <table class="settings">
   <tbody>
     <tr><th scope="row">Admin group</th><td>{{.AdminGroup}}</td></tr>
     <tr><th scope="row">Default role</th><td>{{with .DefaultRole}}{{.}}{{else}}None{{end}}</td></tr>
   </tbody>
 </table>
-<h2>Limits</h2>
-{{template "tablebar" (tool (print $edit "#limits") "edit" "Change the limits")}}
+{{template "sectionhead" (section "Limits" "" (tool (print $edit "#limits") "edit" "Change the limits"))}}
 <table class="settings">
   <tbody>
     <tr><th scope="row">Session life</th><td>{{.SessionTTL}}</td></tr>
@@ -42,9 +38,8 @@
   </tbody>
 </table>
 {{with .Keys}}
-<h2 id="encryption">Encryption</h2>
+<div class="sectionhead"><h2 id="encryption">Encryption</h2><nav class="toolbar" aria-label="Actions: Encryption"><span class="group">{{template "post" (post (print "/admin/tenants/" $.Data.Code "/rotate-key") "key" "Make a new data key" $.CSRF "")}}</span></nav></div>
 <p>The documents and the files of the tenant are encrypted with the data key of the tenant. A new key replaces the current key at once. The server then encrypts the old documents and files again with the new key, in the background.</p>
-<div class="tablebar"><nav class="toolbar" aria-label="Actions"><span class="group">{{template "post" (post (print "/admin/tenants/" $.Data.Code "/rotate-key") "key" "Make a new data key" $.CSRF "")}}</span></nav></div>
 <table class="settings">
   <tbody>
     <tr><th scope="row">Data key</th><td>Version {{.Version}}, made {{date .CreatedAt}}</td></tr>

@@ -1,6 +1,5 @@
 {{define "content"}}
-{{template "listhead" (head "Tenants" "" "")}}
-{{template "tablebar" (tool "/admin/tenants/new" "new" "New tenant")}}
+{{template "listhead" (head "Tenants" (tool "/admin/tenants/new" "new" "New tenant"))}}
 <table>
   <thead><tr><th>Code</th><th>Name</th><th>Identity provider</th><th>Status</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>

@@ -10,8 +10,7 @@
     <tr><th scope="row">Description</th><td>{{.Group.Description}}</td></tr>
   </tbody>
 </table>
-<h2>Members</h2>
-{{template "tablebar" (when $local (tool (print $g "/members/new") "new-user" "New member"))}}
+{{template "sectionhead" (section "Members" "" (when $local (tool (print $g "/members/new") "new-user" "New member")))}}
 <table>
   <thead><tr><th>User name</th><th>Name</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
