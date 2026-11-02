@@ -4,12 +4,12 @@
 <div class="pagehead"><h1>History of {{.Node.Title}}</h1></div>
 {{template "compareform" .Compare}}
 <table>
-  <thead><tr><th>Version</th><th>Author</th><th>Comment</th><th class="date">Changed</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>Version</th><th class="optional">Author</th><th>Comment</th><th class="date">Changed</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
   {{range .Revisions}}
   <tr>
     <td><a href="{{$.SpacePath}}/history/{{$.Data.Node.PublicID}}/{{.Version}}">{{.Version}}</a></td>
-    <td>{{.Author}}</td>
+    <td class="optional">{{.Author}}</td>
     <td>{{.Comment}}</td>
     <td class="date">{{date .CreatedAt}}</td>
     <td class="actions">

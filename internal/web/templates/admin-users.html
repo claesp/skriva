@@ -2,13 +2,13 @@
 {{template "listhead" (head "Users" "" "")}}
 <p>Users appear here after their first sign-in.</p>
 <table>
-  <thead><tr><th>User name</th><th>Name</th><th>E-mail</th><th>Status</th><th class="date">Last sign-in</th></tr></thead>
+  <thead><tr><th>User name</th><th>Name</th><th class="optional">E-mail</th><th>Status</th><th class="date">Last sign-in</th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr>
     <td><a href="{{$.TenantPath}}/admin/users/{{.ID}}">{{.Username}}</a></td>
     <td>{{.DisplayName}}</td>
-    <td>{{.Email}}</td>
+    <td class="optional">{{.Email}}</td>
     <td>{{if .Disabled}}<span class="tag danger">Disabled</span>{{else}}Active{{end}}</td>
     <td class="date">{{with .LastLoginAt}}{{date .}}{{else}}Never{{end}}</td>
   </tr>

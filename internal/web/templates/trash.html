@@ -17,14 +17,13 @@ You cannot undo this.</p>
 <p>Deleted folders and documents stay in the trash for {{.Days}} days. Then the wiki deletes them permanently. A restored item goes back to its old place.</p>
 {{if .Items}}
 <table class="items">
-  <thead><tr><th>Name</th><th>Old place</th><th>Deleted by</th><th class="date">Deleted</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>Name</th><th>Old place</th><th class="date">Deleted</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
   {{range .Items}}
   <tr>
-    <td>{{template "icon" .Kind}}{{.Title}}{{if .Descendants}} <small>and {{.Descendants}} items in it</small>{{end}}</td>
+    <td>{{template "icon" .Kind}}{{.Title}}{{with .Descendants}} <small>and {{.}} {{if eq . 1}}item{{else}}items{{end}} in it</small>{{end}}</td>
     <td>{{if .ParentInTrash}}In the trash: {{.ParentTitle}}{{else}}{{or .ParentTitle "Top level"}}{{end}}</td>
-    <td>{{.DeletedBy}}</td>
-    <td class="date">{{date .DeletedAt}}</td>
+    <td class="date">{{date .DeletedAt}}{{with .DeletedBy}}<br><small>by {{.}}</small>{{end}}</td>
     <td class="actions">
       {{if .ParentInTrash}}{{template "tool" (dtool "restore" "Restore (restore the folder first)")}}{{else}}{{template "post" (post (print $.SpacePath "/trash/" .PublicID "/restore") "restore" "Restore" $.CSRF "")}}{{end}}
       {{template "tool" (when .CanPurge (tool (print $.SpacePath "/trash/" .PublicID "/delete") "delete" "Delete permanently"))}}
