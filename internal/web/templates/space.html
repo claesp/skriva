@@ -4,8 +4,8 @@
   <h1>{{.Space.Name}}</h1>
 </div>
 {{with .Space.Description}}<p class="lead">{{.}}</p>{{end}}
-{{with .Data.Tree}}
-{{template "itemtable" (items $.SpacePath .)}}
+{{if .Data.Items.Nodes}}
+{{template "itemtable" .Data.Items}}
 {{else}}
 <p>This space is empty.{{if .Can "doc.create"}} Use <strong>New</strong> in the page header to make the first document.{{end}}</p>
 {{end}}

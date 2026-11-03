@@ -87,11 +87,12 @@ type crumbArgs struct {
 	Icon        string
 }
 
-// itemsArgs is the argument of the "itemtable" template. Nodes is a slice
-// of store.NodeSummary or of *store.TreeNode.
+// itemsArgs is the argument of the "itemtable" template. Details has the
+// classification and the last author of each node.
 type itemsArgs struct {
-	Base  string
-	Nodes any
+	Base    string
+	Nodes   []store.NodeSummary
+	Details map[int64]store.ItemDetail
 }
 
 // defaultRoleArgs is the argument of the "defaultroletable" template.
@@ -122,7 +123,6 @@ var funcs = template.FuncMap{
 	"crumb3": func(rootURL, rootLabel, parentURL, parentLabel, title, icon string) crumbArgs {
 		return crumbArgs{rootURL, rootLabel, parentURL, parentLabel, title, icon}
 	},
-	"items":    func(base string, nodes any) itemsArgs { return itemsArgs{base, nodes} },
 	"spacetop": func(v *view, tab string) spaceTopArgs { return spaceTopArgs{v, tab} },
 	"source":   groupSource,
 	// ebtn gives the data of a button in the toolbar of the editor.

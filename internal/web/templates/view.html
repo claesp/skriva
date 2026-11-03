@@ -5,7 +5,7 @@
   <h1>{{if .Node.IsFolder}}{{template "icon" "folder"}}{{end}}{{.Node.Title}}</h1>
 </div>
 {{if .Node.IsFolder}}
-  {{with .Children}}{{template "itemtable" (items $.SpacePath .)}}{{else}}<p>This folder is empty.</p>{{end}}
+  {{if .Items.Nodes}}{{template "itemtable" .Items}}{{else}}<p>This folder is empty.</p>{{end}}
 {{else}}
 <article class="prose">{{.HTML}}</article>
 {{with .Children}}

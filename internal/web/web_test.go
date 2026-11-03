@@ -1713,6 +1713,33 @@ func TestClassification(t *testing.T) {
 		t.Fatalf("page of the document:\n%s", b)
 	}
 	id := strings.Split(resp.Header.Get("Location"), "/")[4]
+	// The tables of items show the classification and the last author.
+	// A folder has no classification.
+	folder := bob.create("folder", "", "Box", "")
+	bob.create("document", folder, "Note", "x")
+	row := func(page, title string) string {
+		i := strings.Index(page, ">"+title+"</a></td>")
+		j := strings.Index(page[max(i, 0):], "</tr>")
+		if i < 0 || j < 0 {
+			t.Fatalf("no row for %q:\n%s", title, page)
+		}
+		return page[i : i+j]
+	}
+	cells := regexp.MustCompile(`<td[^>]*>([^<]*)</td>`)
+	check := func(r string, want ...string) {
+		t.Helper()
+		var got []string
+		for _, m := range cells.FindAllStringSubmatch(r, -1) {
+			got = append(got, m[1])
+		}
+		if strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Errorf("cells = %q, want %q in\n%s", got, want, r)
+		}
+	}
+	home := readBody(t, bob.get(sp+"/"))
+	check(row(home, "Plan"), "Document", "Top Secret", "bob")
+	check(row(home, "Box"), "Folder", "", "bob")
+	check(row(readBody(t, bob.get(sp+"/d/"+folder+"/box")), "Note"), "Document", "Unclassified", "bob")
 	if b := readBody(t, bob.get(sp+"/history/"+id)); !strings.Contains(b, "TOP SECRET") {
 		t.Fatalf("history page has no bar:\n%s", b)
 	}

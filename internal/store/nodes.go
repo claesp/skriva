@@ -793,6 +793,45 @@ func (s *Store) SpaceNodes(ctx context.Context, spaceID int64) ([]NodeSummary, e
 		LIMIT $2`, spaceID, MaxTreeNodes)
 }
 
+// ItemDetail is the data of a node for a table of items, in addition to
+// the NodeSummary.
+type ItemDetail struct {
+	// Classification is the name of the classification of a document,
+	// or "" for a folder.
+	Classification string
+	// UpdatedBy is the name of the last author. It is empty if the user
+	// does not exist now.
+	UpdatedBy string
+}
+
+// ItemDetails returns the details of the nodes with the IDs in a space.
+// The tree does not need these values, thus the queries of NodeSummary
+// do not read them. A table of items shows only a part of the nodes.
+func (s *Store) ItemDetails(ctx context.Context, spaceID int64, ids []int64) (map[int64]ItemDetail, error) {
+	out := make(map[int64]ItemDetail, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT n.id, COALESCE(c.name, ''), COALESCE(NULLIF(u.display_name, ''), u.username, '')
+		FROM nodes n LEFT JOIN users u ON u.id = n.updated_by
+		LEFT JOIN classifications c ON c.id = n.classification_id
+		WHERE n.space_id = $1 AND n.id = ANY($2)`, spaceID, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var d ItemDetail
+		if err := rows.Scan(&id, &d.Classification, &d.UpdatedBy); err != nil {
+			return nil, err
+		}
+		out[id] = d
+	}
+	return out, rows.Err()
+}
+
 // Children returns the children of a node, or the root nodes of the space
 // if parentID is nil.
 func (s *Store) Children(ctx context.Context, spaceID int64, parentID *int64) ([]NodeSummary, error) {

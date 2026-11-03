@@ -174,8 +174,31 @@ func (s *Server) handleSpaceHome(w http.ResponseWriter, r *http.Request) {
 		s.forbidden(w, r)
 		return
 	}
+	top := make([]store.NodeSummary, len(tree))
+	for i, t := range tree {
+		top[i] = t.NodeSummary
+	}
+	items, err := s.items(r, top)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	ri.New = &newTarget{Folder: true}
-	s.render(w, r, http.StatusOK, "space", ri.Space.Name, spacePage{Tree: tree, Trash: ri.Access.Any(rbac.DocDelete)})
+	s.render(w, r, http.StatusOK, "space", ri.Space.Name, struct {
+		spacePage
+		Items itemsArgs
+	}{spacePage{Tree: tree, Trash: ri.Access.Any(rbac.DocDelete)}, items})
+}
+
+// items returns the data for a table of the nodes. The nodes must be
+// nodes that the user can read.
+func (s *Server) items(r *http.Request, nodes []store.NodeSummary) (itemsArgs, error) {
+	ids := make([]int64, len(nodes))
+	for i, n := range nodes {
+		ids[i] = n.ID
+	}
+	details, err := s.store.ItemDetails(r.Context(), reqInfoFrom(r.Context()).Space.ID, ids)
+	return itemsArgs{Base: base(r), Nodes: nodes, Details: details}, err
 }
 
 // spacePage is the data that the pages of a space show: the tree, and
@@ -253,6 +276,14 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Nod
 			return
 		}
 	}
+	children = readableOnly(r, children)
+	var items itemsArgs
+	if n.IsFolder() {
+		if items, err = s.items(r, children); err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+	}
 	backlinks, err := s.store.Backlinks(r.Context(), n)
 	if err != nil {
 		s.serverError(w, r, err)
@@ -262,8 +293,9 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Nod
 		nodePage
 		HTML      template.HTML
 		Children  []store.NodeSummary
+		Items     itemsArgs
 		Backlinks []store.NodeSummary
-	}{page, html, readableOnly(r, children), readableOnly(r, backlinks)})
+	}{page, html, children, items, readableOnly(r, backlinks)})
 }
 
 // links returns the URL prefixes of wiki links, document links and files

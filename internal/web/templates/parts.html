@@ -167,16 +167,20 @@
 </form>
 {{end}}
 
-{{/* A table of folders and documents. The argument is an itemsArgs. */}}
+{{/* A table of folders and documents. The argument is an itemsArgs. A
+   folder has no classification, thus its cell is empty. */}}
 {{define "itemtable"}}
 <table class="items">
-  <thead><tr><th>Name</th><th>Type</th><th class="date">Changed</th></tr></thead>
+  <thead><tr><th>Name</th><th class="optional">Type</th><th>Classification</th><th class="date">Changed</th><th class="optional">Changed by</th></tr></thead>
   <tbody>
   {{range .Nodes}}
+  {{$d := index $.Details .ID}}
   <tr>
     <td><a href="{{docpath $.Base .PublicID .Slug}}">{{template "icon" .Kind}}{{.Title}}</a></td>
-    <td>{{if .IsFolder}}Folder{{else}}Document{{end}}</td>
+    <td class="optional">{{if .IsFolder}}Folder{{else}}Document{{end}}</td>
+    <td>{{$d.Classification}}</td>
     <td class="date">{{date .UpdatedAt}}</td>
+    <td class="optional">{{$d.UpdatedBy}}</td>
   </tr>
   {{end}}
   </tbody>

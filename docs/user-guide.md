@@ -26,7 +26,10 @@ space at the left side of the window. The start page shows the list of
 spaces there. A folder has a folder icon. A document has a page icon.
 Click the small arrow at the left of an item to open or close it in the
 tree. The page of a space and the page of a folder show their items in a
-table.
+table. The table shows the name, the type, the classification, the time
+of the last change and the user who made it. A folder has no
+classification, thus its cell is empty. On a narrow screen, the table
+does not show the type and the user.
 
 ## The New button
 
