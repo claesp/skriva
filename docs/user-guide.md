@@ -393,12 +393,15 @@ with the current version of the document. For each format, you can:
   format is text. You can then copy the text to a different program.
 
 The file contains the title, the information classification and the
-version of the document. Links to other documents and images refer to
-Skriva. A reader must sign in to open them. A folder has no export.
+version of the document. Links to other documents refer to Skriva. A
+reader must sign in to open them. A folder has no export.
 
 | Format   | Extension | Contents |
 |----------|-----------|----------|
-| Markdown | `.md`     | [GitHub Flavored Markdown](https://github.github.com/gfm/). |
+| Markdown | `.md`     | [GitHub Flavored Markdown](https://github.github.com/gfm/). The images refer to Skriva. |
+| HTML     | `.html`   | One web page with the text and the images. |
+
+### Markdown
 
 The Markdown file starts with a YAML front matter block:
 
@@ -422,3 +425,27 @@ one level: a level 1 heading becomes `##`. Markdown has six levels, thus
 the levels 5 to 8 become `######`. A wiki link becomes a normal link.
 The formats of Markdown and of the editor are not the same. Thus the
 file can look different from the page.
+
+### HTML
+
+The HTML file is one web page. It contains the images, thus a browser
+can show the file without Skriva. The page has its own style, with the
+fonts of your system. It has a dark mode and a print style.
+
+The title, the classification, the version and the time of the change
+are in the `<head>` of the page:
+
+```html
+<title>Install on Linux</title>
+<meta name="classification" content="Restricted">
+<meta name="version" content="4">
+<meta name="dcterms.modified" content="2026-11-02T09:00:00Z">
+<link rel="canonical" href="https://wiki.example.com/acme/handbook/d/k3x9p2qa7tm4zb/install-on-linux">
+```
+
+The title is the `<h1>` element. The headings of the text are `<h2>`
+to `<h6>`, the same as on the page in Skriva. The file contains a
+maximum of 32 MB of images. The images after this limit refer to
+Skriva. Most browsers then do not show them, because Skriva does not
+let other pages load its files. The page contains no scripts. A
+security policy in the page does not let a browser run scripts.

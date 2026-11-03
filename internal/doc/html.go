@@ -54,8 +54,9 @@ func (l Links) Src(src string) string {
 	return src
 }
 
-// policy is a second layer of protection after the HTML converter.
-var policy = func() *bluemonday.Policy {
+// newPolicy makes the policy of the second layer of protection after the
+// HTML converter.
+func newPolicy() *bluemonday.Policy {
 	p := bluemonday.UGCPolicy()
 	p.AllowAttrs("id").Matching(regexp.MustCompile(`^[a-z0-9-]+$`)).OnElements("p", "h2", "h3", "h4", "h5", "h6")
 	p.AllowAttrs("class").Matching(regexp.MustCompile(`^(level-[1-8] )?align-(center|right)$|^level-[1-8]$`)).
@@ -75,15 +76,43 @@ var policy = func() *bluemonday.Policy {
 	p.AllowURLSchemes("http", "https", "mailto")
 	p.RequireNoReferrerOnLinks(true)
 	return p
-}()
+}
+
+// policy is the policy for the pages. dataPolicy also permits images in
+// data URIs, for an exported file. Only the types gif, jpeg, png, svg+xml
+// and webp in base64 are permitted. A browser does not run the scripts
+// of an SVG image in an img element.
+var (
+	policy     = newPolicy()
+	dataPolicy = func() *bluemonday.Policy {
+		p := newPolicy()
+		p.AllowDataURIImages()
+		return p
+	}()
+)
 
 // HTML converts the document to safe HTML.
-func (n *Node) HTML(l Links) template.HTML {
+func (n *Node) HTML(l Links) template.HTML { return n.HTMLWith(l, HTMLOptions{}) }
+
+// HTMLOptions change the result of HTMLWith.
+type HTMLOptions struct {
+	// DataImages permits images in data URIs. Use MapImages to put the
+	// data of the images into the sources before the conversion.
+	DataImages bool
+}
+
+// HTMLWith converts the document to safe HTML with the options o. See
+// HTML.
+func (n *Node) HTMLWith(l Links, o HTMLOptions) template.HTML {
 	h := htmlWriter{links: l, ids: map[string]bool{}}
 	h.children(n)
+	p := policy
+	if o.DataImages {
+		p = dataPolicy
+	}
 	// The policy removes all unsafe content. Thus the conversion to
 	// template.HTML is safe.
-	return template.HTML(policy.Sanitize(h.b.String())) // #nosec G203 -- sanitized.
+	return template.HTML(p.Sanitize(h.b.String())) // #nosec G203 -- sanitized.
 }
 
 type htmlWriter struct {

@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"errors"
 	"mime"
 	"net/http"
 	"strings"
@@ -84,6 +85,16 @@ func (s *Server) exportFile(w http.ResponseWriter, r *http.Request, n *store.Nod
 		URL:            site + docPath(base(r), n.PublicID, n.Slug),
 		Body:           body,
 		Links:          doc.Links{Wiki: b + "/w/", Files: b + "/files/", Doc: b + "/d/"},
+		Image: func(id string) (*export.Image, error) {
+			f, err := s.readableFile(r, id)
+			if errors.Is(err, store.ErrNotFound) {
+				return nil, nil
+			}
+			if err != nil {
+				return nil, err
+			}
+			return &export.Image{ContentType: f.ContentType, Data: f.Data}, nil
+		},
 	}
 	var buf bytes.Buffer
 	if err := f.Write(&buf, d); err != nil {

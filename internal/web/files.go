@@ -138,30 +138,18 @@ const fileSVGSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'; im
 // read it until a node uses it. Thus the editor can show a new image
 // before the user saves the document.
 func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
-	ri := reqInfoFrom(r.Context())
 	id := strings.ToLower(r.PathValue("id"))
 	if !store.ValidPublicID(id) {
 		s.notFound(w, r)
 		return
 	}
-	f, err := s.store.File(r.Context(), ri.Space.ID, id)
+	f, err := s.readableFile(r, id)
 	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
 		return
 	}
 	if err != nil {
 		s.serverError(w, r, err)
-		return
-	}
-	permitted := len(f.AccessPaths) == 0 && f.CreatedBy == ri.Session.User.ID
-	for _, p := range f.AccessPaths {
-		if canRead(r, p) {
-			permitted = true
-			break
-		}
-	}
-	if !permitted {
-		s.notFound(w, r)
 		return
 	}
 	h := w.Header()
@@ -176,4 +164,25 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 	// change. Thus only the browser keeps a copy, for a short time.
 	h.Set("Cache-Control", "private, max-age=3600")
 	http.ServeContent(w, r, "", f.CreatedAt, bytes.NewReader(f.Data))
+}
+
+// readableFile returns the uploaded file with the ID in the space of the
+// request. A user can read a file that a readable document uses, and a
+// file that the user uploaded and no document uses. For other files, the
+// error is store.ErrNotFound.
+func (s *Server) readableFile(r *http.Request, id string) (*store.File, error) {
+	ri := reqInfoFrom(r.Context())
+	f, err := s.store.File(r.Context(), ri.Space.ID, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(f.AccessPaths) == 0 && f.CreatedBy == ri.Session.User.ID {
+		return f, nil
+	}
+	for _, p := range f.AccessPaths {
+		if canRead(r, p) {
+			return f, nil
+		}
+	}
+	return nil, store.ErrNotFound
 }

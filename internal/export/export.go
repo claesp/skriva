@@ -24,11 +24,23 @@ type Document struct {
 	UpdatedAt      time.Time
 	// URL is the absolute URL of the document in Skriva.
 	URL string
-	// Body is the text. It must be the result of doc.Parse.
+	// Body is the text. It must be the result of doc.Parse. A format can
+	// change it, thus use a Document for one export only.
 	Body *doc.Node
 	// Links makes the URLs of links and images. The URLs must be
 	// absolute, because the file is not on the server.
 	Links doc.Links
+	// Image returns an uploaded image with the file ID, for the formats
+	// that contain the images. It returns nil if the image does not
+	// exist or the user cannot read it. If Image is nil, the images keep
+	// their URLs.
+	Image func(id string) (*Image, error)
+}
+
+// Image is an uploaded image.
+type Image struct {
+	ContentType string
+	Data        []byte
 }
 
 // Format is a file format for an export.
@@ -50,7 +62,7 @@ type Format struct {
 }
 
 // Formats are all export formats, in the sequence of the export page.
-var Formats = []Format{markdownFormat}
+var Formats = []Format{markdownFormat, htmlFormat}
 
 // Lookup returns the format with the name.
 func Lookup(name string) (Format, bool) {

@@ -307,23 +307,37 @@ of a level that documents use fails.
 
 The package `internal/export` has a list of formats (`export.Formats`).
 Each format has a name for the URL, a file name extension, a media type
-and a function that writes the file. The first format is Markdown. To
-add a format, add a `Format` value to the list. The export page shows
+and a function that writes the file. The formats are Markdown and HTML.
+To add a format, add a `Format` value to the list. The export page shows
 all formats in the list.
 
 - The server makes the file from the current version. The permission
   `doc.read` is necessary, the same as for the page.
 - The file has the title and the information classification as
-  metadata (in Markdown, the YAML front matter). Thus the classification
+  metadata (in Markdown, the YAML front matter; in HTML, `meta`
+  elements). Thus the classification
   stays with the text outside of Skriva. The text does not repeat the
   classification.
 - Links and images get absolute URLs with `SKRIVA_BASE_URL`, because
   the file is not on the server. Wiki links become normal links.
+- The HTML file contains the images as `data:` URIs. The file server
+  sends `Cross-Origin-Resource-Policy: same-origin`, thus a file on
+  the disk of the user cannot load the images from Skriva. The export
+  uses the same permission check as the file server
+  (`Server.readableFile`). The images have a maximum total size of
+  32 MB (`export.MaxEmbeddedBytes`). Images after the limit, and images
+  of other types, keep their URLs.
+- The HTML body comes from the same converter and the same bluemonday
+  policy as the page. The export policy also permits `data:` URIs of
+  the types gif, jpeg, png, svg+xml and webp in base64
+  (`doc.HTMLOptions.DataImages`). A browser does not run the scripts of
+  an SVG file in an `img` element. The file has a Content Security
+  Policy in a `meta` element that permits no scripts.
 - The values in the YAML front matter are JSON strings. A JSON string
   is also a valid YAML string in double quotes. Thus a title cannot
   change the structure of the block.
 - The download has `Content-Disposition: attachment` and the file name
-  `{slug}.md` (or `{id}.md` for an empty slug). The responses have
+  `{slug}{extension}` (or `{id}{extension}` for an empty slug). The responses have
   `Cache-Control: no-store`, the same as the pages.
 
 ### Audit log

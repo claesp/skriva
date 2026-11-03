@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1351,6 +1352,22 @@ func TestUploads(t *testing.T) {
 	wantStatus(t, carol.get(out.URL), http.StatusOK)
 	if md := readBody(t, carol.get(sp+"/export/"+id+"/markdown/text")); !strings.HasSuffix(md, "\n\n![A](http://example.test"+out.URL+")\n") {
 		t.Fatalf("export = %q", md)
+	}
+	// The HTML export contains the image. A user that cannot read the
+	// document cannot export it.
+	resp = carol.get(sp + "/export/" + id + "/html")
+	wantStatus(t, resp, http.StatusOK)
+	if ct, cd := resp.Header.Get("Content-Type"), resp.Header.Get("Content-Disposition"); ct != "text/html; charset=utf-8" ||
+		cd != "attachment; filename=pictures.html" {
+		t.Fatalf("headers: %q, %q", ct, cd)
+	}
+	if h := readBody(t, resp); !strings.Contains(h, `<img src="data:image/png;base64,`+base64.StdEncoding.EncodeToString(png)+`" alt="A"`) {
+		t.Fatalf("HTML export:\n%s", h)
+	}
+	resp = carol.get(sp + "/export/" + id + "/html/text")
+	resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); ct != "text/plain; charset=utf-8" {
+		t.Fatalf("text view has the type %q", ct)
 	}
 
 	// An upload for a new document checks the parent.
