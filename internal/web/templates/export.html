@@ -9,10 +9,10 @@
   {{range .Formats}}
   <tr>
     <td>{{.Label}} ({{.Extension}})</td>
-    <td class="optional">{{.Description}}</td>
+    <td class="optional">{{.Description}}{{if not .Available}} <em>{{.Unavailable}}</em>{{end}}</td>
     <td class="actions">
-      {{template "tool" (when .Text (tool (print $.SpacePath "/export/" $.Data.Node.PublicID "/" .Name "/text") "source" (print "Show " .Label " as text")))}}
-      {{template "tool" (tool (print $.SpacePath "/export/" $.Data.Node.PublicID "/" .Name) "download" (print "Download " .Label))}}
+      {{template "tool" (when (and .Available .Text) (tool (print $.SpacePath "/export/" $.Data.Node.PublicID "/" .Name "/text") "source" (print "Show " .Label " as text")))}}
+      {{template "tool" (when .Available (tool (print $.SpacePath "/export/" $.Data.Node.PublicID "/" .Name) "download" (print "Download " .Label)))}}
     </td>
   </tr>
   {{end}}

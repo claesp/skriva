@@ -1,6 +1,6 @@
 // Package export converts a document to a file that the user can
-// download. Each format is a Format value. Formats is the list of all
-// formats.
+// download. Each format is a Format value. NewFormats returns the list of
+// all formats.
 //
 // An exported file contains the title and the information
 // classification of the document. Thus the classification stays with the
@@ -8,6 +8,7 @@
 package export
 
 import (
+	"context"
 	"io"
 	"time"
 
@@ -57,16 +58,29 @@ type Format struct {
 	ContentType string
 	// Text is true if a browser can show the file as plain text.
 	Text bool
-	// Write writes the file of d to w.
-	Write func(w io.Writer, d *Document) error
+	// Write writes the file of d to w. It is nil if the server cannot
+	// make the format.
+	Write func(ctx context.Context, w io.Writer, d *Document) error
+	// Unavailable tells the user why the server cannot make the format.
+	Unavailable string
 }
 
-// Formats are all export formats, in the sequence of the export page.
-var Formats = []Format{markdownFormat, htmlFormat}
+// Available reports whether the server can make the format.
+func (f Format) Available() bool { return f.Write != nil }
+
+// Formats is a list of formats.
+type Formats []Format
+
+// NewFormats returns all export formats, in the sequence of the export
+// page. The PDF format needs the Typst program. If pdf is nil, the PDF
+// format is in the list, but it is not available.
+func NewFormats(pdf *PDFOptions) Formats {
+	return Formats{markdownFormat, htmlFormat, pdfFormat(pdf)}
+}
 
 // Lookup returns the format with the name.
-func Lookup(name string) (Format, bool) {
-	for _, f := range Formats {
+func (fs Formats) Lookup(name string) (Format, bool) {
+	for _, f := range fs {
 		if f.Name == name {
 			return f, true
 		}

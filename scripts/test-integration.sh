@@ -1,13 +1,34 @@
 #!/bin/sh
 # Run the integration tests against a temporary PostgreSQL container.
-# The script removes the container after the tests.
+# The tests of the PDF export run Typst in a container. The script
+# removes the container and the temporary files after the tests.
 set -eu
 
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
 IMAGE=${POSTGRES_IMAGE:-docker.io/library/postgres:17-alpine}
+# Use the same Typst image as the Containerfile.
+TYPST_IMAGE=${TYPST_IMAGE:-$(sed -n 's|^FROM \(ghcr.io/typst/typst[^ ]*\) AS typst$|\1|p' "$ROOT/Containerfile")}
 NAME=skriva-test-db-$$
+WORK=$(mktemp -d)
 
-cleanup() { podman rm -f "$NAME" >/dev/null 2>&1 || true; }
+cleanup() {
+	podman rm -f "$NAME" >/dev/null 2>&1 || true
+	rm -rf "$WORK"
+}
 trap cleanup EXIT INT TERM
+
+# The PDF export runs Typst with an empty environment. Thus the wrapper
+# sets the variables that Podman needs. The temporary folder of the
+# export has the same path in the container.
+mkdir "$WORK/tmp"
+{
+	echo '#!/bin/sh'
+	echo "export HOME='$HOME' PATH='$PATH' XDG_RUNTIME_DIR='${XDG_RUNTIME_DIR:-}'"
+	echo "exec podman run --rm --network none --read-only -v '$WORK/tmp:$WORK/tmp:Z' --entrypoint /bin/typst '$TYPST_IMAGE' \"\$@\""
+} >"$WORK/typst"
+chmod +x "$WORK/typst"
+podman image exists "$TYPST_IMAGE" || podman pull -q "$TYPST_IMAGE" >/dev/null
+export SKRIVA_TEST_TYPST="$WORK/typst" SKRIVA_TEST_TYPST_TMP="$WORK/tmp"
 
 podman run -d --rm --name "$NAME" \
 	-e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test \

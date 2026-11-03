@@ -235,14 +235,40 @@ control characters.
 - The HTTP server has timeouts for headers, reading, writing and idle
   connections.
 
+## Export
+
+An export needs the permission `doc.read`, the same as the page. The
+HTML file and the PDF file contain the images that the user can read
+(the same check as for `/files/{id}`).
+
+- **HTML**: the body goes through the same converter and sanitizer as
+  the page. The sanitizer of the export also permits images in `data:`
+  URIs of five image types. A Content Security Policy in the file
+  permits no scripts.
+- **PDF**: the server runs the [Typst](https://typst.app) program. The
+  text of the document is never Typst code. Skriva writes the document
+  as JSON data, and a fixed template (`internal/export/pdf.typ`) reads
+  it. Typst shows strings from JSON as text. The process:
+  - can read only the files in its temporary folder (`--root`),
+  - uses only the fonts in the program (`--ignore-system-fonts`),
+  - has empty package folders, thus it cannot load packages from the
+    network,
+  - has an empty environment, one thread (`--jobs 1`) and a time limit
+    of 25 seconds.
+  - At most two processes run at the same time. Other requests wait.
+
+  The server removes the temporary folder after each export.
+
 ## SQL injection
 
 All queries use parameters. No query contains text from a user.
 
 ## Container
 
-The container image contains only the program and CA certificates. The
-program runs as user 65532, not as root.
+The container image contains only the program, the Typst program for
+the PDF export, an empty temporary folder and CA certificates. The
+programs run as user 65532, not as root. The Containerfile gets Typst
+from its official image, with a fixed digest.
 
 ## Information classification
 

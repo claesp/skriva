@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/clpe/skriva/internal/export"
 	"github.com/clpe/skriva/internal/store"
 	"github.com/clpe/skriva/internal/testdb"
 )
@@ -127,7 +128,14 @@ func newEnv(t *testing.T) *env {
 		"root":  {"sysadmins"},
 	}}
 	base, _ := url.Parse("http://example.test")
+	// SKRIVA_TEST_TYPST is the path of the Typst program for the tests of
+	// the PDF export. Without it, the PDF export is not available.
+	var pdf *export.PDFOptions
+	if path := os.Getenv("SKRIVA_TEST_TYPST"); path != "" {
+		pdf = &export.PDFOptions{Typst: path, TempDir: os.Getenv("SKRIVA_TEST_TYPST_TMP")}
+	}
 	s, err := New(st, Options{
+		Formats:          export.NewFormats(pdf),
 		BaseURL:          base,
 		SystemAuth:       idp,
 		SystemAdminGroup: "sysadmins",
@@ -1689,10 +1697,31 @@ func TestExport(t *testing.T) {
 		t.Fatalf("text = %q, want %q", text, got)
 	}
 
+	// The PDF export needs the Typst program.
+	resp = bob.get(sp + "/export/" + id + "/pdf")
+	if os.Getenv("SKRIVA_TEST_TYPST") == "" {
+		wantStatus(t, resp, http.StatusNotFound)
+		if b := readBody(t, bob.get(sp+"/export/"+id)); !strings.Contains(b, "cannot make PDF files") ||
+			strings.Contains(b, sp+"/export/"+id+"/pdf") {
+			t.Fatalf("export page without Typst:\n%s", b)
+		}
+	} else {
+		wantStatus(t, resp, http.StatusOK)
+		if ct, cd := resp.Header.Get("Content-Type"), resp.Header.Get("Content-Disposition"); ct != "application/pdf" ||
+			cd != "attachment; filename=plan-a-1.pdf" {
+			t.Fatalf("headers: %q, %q", ct, cd)
+		}
+		if b := readBody(t, resp); !strings.HasPrefix(b, "%PDF-") {
+			t.Fatalf("PDF export: %.100q", b)
+		}
+		// A PDF file is not text.
+		wantStatus(t, bob.get(sp+"/export/"+id+"/pdf/text"), http.StatusNotFound)
+	}
+
 	// A folder and an unknown format have no export.
 	wantStatus(t, bob.get(sp+"/export/"+folder), http.StatusNotFound)
 	wantStatus(t, bob.get(sp+"/export/"+folder+"/markdown"), http.StatusNotFound)
-	wantStatus(t, bob.get(sp+"/export/"+id+"/pdf"), http.StatusNotFound)
+	wantStatus(t, bob.get(sp+"/export/"+id+"/docx"), http.StatusNotFound)
 	// The Export button of a folder is disabled.
 	if b := readBody(t, bob.get(sp+"/d/"+folder+"/guides")); strings.Contains(b, sp+"/export/"+folder) {
 		t.Fatalf("folder page links to the export:\n%s", b)

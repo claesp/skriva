@@ -1,6 +1,7 @@
 package export
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"strconv"
@@ -26,7 +27,7 @@ var markdownFormat = Format{
 // YAML front matter block. The title is the first heading, thus the
 // headings of the text go down one level. Wiki links become normal
 // links, because other programs do not know the [[Title]] syntax.
-func writeMarkdown(w io.Writer, d *Document) error {
+func writeMarkdown(_ context.Context, w io.Writer, d *Document) error {
 	var b strings.Builder
 	b.WriteString("---\n")
 	field(&b, "title", d.Title)

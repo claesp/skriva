@@ -29,6 +29,7 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"github.com/clpe/skriva/internal/export"
 	"github.com/clpe/skriva/internal/store"
 )
 
@@ -121,6 +122,9 @@ type Options struct {
 	// LoginRate is the maximum number of login starts per second, for
 	// all clients together. Zero gives a default value.
 	LoginRate float64
+	// Formats are the export formats. Nil gives export.NewFormats(nil):
+	// all formats without PDF.
+	Formats export.Formats
 }
 
 // Server is the HTTP handler for the application.
@@ -153,6 +157,9 @@ func New(st *store.Store, opts Options, log *slog.Logger) (*Server, error) {
 	}
 	if opts.SystemSessionTTL == 0 {
 		opts.SystemSessionTTL = 4 * time.Hour
+	}
+	if opts.Formats == nil {
+		opts.Formats = export.NewFormats(nil)
 	}
 	tmpl, err := loadTemplates()
 	if err != nil {

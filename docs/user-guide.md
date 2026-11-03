@@ -400,6 +400,7 @@ reader must sign in to open them. A folder has no export.
 |----------|-----------|----------|
 | Markdown | `.md`     | [GitHub Flavored Markdown](https://github.github.com/gfm/). The images refer to Skriva. |
 | HTML     | `.html`   | One web page with the text and the images. |
+| PDF      | `.pdf`    | A document for print, with A4 pages and the images. |
 
 ### Markdown
 
@@ -449,3 +450,24 @@ maximum of 32 MB of images. The images after this limit refer to
 Skriva. Most browsers then do not show them, because Skriva does not
 let other pages load its files. The page contains no scripts. A
 security policy in the page does not let a browser run scripts.
+
+### PDF
+
+The PDF file has A4 pages. The top and the bottom of each page show the
+classification, the same as a printed page. The bottom of each page
+also shows the title and the page number. The PDF metadata contains the
+title and the classification.
+
+The file contains the uploaded images, with a maximum of 32 MB. An image
+from a different site shows as a box with its description. Links
+refer to Skriva.
+
+The PDF file uses the fonts of the Typst program, not the fonts of the
+page. A draw.io diagram with formatted labels (HTML labels) can show the
+text "Text is not SVG - cannot display". To prevent this, clear
+**Formatted Text** for the labels in draw.io before the export of the
+diagram.
+
+The PDF export needs the Typst program on the server. If the server
+does not have it, the export page shows the PDF format with disabled
+buttons.

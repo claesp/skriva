@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -50,12 +51,38 @@ type Config struct {
 
 	// SessionTTL is the maximum life of a system administrator session.
 	SessionTTL time.Duration
+
+	// Typst is the path of the Typst program for the PDF export, or ""
+	// to find "typst" in the PATH. See TypstPath.
+	Typst string
 }
 
 // GroupRole is one item of SKRIVA_GROUP_ROLES.
 type GroupRole struct {
 	Group string
 	Role  string
+}
+
+// TypstPath returns the path of the Typst program. If SKRIVA_TYPST is
+// set, the program must exist. If it is not set, the function finds
+// "typst" in the PATH. The error tells why the PDF export is not
+// available.
+func (c *Config) TypstPath() (string, error) {
+	if c.Typst == "" {
+		path, err := exec.LookPath("typst")
+		if err != nil {
+			return "", fmt.Errorf("SKRIVA_TYPST is not set and %w", err)
+		}
+		return path, nil
+	}
+	info, err := os.Stat(c.Typst)
+	switch {
+	case err != nil:
+		return "", fmt.Errorf("SKRIVA_TYPST: %w", err)
+	case info.IsDir() || info.Mode().Perm()&0o111 == 0:
+		return "", fmt.Errorf("SKRIVA_TYPST: %s is not a program", c.Typst)
+	}
+	return c.Typst, nil
 }
 
 // SecureCookies reports whether cookies must have the Secure attribute.
@@ -83,6 +110,7 @@ func load(getenv func(string) string) (*Config, error) {
 		OIDCGroupsClaim:  get("SKRIVA_OIDC_GROUPS_CLAIM", "groups"),
 		SystemAdminGroup: get("SKRIVA_SYSTEM_ADMIN_GROUP", ""),
 		AdminGroup:       get("SKRIVA_ADMIN_GROUP", ""),
+		Typst:            get("SKRIVA_TYPST", ""),
 	}
 
 	secretValue, err := fromEnvOrFile(getenv, "SKRIVA_OIDC_CLIENT_SECRET")

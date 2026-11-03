@@ -138,6 +138,17 @@ func (n *Node) MapImages(fn func(string) string) {
 	})
 }
 
+// MapLinks changes the destination of each link to fn(destination).
+func (n *Node) MapLinks(fn func(string) string) {
+	n.walk(func(x *Node) {
+		for _, m := range x.Marks {
+			if m.Type == "link" {
+				m.Attrs["href"] = fn(attrString(m.Attrs, "href"))
+			}
+		}
+	})
+}
+
 func (n *Node) walk(fn func(*Node)) {
 	fn(n)
 	for _, c := range n.Content {

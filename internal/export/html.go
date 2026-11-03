@@ -1,6 +1,7 @@
 package export
 
 import (
+	"context"
 	"encoding/base64"
 	"html/template"
 	"io"
@@ -62,7 +63,7 @@ var htmlPage = template.Must(template.New("page").Parse(`<!doctype html>
 // images in data URIs, because the server does not permit other sites
 // to load its files. The headings of the text are h2 to h6, as on the
 // page in Skriva. The title is the h1 element.
-func writeHTML(w io.Writer, d *Document) error {
+func writeHTML(_ context.Context, w io.Writer, d *Document) error {
 	body := d.Body
 	if body == nil {
 		body = doc.Empty()

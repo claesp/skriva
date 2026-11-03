@@ -30,6 +30,7 @@ missing or not valid.
 | `SKRIVA_SESSION_TTL`             | `4h`                    | The maximum life of a system administrator session. |
 | `SKRIVA_BASE_URL`                | `http://localhost:8080` | The public URL of the server. It must not have a path. |
 | `SKRIVA_LISTEN_ADDR`             | `:8080`                 | The address for the HTTP server. |
+| `SKRIVA_TYPST`                   | `/typst` in the image   | The path of the [Typst](https://typst.app) program for the PDF export. If it is set, the program must exist, or the server does not start. If it is not set, the server finds `typst` in the `PATH`. Without the program, the PDF export is not available. |
 
 ## The system identity provider
 

@@ -307,8 +307,9 @@ of a level that documents use fails.
 
 The package `internal/export` has a list of formats (`export.Formats`).
 Each format has a name for the URL, a file name extension, a media type
-and a function that writes the file. The formats are Markdown and HTML.
-To add a format, add a `Format` value to the list. The export page shows
+and a function that writes the file. The formats are Markdown, HTML and
+PDF. To add a format, add a `Format` value to the list in
+`export.NewFormats`. The export page shows
 all formats in the list.
 
 - The server makes the file from the current version. The permission
@@ -336,6 +337,19 @@ all formats in the list.
 - The values in the YAML front matter are JSON strings. A JSON string
   is also a valid YAML string in double quotes. Thus a title cannot
   change the structure of the block.
+- The PDF format runs [Typst](https://typst.app). Typst is one static
+  program without other dependencies. It does not use JavaScript. The
+  Go code writes `doc.json` (the cleaned document with absolute links),
+  the images and the template `pdf.typ` into a temporary folder, and
+  runs `typst compile`. The template reads the data with `json()`. Thus
+  the text of the document is data, not Typst code. If Typst cannot
+  read an image, the server makes the file again without the images.
+  See [Security](security.md#export) for the limits of the process.
+  Without the Typst program (`SKRIVA_TYPST`), the export page shows the
+  PDF format with disabled buttons.
+- A PDF page shows the classification at the top and at the bottom,
+  the same as a printed page. The PDF metadata also contains it
+  (subject and keywords).
 - The download has `Content-Disposition: attachment` and the file name
   `{slug}{extension}` (or `{id}{extension}` for an empty slug). The responses have
   `Cache-Control: no-store`, the same as the pages.

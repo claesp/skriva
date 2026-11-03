@@ -1,6 +1,7 @@
 package export
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -9,14 +10,21 @@ import (
 )
 
 func TestLookup(t *testing.T) {
-	if f, ok := Lookup("markdown"); !ok || f.Extension != ".md" {
+	fs := NewFormats(nil)
+	if f, ok := fs.Lookup("markdown"); !ok || f.Extension != ".md" || !f.Available() {
 		t.Fatalf("Lookup(markdown) = %v, %v", f, ok)
 	}
-	if _, ok := Lookup("pdf"); ok {
-		t.Fatal("Lookup(pdf) found a format")
+	if f, ok := fs.Lookup("pdf"); !ok || f.Available() || f.Unavailable == "" {
+		t.Fatalf("Lookup(pdf) = %v, %v", f, ok)
 	}
-	for _, f := range Formats {
-		if f.Name == "" || strings.Trim(f.Name, "abcdefghijklmnopqrstuvwxyz") != "" || f.Write == nil {
+	if _, ok := fs.Lookup("docx"); ok {
+		t.Fatal("Lookup(docx) found a format")
+	}
+	if f, _ := NewFormats(&PDFOptions{Typst: "typst"}).Lookup("pdf"); !f.Available() {
+		t.Fatal("PDF is not available with a Typst program")
+	}
+	for _, f := range fs {
+		if f.Name == "" || strings.Trim(f.Name, "abcdefghijklmnopqrstuvwxyz") != "" {
 			t.Errorf("format %q is not valid", f.Name)
 		}
 	}
@@ -25,7 +33,7 @@ func TestLookup(t *testing.T) {
 func markdown(t *testing.T, d *Document) string {
 	t.Helper()
 	var b strings.Builder
-	if err := markdownFormat.Write(&b, d); err != nil {
+	if err := markdownFormat.Write(context.Background(), &b, d); err != nil {
 		t.Fatal(err)
 	}
 	return b.String()
@@ -92,7 +100,7 @@ func TestHTML(t *testing.T) {
 	}
 	calls := 0
 	var b strings.Builder
-	err = htmlFormat.Write(&b, &Document{
+	err = htmlFormat.Write(context.Background(), &b, &Document{
 		Title: `Plan <script>alert(1)</script>`, Classification: "Restricted", Version: 3,
 		UpdatedAt: time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC),
 		URL:       "https://wiki.example/t/s/d/x/plan",

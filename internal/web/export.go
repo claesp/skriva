@@ -27,7 +27,7 @@ func (s *Server) handleExportPage(w http.ResponseWriter, r *http.Request, n *sto
 	s.render(w, r, http.StatusOK, "export", "Export "+n.Title, struct {
 		nodePage
 		Formats []export.Format
-	}{page, export.Formats})
+	}{page, s.opts.Formats})
 }
 
 // handleExport sends the export of a document as a file to download.
@@ -65,8 +65,8 @@ func (s *Server) handleExportText(w http.ResponseWriter, r *http.Request, n *sto
 // exportFile makes the export of node n in the format of the request. If
 // ok is false, the function sent an error page.
 func (s *Server) exportFile(w http.ResponseWriter, r *http.Request, n *store.Node) (f export.Format, data []byte, ok bool) {
-	f, found := export.Lookup(r.PathValue("format"))
-	if !found || n.IsFolder() {
+	f, found := s.opts.Formats.Lookup(r.PathValue("format"))
+	if !found || !f.Available() || n.IsFolder() {
 		s.notFound(w, r)
 		return f, nil, false
 	}
@@ -97,7 +97,7 @@ func (s *Server) exportFile(w http.ResponseWriter, r *http.Request, n *store.Nod
 		},
 	}
 	var buf bytes.Buffer
-	if err := f.Write(&buf, d); err != nil {
+	if err := f.Write(r.Context(), &buf, d); err != nil {
 		s.serverError(w, r, err)
 		return f, nil, false
 	}

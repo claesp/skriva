@@ -88,6 +88,11 @@ scripts/test-integration.sh -run '^$' -bench AccessLargeSpace ./internal/store/
 test package gets its own database. The script removes the container
 after the tests. The tests run with the race detector.
 
+The script also runs the tests of the PDF export. It writes a small
+wrapper that runs Typst in a container (the image of the Containerfile)
+and sets `SKRIVA_TEST_TYPST` to the wrapper. Without this variable, for
+example with `make test`, the tests of the PDF export are skipped.
+
 The HTTP tests in `internal/web` use a fake identity provider. The
 end-to-end test in `e2e` uses the real Keycloak login form.
 

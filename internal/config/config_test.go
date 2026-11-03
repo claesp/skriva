@@ -125,3 +125,32 @@ func TestGroupRoles(t *testing.T) {
 		t.Fatal("expected an error for an item without a role")
 	}
 }
+
+func TestTypstPath(t *testing.T) {
+	dir := t.TempDir()
+	prog := filepath.Join(dir, "typst")
+	text := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(text, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if path, err := (&Config{Typst: prog}).TypstPath(); err != nil || path != prog {
+		t.Fatalf("TypstPath = %q, %v", path, err)
+	}
+	for _, bad := range []string{text, dir, filepath.Join(dir, "missing")} {
+		if _, err := (&Config{Typst: bad}).TypstPath(); err == nil {
+			t.Errorf("TypstPath(%q) did not fail", bad)
+		}
+	}
+	// Without SKRIVA_TYPST, the function finds the program in the PATH.
+	t.Setenv("PATH", dir)
+	if path, err := (&Config{}).TypstPath(); err != nil || path != prog {
+		t.Fatalf("TypstPath from PATH = %q, %v", path, err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	if _, err := (&Config{}).TypstPath(); err == nil {
+		t.Fatal("TypstPath found a program in an empty PATH")
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/clpe/skriva/internal/auth"
 	"github.com/clpe/skriva/internal/config"
 	"github.com/clpe/skriva/internal/db"
+	"github.com/clpe/skriva/internal/export"
 	"github.com/clpe/skriva/internal/secret"
 	"github.com/clpe/skriva/internal/store"
 	"github.com/clpe/skriva/internal/web"
@@ -89,7 +90,17 @@ func run(log *slog.Logger) error {
 	}
 	registry := auth.NewRegistry(cfg.BaseURL.String(), st.ClientSecret)
 
+	var pdf *export.PDFOptions
+	if path, err := cfg.TypstPath(); err != nil {
+		if cfg.Typst != "" {
+			return err
+		}
+		log.Info("the PDF export is not available", "reason", err)
+	} else {
+		pdf = &export.PDFOptions{Typst: path}
+	}
 	handler, err := web.New(st, web.Options{
+		Formats:          export.NewFormats(pdf),
 		BaseURL:          cfg.BaseURL,
 		SecureCookies:    cfg.SecureCookies(),
 		SystemAuth:       systemAuth,

@@ -6,7 +6,11 @@
 make image
 ```
 
-The result is the image `localhost/skriva:latest`.
+The result is the image `localhost/skriva:latest`. The image contains
+the [Typst](https://typst.app) program for the PDF export. The server
+writes temporary files for the PDF export into `/tmp`. If the root file
+system of the container is read-only, mount a `tmpfs` at `/tmp`, for
+example `--read-only --tmpfs /tmp:uid=65532,mode=0700`.
 
 ## Run the container
 
