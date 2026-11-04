@@ -15,6 +15,7 @@ import (
 	"github.com/claesp/skriva/internal/auth"
 	"github.com/claesp/skriva/internal/config"
 	"github.com/claesp/skriva/internal/db"
+	"github.com/claesp/skriva/internal/diagram"
 	"github.com/claesp/skriva/internal/export"
 	"github.com/claesp/skriva/internal/secret"
 	"github.com/claesp/skriva/internal/store"
@@ -99,8 +100,18 @@ func run(log *slog.Logger) error {
 	} else {
 		pdf = &export.PDFOptions{Typst: path}
 	}
+	var diagrams *diagram.Renderer
+	if path, err := cfg.MmdrPath(); err != nil {
+		if cfg.Mmdr != "" {
+			return err
+		}
+		log.Info("Mermaid diagrams are not available", "reason", err)
+	} else {
+		diagrams = diagram.New(diagram.Options{Program: path})
+	}
 	handler, err := web.New(st, web.Options{
 		Formats:          export.NewFormats(pdf),
+		Diagrams:         diagrams,
 		BaseURL:          cfg.BaseURL,
 		SecureCookies:    cfg.SecureCookies(),
 		SystemAuth:       systemAuth,

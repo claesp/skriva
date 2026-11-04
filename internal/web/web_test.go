@@ -15,12 +15,14 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/claesp/skriva/internal/diagram"
 	"github.com/claesp/skriva/internal/export"
 	"github.com/claesp/skriva/internal/store"
 	"github.com/claesp/skriva/internal/testdb"
@@ -136,6 +138,7 @@ func newEnv(t *testing.T) *env {
 	}
 	s, err := New(st, Options{
 		Formats:          export.NewFormats(pdf),
+		Diagrams:         diagram.New(diagram.Options{Program: mmdrProgram(t), Timeout: 30 * time.Second}),
 		BaseURL:          base,
 		SystemAuth:       idp,
 		SystemAdminGroup: "sysadmins",
@@ -152,6 +155,26 @@ func newEnv(t *testing.T) *env {
 	srv := httptest.NewServer(s)
 	t.Cleanup(srv.Close)
 	return &env{t: t, srv: srv, st: st, dft: dft, sp: sp}
+}
+
+// mmdrProgram returns the path of the mmdr program for the tests. It is
+// SKRIVA_TEST_MMDR, or a fake program. The fake program fails if the
+// text ends with "-->". Else it writes an SVG image with the text and a
+// javascript: link, the same as a "click" line of Mermaid.
+func mmdrProgram(t *testing.T) string {
+	if path := os.Getenv("SKRIVA_TEST_MMDR"); path != "" {
+		return path
+	}
+	prog := filepath.Join(t.TempDir(), "mmdr")
+	script := `#!/bin/sh
+src=$(cat)
+case "$src" in *'-->') echo 'error: invalid flowchart edge syntax: A-->' >&2; exit 1;; esac
+printf '<svg xmlns="http://www.w3.org/2000/svg"><a href="javascript:alert(1)"><text>%s</text></a></svg>' "$src"
+`
+	if err := os.WriteFile(prog, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return prog
 }
 
 // client is a browser with a cookie jar that does not follow redirects.
@@ -1923,5 +1946,71 @@ func TestChangeCodes(t *testing.T) {
 	events, err := e.st.AuditEvents(ctx, nil, 0, 1)
 	if err != nil || len(events) != 1 || !strings.Contains(events[0].Details, "from dflt to main") {
 		t.Fatalf("audit = %+v, %v", events, err)
+	}
+}
+
+func TestDiagrams(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob")
+	const good, bad = "flowchart LR\n  accTitle: Review\n  A[Write] --> B[Review]", "flowchart LR\n  A -->"
+	code := func(src string) string {
+		js, _ := json.Marshal(src)
+		return `{"type":"codeBlock","attrs":{"language":"mermaid"},"content":[{"type":"text","text":` + string(js) + `}]}`
+	}
+	id := bob.create("document", "", "Flow", `{"type":"doc","content":[`+code(good)+`,`+code(bad)+`]}`)
+	other := bob.create("document", "", "Other", "")
+
+	// The page refers to the image of the good diagram, and shows the text
+	// and the error of the bad diagram.
+	img := sp + "/diagram/" + id + "/" + diagram.Key(good)
+	page := readBody(t, bob.get(sp+"/d/"+id+"/flow"))
+	for _, want := range []string{
+		`<figure class="diagram"><img src="` + img + `" alt="Review"></figure>`,
+		`<figure class="diagram-error"><pre><code class="language-mermaid">flowchart LR`,
+		`<figcaption>The diagram has an error: invalid flowchart edge syntax: A`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("page does not contain %q:\n%s", want, page)
+		}
+	}
+
+	// The image is an SVG file in a sandbox, thus its links do not work.
+	resp := bob.get(img)
+	wantStatus(t, resp, http.StatusOK)
+	h := resp.Header
+	if h.Get("Content-Type") != "image/svg+xml" || !strings.Contains(h.Get("Content-Security-Policy"), "sandbox") ||
+		h.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("headers: %v", h)
+	}
+	if b := readBody(t, resp); !strings.HasPrefix(b, "<svg") || !strings.Contains(b, "Write") {
+		t.Fatalf("image: %.200q", b)
+	}
+	// Only the diagrams of the document have images.
+	wantStatus(t, bob.get(sp+"/diagram/"+other+"/"+diagram.Key(good)), http.StatusNotFound)
+	wantStatus(t, bob.get(sp+"/diagram/"+id+"/"+diagram.Key(bad)), http.StatusNotFound)
+	wantStatus(t, bob.get(sp+"/diagram/"+id+"/xyz"), http.StatusNotFound)
+	if resp := e.anon().get(img); resp.StatusCode == http.StatusOK {
+		t.Fatal("a user that is not signed in can read the image")
+	}
+
+	// An old version refers to the image of its own text.
+	wantStatus(t, bob.save(id, "Flow", `{"type":"doc","content":[]}`, 1), http.StatusSeeOther)
+	wantStatus(t, bob.get(img), http.StatusNotFound)
+	old := readBody(t, bob.get(sp+"/history/"+id+"/1"))
+	if !strings.Contains(old, img+"?v=1") {
+		t.Fatalf("version 1 does not refer to the image:\n%s", old)
+	}
+	wantStatus(t, bob.get(img+"?v=1"), http.StatusOK)
+	wantStatus(t, bob.get(img+"?v=2"), http.StatusNotFound)
+	wantStatus(t, bob.get(img+"?v=x"), http.StatusNotFound)
+
+	// The HTML export contains the image. The Markdown export contains
+	// the text.
+	wantStatus(t, bob.save(id, "Flow", `{"type":"doc","content":[`+code(good)+`]}`, 2), http.StatusSeeOther)
+	if b := readBody(t, bob.get(sp+"/export/"+id+"/html")); !strings.Contains(b, `<img src="data:image/svg+xml;base64,`) {
+		t.Fatalf("HTML export has no diagram:\n%s", b)
+	}
+	if b := readBody(t, bob.get(sp+"/export/"+id+"/markdown")); !strings.Contains(b, "```mermaid\nflowchart LR\n") {
+		t.Fatalf("Markdown export has no diagram:\n%s", b)
 	}
 }

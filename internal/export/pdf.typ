@@ -3,7 +3,9 @@
 // data. Typst shows strings from JSON as text, thus the text cannot
 // contain Typst code. The Go code in pdf.go prepares the data: the links
 // are absolute URLs, and the source of an image is a file in the folder,
-// or "" if the file does not contain the image.
+// or "" if the file does not contain the image. A code block with a
+// Mermaid diagram has the attribute "src" with the file of the image, or
+// "error" with an error message.
 
 #let data = json("doc.json")
 #let classification = upper(data.classification)
@@ -125,10 +127,17 @@
     align(align-of(n), heading(level: attr(n, "level", 1), inline(n)))
   } else if t == "blockquote" {
     block(inset: (left: 1em), stroke: (left: 1.5pt + luma(180)), emph(blocks(children(n))))
+  } else if t == "codeBlock" and attr(n, "src", "") != "" {
+    // A Mermaid diagram. The Go code wrote the image.
+    picture(n)
   } else if t == "codeBlock" {
     let code = children(n).map(c => c.at("text", default: "")).join()
     block(fill: luma(244), inset: 0.8em, radius: 3pt, width: 100%,
       raw(if code == none { "" } else { code }, block: true, lang: attr(n, "language", none)))
+    let error = attr(n, "error", "")
+    if error != "" {
+      text(size: 0.85em, fill: luma(90), upper(error.first()) + error.slice(error.first().len()) + ".")
+    }
   } else if t == "horizontalRule" {
     line(length: 100%, stroke: 0.5pt + luma(160))
   } else if t == "bulletList" {

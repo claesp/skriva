@@ -3,6 +3,7 @@ package export
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"html/template"
 	"io"
 	"time"
@@ -84,8 +85,31 @@ func writeHTML(_ context.Context, w io.Writer, d *Document) error {
 	}{
 		d.Title, d.Classification, d.Version,
 		d.UpdatedAt.UTC().Format(time.RFC3339), d.URL, template.CSS(htmlStyle),
-		body.HTMLWith(d.Links, doc.HTMLOptions{DataImages: true}),
+		body.HTMLWith(d.Links, doc.HTMLOptions{DataImages: true, Diagram: embedDiagrams(d.Diagram)}),
 	})
+}
+
+// errDiagramSize tells that the file has no room for a diagram.
+var errDiagramSize = errors.New("the diagrams are too large for the file")
+
+// embedDiagrams returns the Diagram option of doc.HTMLWith. The images
+// are data URIs. All diagrams together can have MaxEmbeddedBytes.
+func embedDiagrams(get func(string) ([]byte, error)) func(string) (string, error) {
+	if get == nil {
+		return nil
+	}
+	total := 0
+	return func(source string) (string, error) {
+		svg, err := get(source)
+		if err != nil {
+			return "", err
+		}
+		if total+len(svg) > MaxEmbeddedBytes {
+			return "", errDiagramSize
+		}
+		total += len(svg)
+		return "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(svg), nil
+	}
 }
 
 // embedImages changes the "file:" source of each image to a data URI.
@@ -148,6 +172,10 @@ h1 { font-weight: 400; font-size: 2.25rem; line-height: 1.15; margin: 0 0 1.5rem
 .prose blockquote { margin-left: 0; padding-left: 1.2em; border-left: 2px solid var(--line); font-style: italic; }
 .prose hr { margin: 2.5em 0; border: 0; border-top: 1px solid var(--line); }
 .prose img { max-width: 100%; height: auto; }
+.prose figure { margin: 0 0 1.25em; }
+.prose figure.diagram img { display: block; }
+.prose figure.diagram-error pre { margin-bottom: 0.4em; }
+.prose figcaption { color: var(--muted); font-size: 0.85em; font-variant-ligatures: none; }
 .prose code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82em; font-variant-ligatures: none; }
 .prose :not(pre) > code { padding: 0.1em 0.3em; background: var(--panel); border-radius: 3px; }
 .prose pre { overflow-x: auto; padding: 0.9em 1em; background: var(--panel); border-radius: 4px; line-height: 1.5; }

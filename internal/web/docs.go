@@ -43,6 +43,7 @@ func (s *Server) spaceRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/history/{id}", s.node(rbac.DocRead, s.handleHistory))
 	mux.Handle("GET "+p+"/history/{id}/{version}", s.node(rbac.DocRead, s.handleRevision))
 	mux.Handle("GET "+p+"/compare/{id}", s.node(rbac.DocRead, s.handleCompare))
+	mux.Handle("GET "+p+"/diagram/{id}/{key}", s.node(rbac.DocRead, s.handleDiagram))
 	mux.Handle("GET "+p+"/export/{id}", s.node(rbac.DocRead, s.handleExportPage))
 	mux.Handle("GET "+p+"/export/{id}/{format}", s.node(rbac.DocRead, s.handleExport))
 	mux.Handle("GET "+p+"/export/{id}/{format}/text", s.node(rbac.DocRead, s.handleExportText))
@@ -271,7 +272,7 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request, n *store.Nod
 	}
 	var html template.HTML
 	if !n.IsFolder() {
-		if html, err = renderBody(r, n.Body); err != nil {
+		if html, err = renderBody(r, n.Body, s.diagramURLs(r, n, 0)); err != nil {
 			s.serverError(w, r, err)
 			return
 		}
@@ -305,13 +306,14 @@ func links(r *http.Request) doc.Links {
 	return doc.Links{Wiki: b + "/w/", Files: b + "/files/", Doc: b + "/d/"}
 }
 
-// renderBody converts a saved body to HTML.
-func renderBody(r *http.Request, body string) (template.HTML, error) {
+// renderBody converts a saved body to HTML. diagrams is the Diagram
+// option of doc.HTMLWith.
+func renderBody(r *http.Request, body string, diagrams func(string) (string, error)) (template.HTML, error) {
 	d, err := doc.Parse([]byte(body), nil)
 	if err != nil {
 		return "", err
 	}
-	return d.HTML(links(r)), nil
+	return d.HTMLWith(links(r), doc.HTMLOptions{Diagram: diagrams}), nil
 }
 
 // editorBody converts a saved body to the JSON for the editor. The
@@ -885,7 +887,7 @@ func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store
 		s.serverError(w, r, err)
 		return
 	}
-	html, err := renderBody(r, rev.Body)
+	html, err := renderBody(r, rev.Body, s.diagramURLs(r, n, version))
 	if err != nil {
 		s.serverError(w, r, err)
 		return

@@ -64,6 +64,7 @@ These rules apply to the tree:
 | `/{tenant}/{space}/trash` | The trash of the space. |
 | `/{tenant}/{space}/link-targets?q=` | JSON: the pages for the list of pages in the link bar of the editor. |
 | `/{tenant}/{space}/files/{id}` | An uploaded image. A `POST` to `/{tenant}/{space}/files` uploads an image. |
+| `/{tenant}/{space}/diagram/{id}/{key}` | The image of a Mermaid diagram in a document. `?v=` selects an old version. See [Mermaid diagrams](#mermaid-diagrams). |
 
 - The tenant code and the space code have 2 to 16 characters from
   `a-z`, `0-9` and `-`, for example `acme` and `handbook`. The first and
@@ -115,6 +116,7 @@ space `default0` ("Default").
 | `internal/secret`   | Encrypts the client secrets of the tenants. |
 | `internal/doc`      | Checks the documents. Converts a document to HTML, Markdown and plain text. |
 | `internal/export`   | Makes the export files of a document. See [Export](#export). |
+| `internal/diagram`  | Makes the images of Mermaid diagrams with the mmdr program. See [Mermaid diagrams](#mermaid-diagrams). |
 | `internal/slug`     | Makes slugs from titles. |
 | `internal/diff`     | Compares two sequences (the Myers algorithm). |
 | `internal/web`      | Contains the HTTP handlers, middleware and templates. |
@@ -353,6 +355,33 @@ all formats in the list.
 - The download has `Content-Disposition: attachment` and the file name
   `{slug}{extension}` (or `{id}{extension}` for an empty slug). The responses have
   `Cache-Control: no-store`, the same as the pages.
+
+### Mermaid diagrams
+
+A Mermaid diagram is a code block with the language `mermaid`. The
+document stores only the text. The server makes the image with the
+[mmdr](https://github.com/1jehuang/mermaid-rs-renderer) program
+(mermaid-rs-renderer), thus the browser needs no JavaScript. mmdr is
+one static program in Rust. It does not use a browser or Node.js.
+
+- The page shows each diagram as an `img` element. The URL contains the
+  ID of the document and a key of the text (the first 16 bytes of its
+  SHA-256 hash, `diagram.Key`). The page CSP does not permit `data:`
+  images, thus the page refers to the image.
+- The page renders each diagram before it sends the HTML. Thus it can
+  show the error message of mmdr below the text of a bad diagram.
+- `/diagram/{id}/{key}` reads the document (or the version in `?v=`),
+  finds the diagram with the key, and sends its image. The server does
+  not store images. Thus the URL works on each server of a cluster.
+- `diagram.Renderer` keeps the recent images and error messages in a
+  cache in memory (32 MB). A key is the same only for the same text.
+  Thus the cache needs no invalidation.
+- The HTML export contains the images as `data:` URIs. The PDF export
+  writes the images into the temporary folder of Typst. The Markdown
+  export keeps the text of the diagram.
+- Without the mmdr program (`SKRIVA_MMDR`), a diagram is a code block.
+
+See [Security](security.md#mermaid-diagrams) for the limits.
 
 ### Audit log
 

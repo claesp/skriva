@@ -261,3 +261,52 @@ func FuzzParse(f *testing.F) {
 		}
 	})
 }
+
+func TestDiagrams(t *testing.T) {
+	d := mustParse(t, `{"type":"doc","content":[
+	{"type":"codeBlock","attrs":{"language":"mermaid"},"content":[{"type":"text","text":"graph TD\n  accTitle: Flow\n  A-->B"}]},
+	{"type":"codeBlock","attrs":{"language":"go"},"content":[{"type":"text","text":"x"}]},
+	{"type":"codeBlock","attrs":{"language":"mermaid"},"content":[{"type":"text","text":"graph TD; A-->"}]}]}`)
+	if n := len(d.Diagrams()); n != 2 {
+		t.Fatalf("Diagrams = %d, want 2", n)
+	}
+	// Without the option, a diagram is a code block.
+	if got := string(d.HTML(links)); !strings.Contains(got, `<code class="language-mermaid">graph TD`) {
+		t.Fatalf("HTML without diagrams = %s", got)
+	}
+	got := string(d.HTMLWith(links, HTMLOptions{Diagram: func(src string) (string, error) {
+		if strings.HasSuffix(src, "-->") {
+			return "", errors.New("the diagram has an error: <b>bad</b>")
+		}
+		return "/t/s/diagram/abc/123", nil
+	}}))
+	for _, want := range []string{
+		`<figure class="diagram"><img src="/t/s/diagram/abc/123" alt="Flow"></figure>`,
+		`<pre><code class="language-go">x</code></pre>`,
+		`<figure class="diagram-error"><pre><code class="language-mermaid">graph TD; A--&gt;</code></pre>` +
+			`<figcaption>The diagram has an error: &lt;b&gt;bad&lt;/b&gt;.</figcaption></figure>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("HTML does not contain %s:\n%s", want, got)
+		}
+	}
+	// The policy removes a data URI from a page, but not from an export.
+	data := func(string) (string, error) { return "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=", nil }
+	if got := string(d.HTMLWith(links, HTMLOptions{Diagram: data})); strings.Contains(got, "data:") {
+		t.Errorf("page HTML contains a data URI: %s", got)
+	}
+	if got := string(d.HTMLWith(links, HTMLOptions{Diagram: data, DataImages: true})); !strings.Contains(got, `src="data:image/svg+xml;base64,`) {
+		t.Errorf("export HTML has no data URI: %s", got)
+	}
+}
+
+func TestDiagramAlt(t *testing.T) {
+	for src, want := range map[string]string{
+		"graph TD\nA-->B": "Diagram",
+		"graph TD\n  accTitle: Steps of a review \n  accDescr: The author asks a reviewer.\nA-->B": "Steps of a review. The author asks a reviewer",
+	} {
+		if got := DiagramAlt(src); got != want {
+			t.Errorf("DiagramAlt(%q) = %q, want %q", src, got, want)
+		}
+	}
+}

@@ -259,6 +259,28 @@ HTML file and the PDF file contain the images that the user can read
 
   The server removes the temporary folder after each export.
 
+## Mermaid diagrams
+
+The server runs the mmdr program for the text of a diagram. The text
+comes from a user.
+
+- The SVG of mmdr is not safe in a page. It escapes the text of labels,
+  but a `click` line makes a link, also a `javascript:` link. Thus the
+  page shows the SVG only in an `img` element. A browser does not run
+  scripts or follow links in an image. The image response has the same
+  policy as an SVG file: `Content-Security-Policy` with `sandbox`, and
+  `X-Content-Type-Options: nosniff`. Thus the links do not work, also
+  when a user opens the image directly.
+- The image URL needs the permission `doc.read` on the document. The
+  server sends only the images of the diagrams in the document.
+- The process gets the text on the standard input. It has an empty
+  environment and no arguments from the user. It has a time limit of 5
+  seconds. At most two processes run at the same time.
+- The text can have a maximum of 32 KB. The image can have a maximum of
+  4 MB. The error message has a maximum of 300 characters.
+- The page shows the error message of mmdr as text. The message can
+  contain parts of the diagram, but the HTML converter escapes it.
+
 ## SQL injection
 
 All queries use parameters. No query contains text from a user.
@@ -266,9 +288,12 @@ All queries use parameters. No query contains text from a user.
 ## Container
 
 The container image contains only the program, the Typst program for
-the PDF export, an empty temporary folder and CA certificates. The
-programs run as user 65532, not as root. The Containerfile gets Typst
-from its official image, with a fixed digest.
+the PDF export, the mmdr program for Mermaid diagrams, an empty
+temporary folder and CA certificates. The programs run as user 65532,
+not as root. The Containerfile gets Typst from its official image, with
+a fixed digest. The project of mmdr has no static binary. Thus the
+Containerfile builds mmdr from source, with a fixed version and the
+lock file of the crate (`cargo install --locked`).
 
 ## Information classification
 

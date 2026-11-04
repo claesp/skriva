@@ -172,3 +172,32 @@ func TestEmbedImages(t *testing.T) {
 		}
 	}
 }
+
+func TestHTMLDiagrams(t *testing.T) {
+	body, err := doc.Parse([]byte(`{"type":"doc","content":[`+
+		`{"type":"codeBlock","attrs":{"language":"mermaid"},"content":[{"type":"text","text":"graph TD"}]},`+
+		`{"type":"codeBlock","attrs":{"language":"mermaid"},"content":[{"type":"text","text":"bad"}]}]}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	if err := writeHTML(context.Background(), &b, &Document{Title: "T", Body: body, Diagram: fakeDiagram}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`<figure class="diagram"><img src="data:image/svg+xml;base64,`,
+		`<figcaption>The diagram has an error: bad text.</figcaption>`,
+	} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("HTML does not contain %s", want)
+		}
+	}
+	// The Markdown keeps the text of the diagram.
+	var m strings.Builder
+	if err := writeMarkdown(context.Background(), &m, &Document{Title: "T", Body: body, Diagram: fakeDiagram}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(m.String(), "```mermaid\ngraph TD\n```") {
+		t.Errorf("Markdown = %s", m.String())
+	}
+}

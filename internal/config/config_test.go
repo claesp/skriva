@@ -154,3 +154,21 @@ func TestTypstPath(t *testing.T) {
 		t.Fatal("TypstPath found a program in an empty PATH")
 	}
 }
+
+func TestMmdrPath(t *testing.T) {
+	dir := t.TempDir()
+	prog := filepath.Join(dir, "mmdr")
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if path, err := (&Config{Mmdr: prog}).MmdrPath(); err != nil || path != prog {
+		t.Fatalf("MmdrPath = %q, %v", path, err)
+	}
+	if _, err := (&Config{Mmdr: dir}).MmdrPath(); err == nil || !strings.Contains(err.Error(), "SKRIVA_MMDR") {
+		t.Fatalf("MmdrPath(dir) = %v", err)
+	}
+	t.Setenv("PATH", dir)
+	if path, err := (&Config{}).MmdrPath(); err != nil || path != prog {
+		t.Fatalf("MmdrPath from PATH = %q, %v", path, err)
+	}
+}

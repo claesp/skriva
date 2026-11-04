@@ -13,14 +13,23 @@ RUN mkdir -p /out/root && mkdir -m 700 /out/root/tmp
 # The digest makes sure that the build always uses the same version.
 FROM ghcr.io/typst/typst:0.15.1@sha256:5410828f3b97f32fcc3eb95fed614c962d03f480f74cea06936540b95037d2ee AS typst
 
+# The mmdr program for Mermaid diagrams (mermaid-rs-renderer). The
+# project has no static binary, thus the stage builds the program from
+# source. The build on Alpine Linux makes a static binary. The lock file
+# of the crate sets the versions of all dependencies.
+FROM docker.io/library/rust:1.99-alpine AS mmdr
+RUN cargo install --locked --no-default-features --features cli \
+	--root /out mermaid-rs-renderer@0.3.1
+
 # Run stage. The image contains only the binaries, a temporary folder
 # and CA certificates.
 FROM scratch
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build --chown=65532:65532 /out/root/ /
 COPY --from=typst /bin/typst /typst
+COPY --from=mmdr /out/bin/mmdr /mmdr
 COPY --from=build /out/skriva /skriva
-ENV SKRIVA_TYPST=/typst TMPDIR=/tmp
+ENV SKRIVA_TYPST=/typst SKRIVA_MMDR=/mmdr TMPDIR=/tmp
 USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/skriva"]

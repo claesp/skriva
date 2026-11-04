@@ -130,13 +130,20 @@ func (r *pdfRunner) write(ctx context.Context, w io.Writer, d *Document) error {
 	if err != nil {
 		return err
 	}
+	diagrams, err := writeDiagrams(dir, body, d.Diagram)
+	if err != nil {
+		return err
+	}
 	data := pdfData{
 		Title: d.Title, Classification: d.Classification, Version: d.Version,
 		Updated: d.UpdatedAt.UTC().Format(time.RFC3339), URL: d.URL, Body: body,
 	}
 	pdf, err := r.compile(ctx, dir, &data, d.UpdatedAt)
-	if err != nil && images > 0 && ctx.Err() == nil {
+	if err != nil && images+diagrams > 0 && ctx.Err() == nil {
 		body.MapImages(func(string) string { return "" })
+		for _, c := range body.Diagrams() {
+			delete(c.Attrs, "src")
+		}
 		pdf, err = r.compile(ctx, dir, &data, d.UpdatedAt)
 	}
 	if err != nil {
@@ -189,6 +196,41 @@ func writeImages(dir string, body *doc.Node, get func(id string) (*Image, error)
 		}
 	}
 	return n, err
+}
+
+// writeDiagrams writes the images of the Mermaid diagrams of body into
+// the folder dir. The code block of a diagram gets the attribute "src"
+// with the file name, or "error" with the error message. All images
+// together can have MaxEmbeddedBytes. The function returns the number of
+// images in the folder.
+func writeDiagrams(dir string, body *doc.Node, get func(string) ([]byte, error)) (int, error) {
+	if get == nil {
+		return 0, nil
+	}
+	n, total := 0, 0
+	for _, c := range body.Diagrams() {
+		source, _ := c.DiagramSource()
+		svg, err := get(source)
+		if err == nil && total+len(svg) > MaxEmbeddedBytes {
+			err = errDiagramSize
+		}
+		if c.Attrs == nil {
+			c.Attrs = map[string]any{}
+		}
+		if err != nil {
+			c.Attrs["error"] = err.Error()
+			continue
+		}
+		n++
+		name := "img/diagram-" + strconv.Itoa(n) + ".svg"
+		if err := os.WriteFile(filepath.Join(dir, name), svg, 0o600); err != nil {
+			return n, err
+		}
+		total += len(svg)
+		c.Attrs["src"] = name
+		c.Attrs["alt"] = doc.DiagramAlt(source)
+	}
+	return n, nil
 }
 
 // compile writes doc.json and main.typ, and runs Typst. Typst can read

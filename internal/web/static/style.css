@@ -639,6 +639,24 @@ code, kbd, samp, pre, textarea { font-variant-ligatures: none; }
 }
 .prose pre code { font-size: 0.82em; }
 
+/* A Mermaid diagram is an image. If the diagram has an error, the page
+   shows the text of the diagram and the error message below it. In the
+   editor, a label tells that a code block is a diagram. */
+.prose figure.diagram img { display: block; }
+.prose figure.diagram-error pre { margin-bottom: 0.4em; }
+.prose figcaption { font-family: var(--sans); font-size: var(--ui-size); color: var(--muted); }
+/* The error message can contain text of the diagram. Inter changes "->"
+   to an arrow (contextual alternates). The message must show the text. */
+.prose .diagram-error figcaption { font-feature-settings: "calt" 0; font-variant-ligatures: none; }
+.ProseMirror pre:has(> code.language-mermaid)::before {
+  content: "Mermaid diagram";
+  display: block;
+  margin-bottom: 0.4em;
+  font-family: var(--sans);
+  font-size: var(--ui-size);
+  color: var(--muted);
+}
+
 /* Tables in the text use the sans-serif font, as in Tufte CSS. */
 .prose table { width: auto; max-width: 100%; font-family: var(--sans); font-size: 0.8em; line-height: 1.45; }
 .prose th { color: var(--fg); border-bottom: 1px solid var(--muted); }

@@ -36,6 +36,10 @@ type Document struct {
 	// exist or the user cannot read it. If Image is nil, the images keep
 	// their URLs.
 	Image func(id string) (*Image, error)
+	// Diagram returns the SVG image of a Mermaid diagram. The error
+	// message is for the user. If Diagram is nil, a diagram is a code
+	// block. The Markdown format always keeps the text of a diagram.
+	Diagram func(source string) ([]byte, error)
 }
 
 // Image is an uploaded image.

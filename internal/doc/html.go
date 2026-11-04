@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/claesp/skriva/internal/slug"
 	"github.com/microcosm-cc/bluemonday"
@@ -72,6 +73,7 @@ func newPolicy() *bluemonday.Policy {
 	p.AllowAttrs("colspan", "rowspan").Matching(bluemonday.Integer).OnElements("td", "th")
 	p.AllowAttrs("start").Matching(bluemonday.Integer).OnElements("ol")
 	p.AllowAttrs("loading").Matching(regexp.MustCompile(`^lazy$`)).OnElements("img")
+	p.AllowAttrs("class").Matching(regexp.MustCompile(`^diagram(-error)?$`)).OnElements("figure")
 	p.AllowElements("u", "s")
 	p.AllowURLSchemes("http", "https", "mailto")
 	p.RequireNoReferrerOnLinks(true)
@@ -99,12 +101,17 @@ type HTMLOptions struct {
 	// DataImages permits images in data URIs. Use MapImages to put the
 	// data of the images into the sources before the conversion.
 	DataImages bool
+	// Diagram returns the URL of the image of a Mermaid diagram. If it
+	// returns an error, the page shows the text of the diagram and the
+	// error message. Thus the message must be safe for the user. If
+	// Diagram is nil, a diagram is a code block.
+	Diagram func(source string) (src string, err error)
 }
 
 // HTMLWith converts the document to safe HTML with the options o. See
 // HTML.
 func (n *Node) HTMLWith(l Links, o HTMLOptions) template.HTML {
-	h := htmlWriter{links: l, ids: map[string]bool{}}
+	h := htmlWriter{links: l, ids: map[string]bool{}, diagram: o.Diagram}
 	h.children(n)
 	p := policy
 	if o.DataImages {
@@ -116,9 +123,10 @@ func (n *Node) HTMLWith(l Links, o HTMLOptions) template.HTML {
 }
 
 type htmlWriter struct {
-	b     strings.Builder
-	links Links
-	ids   map[string]bool
+	b       strings.Builder
+	links   Links
+	ids     map[string]bool
+	diagram func(string) (string, error)
 }
 
 func (h *htmlWriter) children(n *Node) {
@@ -134,6 +142,34 @@ func (h *htmlWriter) wrap(tag, attrs string, n *Node) {
 	h.open(tag, attrs)
 	h.children(n)
 	h.close(tag)
+}
+
+func (h *htmlWriter) codeBlock(n *Node) {
+	attrs := ""
+	if l := attrString(n.Attrs, "language"); l != "" {
+		attrs = ` class="language-` + l + `"`
+	}
+	h.b.WriteString("<pre><code" + attrs + ">")
+	h.b.WriteString(html.EscapeString(plainInline(n)))
+	h.b.WriteString("</code></pre>")
+}
+
+// diagramBlock writes the image of a Mermaid diagram. If there is no
+// image, it writes the text of the diagram and the error message.
+func (h *htmlWriter) diagramBlock(n *Node, source string) {
+	src, err := h.diagram(source)
+	if err == nil {
+		h.b.WriteString(`<figure class="diagram"><img src="` + html.EscapeString(src) +
+			`" alt="` + html.EscapeString(DiagramAlt(source)) + `"></figure>`)
+		return
+	}
+	msg := []rune(err.Error())
+	if len(msg) > 0 {
+		msg[0] = unicode.ToUpper(msg[0])
+	}
+	h.b.WriteString(`<figure class="diagram-error">`)
+	h.codeBlock(n)
+	h.b.WriteString(`<figcaption>` + html.EscapeString(string(msg)) + `.</figcaption></figure>`)
 }
 
 func alignClass(n *Node) string {
@@ -182,13 +218,11 @@ func (h *htmlWriter) node(n *Node) {
 	case "blockquote":
 		h.wrap("blockquote", "", n)
 	case "codeBlock":
-		attrs := ""
-		if l := attrString(n.Attrs, "language"); l != "" {
-			attrs = ` class="language-` + l + `"`
+		if src, ok := n.DiagramSource(); ok && h.diagram != nil {
+			h.diagramBlock(n, src)
+			return
 		}
-		h.b.WriteString("<pre><code" + attrs + ">")
-		h.b.WriteString(html.EscapeString(plainInline(n)))
-		h.b.WriteString("</code></pre>")
+		h.codeBlock(n)
 	case "bulletList":
 		h.wrap("ul", "", n)
 	case "orderedList":

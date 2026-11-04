@@ -96,6 +96,9 @@ func (s *Server) exportFile(w http.ResponseWriter, r *http.Request, n *store.Nod
 			return &export.Image{ContentType: f.ContentType, Data: f.Data}, nil
 		},
 	}
+	if s.opts.Diagrams != nil {
+		d.Diagram = func(source string) ([]byte, error) { return s.renderDiagram(r, source) }
+	}
 	var buf bytes.Buffer
 	if err := f.Write(r.Context(), &buf, d); err != nil {
 		s.serverError(w, r, err)

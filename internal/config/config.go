@@ -55,6 +55,9 @@ type Config struct {
 	// Typst is the path of the Typst program for the PDF export, or ""
 	// to find "typst" in the PATH. See TypstPath.
 	Typst string
+	// Mmdr is the path of the mmdr program for Mermaid diagrams, or "" to
+	// find "mmdr" in the PATH. See MmdrPath.
+	Mmdr string
 }
 
 // GroupRole is one item of SKRIVA_GROUP_ROLES.
@@ -67,22 +70,30 @@ type GroupRole struct {
 // set, the program must exist. If it is not set, the function finds
 // "typst" in the PATH. The error tells why the PDF export is not
 // available.
-func (c *Config) TypstPath() (string, error) {
-	if c.Typst == "" {
-		path, err := exec.LookPath("typst")
+func (c *Config) TypstPath() (string, error) { return programPath("SKRIVA_TYPST", c.Typst, "typst") }
+
+// MmdrPath returns the path of the mmdr program, the same as TypstPath.
+// The error tells why Skriva cannot show Mermaid diagrams.
+func (c *Config) MmdrPath() (string, error) { return programPath("SKRIVA_MMDR", c.Mmdr, "mmdr") }
+
+// programPath returns the path of a program. value is the value of the
+// variable env. If value is "", the function finds name in the PATH.
+func programPath(env, value, name string) (string, error) {
+	if value == "" {
+		path, err := exec.LookPath(name)
 		if err != nil {
-			return "", fmt.Errorf("SKRIVA_TYPST is not set and %w", err)
+			return "", fmt.Errorf("%s is not set and %w", env, err)
 		}
 		return path, nil
 	}
-	info, err := os.Stat(c.Typst)
+	info, err := os.Stat(value)
 	switch {
 	case err != nil:
-		return "", fmt.Errorf("SKRIVA_TYPST: %w", err)
+		return "", fmt.Errorf("%s: %w", env, err)
 	case info.IsDir() || info.Mode().Perm()&0o111 == 0:
-		return "", fmt.Errorf("SKRIVA_TYPST: %s is not a program", c.Typst)
+		return "", fmt.Errorf("%s: %s is not a program", env, value)
 	}
-	return c.Typst, nil
+	return value, nil
 }
 
 // SecureCookies reports whether cookies must have the Secure attribute.
@@ -111,6 +122,7 @@ func load(getenv func(string) string) (*Config, error) {
 		SystemAdminGroup: get("SKRIVA_SYSTEM_ADMIN_GROUP", ""),
 		AdminGroup:       get("SKRIVA_ADMIN_GROUP", ""),
 		Typst:            get("SKRIVA_TYPST", ""),
+		Mmdr:             get("SKRIVA_MMDR", ""),
 	}
 
 	secretValue, err := fromEnvOrFile(getenv, "SKRIVA_OIDC_CLIENT_SECRET")

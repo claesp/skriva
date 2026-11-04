@@ -93,6 +93,11 @@ wrapper that runs Typst in a container (the image of the Containerfile)
 and sets `SKRIVA_TEST_TYPST` to the wrapper. Without this variable, for
 example with `make test`, the tests of the PDF export are skipped.
 
+The script also builds the `mmdr` stage of the Containerfile, and sets
+`SKRIVA_TEST_MMDR` to a wrapper that runs mmdr in a container. The
+first build takes some minutes. Without this variable, the HTTP tests
+use a small shell script in place of mmdr, and `TestMmdr` is skipped.
+
 The HTTP tests in `internal/web` use a fake identity provider. The
 end-to-end test in `e2e` uses the real Keycloak login form.
 

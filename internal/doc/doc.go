@@ -149,6 +149,48 @@ func (n *Node) MapLinks(fn func(string) string) {
 	})
 }
 
+// DiagramLanguage is the language of a code block that contains a
+// Mermaid diagram.
+const DiagramLanguage = "mermaid"
+
+// DiagramSource returns the text of n if n is a code block with a Mermaid
+// diagram.
+func (n *Node) DiagramSource() (string, bool) {
+	if n.Type != "codeBlock" || attrString(n.Attrs, "language") != DiagramLanguage {
+		return "", false
+	}
+	return plainInline(n), true
+}
+
+// Diagrams returns the code blocks with Mermaid diagrams, in the sequence
+// of the document.
+func (n *Node) Diagrams() []*Node {
+	var out []*Node
+	n.walk(func(x *Node) {
+		if _, ok := x.DiagramSource(); ok {
+			out = append(out, x)
+		}
+	})
+	return out
+}
+
+// accRE finds the accessible title and description of a Mermaid diagram.
+var accRE = regexp.MustCompile(`(?m)^\s*acc(Title|Descr)\s*:\s*(.+?)\s*$`)
+
+// DiagramAlt returns the text alternative of a Mermaid diagram. It is the
+// accessible title and description of the diagram (accTitle and
+// accDescr), or "Diagram".
+func DiagramAlt(source string) string {
+	var parts []string
+	for _, m := range accRE.FindAllStringSubmatch(source, 2) {
+		parts = append(parts, strings.TrimSuffix(m[2], "."))
+	}
+	if len(parts) == 0 {
+		return "Diagram"
+	}
+	return strings.Join(parts, ". ")
+}
+
 func (n *Node) walk(fn func(*Node)) {
 	fn(n)
 	for _, c := range n.Content {

@@ -29,6 +29,7 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"github.com/claesp/skriva/internal/diagram"
 	"github.com/claesp/skriva/internal/export"
 	"github.com/claesp/skriva/internal/store"
 )
@@ -125,6 +126,9 @@ type Options struct {
 	// Formats are the export formats. Nil gives export.NewFormats(nil):
 	// all formats without PDF.
 	Formats export.Formats
+	// Diagrams makes the images of Mermaid diagrams. If it is nil, a
+	// diagram is a code block.
+	Diagrams *diagram.Renderer
 }
 
 // Server is the HTTP handler for the application.

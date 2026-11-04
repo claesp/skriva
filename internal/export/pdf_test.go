@@ -3,6 +3,7 @@ package export
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -63,6 +64,41 @@ func TestWriteImages(t *testing.T) {
 	}
 }
 
+// fakeDiagram returns a small SVG image, or an error for the text "bad".
+func fakeDiagram(source string) ([]byte, error) {
+	if source == "bad" {
+		return nil, errors.New("the diagram has an error: bad text")
+	}
+	return []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" fill="#ececff"/></svg>`), nil
+}
+
+// TestWriteDiagrams checks the diagram files without Typst.
+func TestWriteDiagrams(t *testing.T) {
+	body, err := doc.Parse([]byte(`{"type":"doc","content":[`+
+		`{"type":"codeBlock","attrs":{"language":"mermaid"},"content":[{"type":"text","text":"accTitle: Flow\ngraph TD"}]},`+
+		`{"type":"codeBlock","attrs":{"language":"mermaid"},"content":[{"type":"text","text":"bad"}]},`+
+		`{"type":"codeBlock","attrs":{"language":"go"},"content":[{"type":"text","text":"x"}]}]}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(dir+"/img", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	n, err := writeDiagrams(dir, body, fakeDiagram)
+	if err != nil || n != 1 {
+		t.Fatalf("writeDiagrams = %d, %v", n, err)
+	}
+	a, b, c := body.Content[0].Attrs, body.Content[1].Attrs, body.Content[2].Attrs
+	if a["src"] != "img/diagram-1.svg" || a["alt"] != "Flow" || b["error"] != "the diagram has an error: bad text" ||
+		b["src"] != nil || c["src"] != nil {
+		t.Fatalf("attributes = %v, %v, %v", a, b, c)
+	}
+	if _, err := os.Stat(dir + "/img/diagram-1.svg"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPDF(t *testing.T) {
 	o := pdfOptions(t)
 	f := pdfFormat(o)
@@ -77,6 +113,8 @@ func TestPDF(t *testing.T) {
 			`{"type":"paragraph","content":[{"type":"text","text":"Go","marks":[{"type":"link","attrs":{"href":"wiki:Start"}}]}]},`+
 			`{"type":"image","attrs":{"src":"file:`+good+`","alt":"Flow"}},`+
 			`{"type":"image","attrs":{"src":"file:`+bad+`","alt":"Bad"}},`+
+			`{"type":"codeBlock","attrs":{"language":"mermaid"},"content":[{"type":"text","text":"graph TD"}]},`+
+			`{"type":"codeBlock","attrs":{"language":"mermaid"},"content":[{"type":"text","text":"bad"}]},`+
 			`{"type":"table","content":[{"type":"tableRow","content":[`+
 			`{"type":"tableHeader","attrs":{"colspan":2},"content":[{"type":"paragraph","content":[{"type":"text","text":"A"}]}]}]},`+
 			`{"type":"tableRow","content":[{"type":"tableCell","content":[]},{"type":"tableCell","content":[]}]}]}]}`), nil)
@@ -89,6 +127,7 @@ func TestPDF(t *testing.T) {
 			Body:      body,
 			Links:     doc.Links{Wiki: "https://wiki.example/t/s/w/"},
 			Image:     func(id string) (*Image, error) { return images[id], nil },
+			Diagram:   fakeDiagram,
 		}
 	}
 	check := func(name string, d *Document) {

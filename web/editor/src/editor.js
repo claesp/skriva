@@ -450,6 +450,13 @@ function start(root) {
     codeBlock: (c) => c.toggleCodeBlock(),
     horizontalRule: (c) => c.setHorizontalRule(),
     table: (c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }),
+    // A Mermaid diagram is a code block with the language "mermaid". The
+    // server makes the image when it shows the page.
+    diagram: (c) => c.insertContent({
+      type: 'codeBlock',
+      attrs: { language: 'mermaid' },
+      content: [{ type: 'text', text: 'flowchart LR\n  A[Start] --> B[End]' }],
+    }),
     addRow: (c) => c.addRowAfter(),
     deleteRow: (c) => c.deleteRow(),
     addColumn: (c) => c.addColumnAfter(),
@@ -475,6 +482,7 @@ function start(root) {
     taskList: () => editor.isActive('taskList'),
     blockquote: () => editor.isActive('blockquote'),
     codeBlock: () => editor.isActive('codeBlock'),
+    diagram: () => editor.isActive('codeBlock', { language: 'mermaid' }),
     link: () => editor.isActive('link'),
   }
 

@@ -261,6 +261,7 @@ a format that applies at the cursor has a gray background.
 | Link | Add, change or remove a link. See [Links](#links). |
 | Image | Add an image from your computer. See [Images](#images). |
 | Table | Add a table with 3 rows and 3 columns. The first row is the header row. |
+| Mermaid diagram | Add a diagram. See [Mermaid diagrams](#mermaid-diagrams). |
 | Classification | Select the information classification of the document. See [Information classification](#information-classification). |
 
 When the cursor is in a table, the toolbar shows more buttons: **Add
@@ -284,6 +285,7 @@ You can also use the keyboard and some Markdown syntax:
 | `[ ]` and a space | A task list. |
 | `>` and a space | A quotation. |
 | ```` ``` ```` | A code block. |
+| ```` ```mermaid ```` and a space | A Mermaid diagram. |
 | `**text**`, `*text*`, `` `text` ``, `~~text~~` | Bold, italic, code, strikethrough. |
 | `[[Title]]` | A wiki link. |
 
@@ -383,6 +385,47 @@ show it. The wiki shows a message with the steps above. In dark mode,
 images have a white background, because diagrams often have dark lines
 on a transparent background.
 
+### Mermaid diagrams
+
+You can write a diagram as text in the
+[Mermaid](https://mermaid.js.org/) language. The page shows the
+diagram as an image.
+
+1. Click **Mermaid diagram** in the toolbar. The editor adds a code
+   block with a small example. You can also type ```` ```mermaid ````
+   and a space at the start of a line.
+2. Write the diagram in the code block. The label "Mermaid diagram"
+   is above the block.
+3. Save the document. The page shows the image.
+
+For example:
+
+```text
+flowchart LR
+  accTitle: Steps of a review
+  A[Write] --> B[Review]
+  B -->|Changes| A
+  B --> C[Publish]
+```
+
+- Write `accTitle:` and `accDescr:` lines in the diagram to give the
+  image a description for screen readers. Without them, the description
+  is "Diagram".
+- If the diagram has an error, the page shows the text of the diagram
+  and the error message.
+- The editor shows the text, not the image. Save the document to see
+  the image.
+- Links in a diagram (`click` lines) do not work, because the diagram
+  is an image.
+- The server makes the image with the
+  [mmdr](https://github.com/1jehuang/mermaid-rs-renderer) program. It
+  supports the most usual types of diagrams, for example flowcharts,
+  sequence, class, state and Gantt diagrams. Some features of Mermaid
+  are not available, and the layout can be different from the Mermaid
+  web site.
+- If the server does not have the mmdr program, the page shows a
+  diagram as a code block.
+
 ## Export a document
 
 **Export** shows the file formats for an export. An export is a file
@@ -461,6 +504,11 @@ title and the classification.
 The file contains the uploaded images, with a maximum of 32 MB. An image
 from a different site shows as a box with its description. Links
 refer to Skriva.
+
+The HTML file and the PDF file contain the images of the Mermaid
+diagrams. The Markdown file contains the text of each diagram in a
+```` ```mermaid ```` code block. Many Markdown programs show it as a
+diagram.
 
 The PDF file uses the fonts of the Typst program, not the fonts of the
 page. A draw.io diagram with formatted labels (HTML labels) can show the

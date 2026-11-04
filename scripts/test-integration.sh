@@ -1,7 +1,9 @@
 #!/bin/sh
 # Run the integration tests against a temporary PostgreSQL container.
-# The tests of the PDF export run Typst in a container. The script
-# removes the container and the temporary files after the tests.
+# The tests of the PDF export run Typst in a container. The tests of
+# Mermaid diagrams run mmdr in a container. The script builds the mmdr
+# stage of the Containerfile for this. The script removes the containers
+# and the temporary files after the tests.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -29,6 +31,18 @@ mkdir "$WORK/tmp"
 chmod +x "$WORK/typst"
 podman image exists "$TYPST_IMAGE" || podman pull -q "$TYPST_IMAGE" >/dev/null
 export SKRIVA_TEST_TYPST="$WORK/typst" SKRIVA_TEST_TYPST_TMP="$WORK/tmp"
+
+# mmdr reads the diagram from the standard input. The first build of the
+# stage takes some minutes. Later builds use the cache of Podman.
+MMDR_IMAGE=localhost/skriva-mmdr:test
+podman build -q --target mmdr -t "$MMDR_IMAGE" -f "$ROOT/Containerfile" "$ROOT" >/dev/null
+{
+	echo '#!/bin/sh'
+	echo "export HOME='$HOME' PATH='$PATH' XDG_RUNTIME_DIR='${XDG_RUNTIME_DIR:-}'"
+	echo "exec podman run --rm -i --network none --read-only --entrypoint /out/bin/mmdr '$MMDR_IMAGE' \"\$@\""
+} >"$WORK/mmdr"
+chmod +x "$WORK/mmdr"
+export SKRIVA_TEST_MMDR="$WORK/mmdr"
 
 podman run -d --rm --name "$NAME" \
 	-e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test \
