@@ -246,15 +246,19 @@ func (r *pdfRunner) compile(ctx context.Context, dir string, data *pdfData, crea
 	return pdf, nil
 }
 
-// limitedBuffer keeps the first max bytes that are written to it.
+// limitedBuffer keeps the first max bytes that are written to it. The
+// buffer is a field, not an embedded type. Else io.Copy uses the ReadFrom
+// method of bytes.Buffer, which has no limit.
 type limitedBuffer struct {
-	bytes.Buffer
+	buf bytes.Buffer
 	max int
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
-	if room := b.max - b.Len(); room > 0 {
-		b.Buffer.Write(p[:min(len(p), room)])
+	if room := b.max - b.buf.Len(); room > 0 {
+		b.buf.Write(p[:min(len(p), room)])
 	}
 	return len(p), nil
 }
+
+func (b *limitedBuffer) String() string { return b.buf.String() }
