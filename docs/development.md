@@ -167,9 +167,8 @@ To update a font:
      npm install --package-lock-only --ignore-scripts --no-audit --no-fund
    ```
 
-3. Change the folder names in the `@font-face` rules in `style.css` and
-   in `preloadFonts` in `internal/web/render.go`. `TestFonts` checks
-   that all URLs are correct.
+3. Change the folder names in the `@font-face` rules in `style.css`.
+   `TestFonts` checks that all URLs are correct.
 
 The server tells browsers to keep the font files for one year. Thus do
 not change a file in a folder. A new version must have a new folder.

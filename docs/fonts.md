@@ -120,8 +120,10 @@ them off for code (`font-variant-ligatures: none`).
   is small, thus the optical size of Inter is not necessary. Source
   Serif 4 uses the weight and optical size axes. The browser selects the
   optical size from the font size (`font-optical-sizing: auto`).
-- The pages tell the browser to get the two most used files first
-  (`<link rel="preload">`): Inter Latin and Source Serif 4 Latin.
+- The pages do not preload the fonts (`<link rel="preload">`). The
+  browser keeps the files, thus a preload helps only on the first visit.
+  On the next pages, Firefox uses the font that it loaded before and not
+  the preloaded file. Then it shows a warning in the console.
 - The files are in `internal/web/static/fonts`. The name of each folder
   contains the package version. The server tells the browser to keep the
   files for one year.

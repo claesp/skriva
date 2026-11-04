@@ -354,8 +354,7 @@ func TestPublicRoutes(t *testing.T) {
 	wantStatus(t, c.get("/static/"), http.StatusNotFound)
 }
 
-// TestFonts checks that each font in the style sheet and each preload
-// is available, and that the browser can keep the font files.
+// TestFonts checks that each font in the style sheet is available, and that the browser can keep the font files.
 func TestFonts(t *testing.T) {
 	e := newEnv(t)
 	c := e.anon()
@@ -377,15 +376,10 @@ func TestFonts(t *testing.T) {
 			t.Errorf("%s: cache control %q", u[1], cc)
 		}
 	}
-	for _, f := range preloadFonts {
-		if !strings.Contains(string(css), `url("`+strings.TrimPrefix(f, "/static/")+`")`) {
-			t.Errorf("preload %s is not in the style sheet", f)
-		}
-	}
+	// The page does not preload fonts. See docs/fonts.md.
 	page := c.get("/dflt/signed-out")
-	body := readBody(t, page)
-	if !strings.Contains(body, `<link rel="preload" href="`+preloadFonts[0]+`" as="font" type="font/woff2" crossorigin>`) {
-		t.Errorf("page does not preload the fonts")
+	if body := readBody(t, page); strings.Contains(body, `rel="preload"`) {
+		t.Errorf("page preloads files")
 	}
 	if csp := page.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "font-src 'self'") {
 		t.Errorf("CSP does not permit the fonts: %s", csp)
