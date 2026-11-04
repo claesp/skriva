@@ -8,7 +8,7 @@
   <tbody>
   {{range .Formats}}
   <tr>
-    <td>{{.Label}} ({{.Extension}})</td>
+    <td>{{.Label}}</td>
     <td class="optional">{{.Description}}{{if not .Available}} <em>{{.Unavailable}}</em>{{end}}</td>
     <td class="actions">
       {{template "tool" (when (and .Available .Text) (tool (print $.SpacePath "/export/" $.Data.Node.PublicID "/" .Name "/text") "source" (print "Show " .Label " as text")))}}
