@@ -9,10 +9,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/clpe/skriva/internal/doc"
-	"github.com/clpe/skriva/internal/rbac"
-	"github.com/clpe/skriva/internal/slug"
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/slug"
+	"github.com/claesp/skriva/internal/store"
 )
 
 const (

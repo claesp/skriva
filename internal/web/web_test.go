@@ -21,9 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clpe/skriva/internal/export"
-	"github.com/clpe/skriva/internal/store"
-	"github.com/clpe/skriva/internal/testdb"
+	"github.com/claesp/skriva/internal/export"
+	"github.com/claesp/skriva/internal/store"
+	"github.com/claesp/skriva/internal/testdb"
 )
 
 func TestSafeReturnTo(t *testing.T) {

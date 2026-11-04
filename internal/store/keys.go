@@ -16,7 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/clpe/skriva/internal/secret"
+	"github.com/claesp/skriva/internal/secret"
 )
 
 // KEK is a key encryption key. It encrypts (wraps) the keys of the

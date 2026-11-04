@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/clpe/skriva/internal/secret"
+	"github.com/claesp/skriva/internal/secret"
 )
 
 // Tenant is the main organizational unit. Each tenant has its own

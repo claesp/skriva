@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clpe/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/doc"
 )
 
 var markdownFormat = Format{

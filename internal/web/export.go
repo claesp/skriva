@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/clpe/skriva/internal/doc"
-	"github.com/clpe/skriva/internal/export"
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/export"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // handleExportPage shows the export formats of a document. A folder has

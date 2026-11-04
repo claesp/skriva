@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // Limits of the fields of a classification level.

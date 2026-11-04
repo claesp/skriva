@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/clpe/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/rbac"
 )
 
 // Session is a signed-in browser session. A session belongs to one tenant,

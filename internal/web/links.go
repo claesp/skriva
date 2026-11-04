@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // linkTarget is one item of the result of handleLinkTargets.

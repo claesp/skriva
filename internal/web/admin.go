@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/clpe/skriva/internal/rbac"
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/store"
 )
 
 var roleNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)

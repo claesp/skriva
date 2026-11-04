@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/clpe/skriva/internal/rbac"
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // trashHandler is a handler for one item in the trash.

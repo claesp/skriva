@@ -13,8 +13,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/clpe/skriva/internal/db"
-	"github.com/clpe/skriva/internal/secret"
+	"github.com/claesp/skriva/internal/db"
+	"github.com/claesp/skriva/internal/secret"
 )
 
 // New makes a new, migrated database and returns a pool for it. The test

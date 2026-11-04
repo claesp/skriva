@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/clpe/skriva/internal/slug"
+	"github.com/claesp/skriva/internal/slug"
 	"github.com/microcosm-cc/bluemonday"
 )
 

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clpe/skriva/internal/secret"
-	"github.com/clpe/skriva/internal/store"
-	"github.com/clpe/skriva/internal/testdb"
+	"github.com/claesp/skriva/internal/secret"
+	"github.com/claesp/skriva/internal/store"
+	"github.com/claesp/skriva/internal/testdb"
 )
 
 func newBox(t *testing.T) *secret.Box {

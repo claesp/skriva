@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // loginTTL is the maximum time between the start of a login and the

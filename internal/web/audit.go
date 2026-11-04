@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // auditPageSize is the number of events on one page of the audit log.

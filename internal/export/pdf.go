@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clpe/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/doc"
 )
 
 // PDFOptions configure the PDF format. The format uses the Typst program

@@ -12,7 +12,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/clpe/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/doc"
 )
 
 // Document is the data of a document for an export.

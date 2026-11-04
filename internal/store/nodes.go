@@ -15,7 +15,7 @@ import (
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 
-	"github.com/clpe/skriva/internal/slug"
+	"github.com/claesp/skriva/internal/slug"
 )
 
 // Node kinds.

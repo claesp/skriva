@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/clpe/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/rbac"
 )
 
 // querier is the part of pgxpool.Pool and pgx.Tx that the helpers use.

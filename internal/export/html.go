@@ -7,7 +7,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/clpe/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/doc"
 )
 
 var htmlFormat = Format{

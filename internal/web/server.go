@@ -29,8 +29,8 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/clpe/skriva/internal/export"
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/export"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // routeMux is the part of http.ServeMux that the route functions use.

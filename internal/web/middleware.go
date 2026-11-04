@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clpe/skriva/internal/rbac"
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // maxFormBytes is the largest permitted request body.

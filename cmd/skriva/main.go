@@ -12,13 +12,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/clpe/skriva/internal/auth"
-	"github.com/clpe/skriva/internal/config"
-	"github.com/clpe/skriva/internal/db"
-	"github.com/clpe/skriva/internal/export"
-	"github.com/clpe/skriva/internal/secret"
-	"github.com/clpe/skriva/internal/store"
-	"github.com/clpe/skriva/internal/web"
+	"github.com/claesp/skriva/internal/auth"
+	"github.com/claesp/skriva/internal/config"
+	"github.com/claesp/skriva/internal/db"
+	"github.com/claesp/skriva/internal/export"
+	"github.com/claesp/skriva/internal/secret"
+	"github.com/claesp/skriva/internal/store"
+	"github.com/claesp/skriva/internal/web"
 )
 
 func main() {

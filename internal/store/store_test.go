@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clpe/skriva/internal/db"
-	"github.com/clpe/skriva/internal/doc"
-	"github.com/clpe/skriva/internal/rbac"
-	"github.com/clpe/skriva/internal/store"
-	"github.com/clpe/skriva/internal/testdb"
+	"github.com/claesp/skriva/internal/db"
+	"github.com/claesp/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/store"
+	"github.com/claesp/skriva/internal/testdb"
 )
 
 var ctx = context.Background()

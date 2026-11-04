@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/clpe/skriva/internal/secret"
+	"github.com/claesp/skriva/internal/secret"
 )
 
 // Errors that the store returns.

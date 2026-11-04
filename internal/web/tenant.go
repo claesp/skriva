@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/clpe/skriva/internal/rbac"
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/store"
 )
 
 const (

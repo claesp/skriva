@@ -19,7 +19,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/clpe/skriva/internal/slug"
+	"github.com/claesp/skriva/internal/slug"
 )
 
 // Node is one node of a document.

@@ -16,7 +16,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // ErrUnavailable tells that the identity provider did not respond.

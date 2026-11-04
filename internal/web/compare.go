@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/clpe/skriva/internal/diff"
-	"github.com/clpe/skriva/internal/doc"
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/diff"
+	"github.com/claesp/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // diffContext is the number of equal lines that the comparison shows

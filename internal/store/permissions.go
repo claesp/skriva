@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/clpe/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/rbac"
 )
 
 // The permission queries use these rules:

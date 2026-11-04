@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/clpe/skriva/internal/rbac"
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // maxUploadBytes is the largest size of an uploaded file.

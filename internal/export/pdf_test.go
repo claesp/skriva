@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clpe/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/doc"
 )
 
 // pdfOptions returns the options for a test with the real Typst program.

@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clpe/skriva/internal/secret"
+	"github.com/claesp/skriva/internal/secret"
 )
 
 // Config contains the settings of the installation.

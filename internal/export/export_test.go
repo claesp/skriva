@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clpe/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/doc"
 )
 
 func TestLookup(t *testing.T) {

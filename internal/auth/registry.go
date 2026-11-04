@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/store"
 )
 
 // ErrNotConfigured tells that the tenant has no OIDC settings.

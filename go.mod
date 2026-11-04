@@ -1,4 +1,4 @@
-module github.com/clpe/skriva
+module github.com/claesp/skriva
 
 go 1.26.0
 

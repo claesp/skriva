@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/clpe/skriva/internal/rbac"
-	"github.com/clpe/skriva/internal/store"
+	"github.com/claesp/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/store"
 )
 
 //go:embed templates/*.html
