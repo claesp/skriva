@@ -94,7 +94,7 @@ func (s *Store) tenantOfSpace(ctx context.Context, spaceID int64) (int64, error)
 	if ok {
 		return t, nil
 	}
-	if err := s.pool.QueryRow(ctx, "SELECT tenant_id FROM spaces WHERE id = $1", spaceID).Scan(&t); err != nil {
+	if err := s.keyPool.QueryRow(ctx, "SELECT tenant_id FROM spaces WHERE id = $1", spaceID).Scan(&t); err != nil {
 		return 0, notFound(err)
 	}
 	s.keys.mu.Lock()
@@ -120,7 +120,7 @@ func (s *Store) tenantKeys(ctx context.Context, tenantID int64) (*tenantKeys, er
 	if err := s.ensureKeys(ctx, tenantID); err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx, `
+	rows, err := s.keyPool.Query(ctx, `
 		SELECT purpose, version, wrapped, retired_at IS NULL FROM tenant_keys WHERE tenant_id = $1`, tenantID)
 	if err != nil {
 		return nil, err
@@ -183,7 +183,7 @@ func newAEAD(key []byte) (cipher.AEAD, error) {
 func (s *Store) ensureKeys(ctx context.Context, tenantID int64) error {
 	for _, purpose := range []string{purposeData, purposeSearch} {
 		var exists bool
-		if err := s.pool.QueryRow(ctx, `
+		if err := s.keyPool.QueryRow(ctx, `
 			SELECT EXISTS (SELECT 1 FROM tenant_keys WHERE tenant_id = $1 AND purpose = $2 AND retired_at IS NULL)`,
 			tenantID, purpose).Scan(&exists); err != nil {
 			return err
@@ -191,7 +191,7 @@ func (s *Store) ensureKeys(ctx context.Context, tenantID int64) error {
 		if exists {
 			continue
 		}
-		if err := s.insertKey(ctx, s.pool, tenantID, purpose, 1); err != nil {
+		if err := s.insertKey(ctx, s.keyPool, tenantID, purpose, 1); err != nil {
 			return err
 		}
 	}
@@ -314,6 +314,19 @@ func (s *Store) open(ctx context.Context, tenantID int64, place string, data []b
 		return nil, fmt.Errorf("%w: cannot decrypt %s", ErrKey, place)
 	}
 	return plain, nil
+}
+
+// forgetTenant removes the keys and the spaces of a deleted tenant from
+// memory.
+func (s *Store) forgetTenant(tenantID int64) {
+	s.keys.mu.Lock()
+	defer s.keys.mu.Unlock()
+	delete(s.keys.tenants, tenantID)
+	for space, t := range s.keys.spaceTenant {
+		if t == tenantID {
+			delete(s.keys.spaceTenant, space)
+		}
+	}
 }
 
 func (s *Store) forgetKeys(tenantID int64) {
@@ -481,6 +494,7 @@ func (s *Store) ReencryptBatch(ctx context.Context) (int, error) {
 			[]string{"sealed"}},
 	}
 	changed := 0
+	var failed []error
 	for _, q := range queries {
 		if changed >= reencryptBatchSize {
 			break
@@ -513,20 +527,15 @@ func (s *Store) ReencryptBatch(ctx context.Context) (int, error) {
 			return changed, err
 		}
 		for _, it := range items {
-			args := make([]any, 0, len(q.cols)+3)
-			var version int
-			for i, col := range q.cols {
-				place := fmt.Sprintf(it.place, col)
-				plain, err := s.open(ctx, it.tenant, place, it.values[i])
-				if err != nil {
-					return changed, err
-				}
-				ct, v, err := s.seal(ctx, it.tenant, place, plain)
-				if err != nil {
-					return changed, err
-				}
-				args = append(args, ct)
-				version = v
+			args, version, err := s.reencryptItem(ctx, it.tenant, it.place, q.cols, it.values)
+			if errors.Is(err, ErrKey) {
+				// Do not stop for one value that cannot be decrypted.
+				// The value keeps its key version, thus the key stays.
+				failed = append(failed, fmt.Errorf("%s: %w", fmt.Sprintf(it.place, q.cols[0]), err))
+				continue
+			}
+			if err != nil {
+				return changed, err
 			}
 			// The update applies only if the value did not change after
 			// the query: a user can save the document at the same time.
@@ -537,7 +546,27 @@ func (s *Store) ReencryptBatch(ctx context.Context) (int, error) {
 			changed++
 		}
 	}
-	return changed, s.deleteUnusedKeys(ctx)
+	return changed, errors.Join(append(failed, s.deleteUnusedKeys(ctx))...)
+}
+
+// reencryptItem decrypts the values of the columns cols of one row, and
+// encrypts them again with the current key of the tenant. All values get
+// the same key, thus the key version of the row is correct.
+func (s *Store) reencryptItem(ctx context.Context, tenantID int64, place string, cols []string, values [][]byte) ([]any, int, error) {
+	tk, err := s.tenantKeys(ctx, tenantID)
+	if err != nil {
+		return nil, 0, err
+	}
+	args := make([]any, 0, len(cols)+4)
+	for i, col := range cols {
+		p := fmt.Sprintf(place, col)
+		plain, err := s.open(ctx, tenantID, p, values[i])
+		if err != nil {
+			return nil, 0, err
+		}
+		args = append(args, sealWith(tk.data[tk.current], tk.current, tenantID, p, plain))
+	}
+	return args, tk.current, nil
 }
 
 // deleteUnusedKeys deletes the retired data keys that no value uses. A

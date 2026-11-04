@@ -173,8 +173,9 @@ space `default0` ("Default").
 The database prevents data from different tenants in one relation:
 
 - Composite foreign keys make sure that a group member and its group are
-  in the same tenant. The same applies to role bindings and to the space
-  of a role binding.
+  in the same tenant. The same applies to the user, the group and the
+  space of a role binding. A built-in role has no tenant, thus the store
+  checks the tenant of the role of a binding.
 - A composite foreign key makes sure that the parent of a node is in the
   same space.
 - Each store function that reads or changes tenant data has the tenant

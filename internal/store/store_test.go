@@ -1479,3 +1479,39 @@ func TestClassifications(t *testing.T) {
 		t.Fatalf("delete a tenant with documents: %v", err)
 	}
 }
+
+// A default role cannot be deleted. Else a new role with the same name
+// becomes the default role.
+func TestDeleteDefaultRole(t *testing.T) {
+	st := newStore(t)
+	tn := defaultTenant(t, st)
+	if err := st.CreateRole(ctx, tn.ID, "staff", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateSpace(ctx, tn.ID, "staff000", "Staff", ""); err != nil {
+		t.Fatal(err)
+	}
+	role := "staff"
+	if err := st.SetSpaceDefaultRole(ctx, tn.ID, "staff000", &role); err != nil {
+		t.Fatal(err)
+	}
+	roles, err := st.Roles(ctx, tn.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id int64
+	for _, r := range roles {
+		if r.Name == "staff" {
+			id = r.ID
+		}
+	}
+	if err := st.DeleteRole(ctx, tn.ID, id); !errors.Is(err, store.ErrRoleInUse) {
+		t.Fatalf("delete a default role: %v", err)
+	}
+	if err := st.SetSpaceDefaultRole(ctx, tn.ID, "staff000", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteRole(ctx, tn.ID, id); err != nil {
+		t.Fatalf("delete a role that is not a default role: %v", err)
+	}
+}

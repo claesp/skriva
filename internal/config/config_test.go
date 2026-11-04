@@ -95,11 +95,16 @@ func TestPreviousEncryptionKey(t *testing.T) {
 	}
 }
 
-func TestBaseURLWithPath(t *testing.T) {
-	m := validEnv()
-	m["SKRIVA_BASE_URL"] = "https://example.com/wiki"
-	if _, err := load(env(m)); err == nil {
-		t.Fatal("expected an error for a base URL with a path")
+func TestBadBaseURL(t *testing.T) {
+	for _, u := range []string{
+		"https://example.com/wiki", "https://example.com/?x=1", "https://example.com/?",
+		"https://example.com/#top", "https://user@example.com", "ftp://example.com", "/wiki",
+	} {
+		m := validEnv()
+		m["SKRIVA_BASE_URL"] = u
+		if _, err := load(env(m)); err == nil {
+			t.Errorf("no error for the base URL %q", u)
+		}
 	}
 }
 

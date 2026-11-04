@@ -32,8 +32,13 @@ var (
 // Store gives access to the database.
 type Store struct {
 	pool *pgxpool.Pool
-	box  *secret.Box
-	now  func() time.Time
+	// keyPool is a small pool only for the keys. The store reads keys
+	// also in a transaction or in a loop over rows, which hold a
+	// connection of pool. With one pool, these requests can wait for
+	// each other until all connections are in use.
+	keyPool *pgxpool.Pool
+	box     *secret.Box
+	now     func() time.Time
 	// kek wraps the keys of the tenants. keys keeps the unwrapped keys
 	// in memory.
 	kek  KEK
@@ -42,10 +47,25 @@ type Store struct {
 
 // New makes a Store that uses pool. box encrypts the client secrets of
 // the tenants, and it is the key encryption key (KEK) of the keys of the
-// tenants.
+// tenants. Call Close when the Store is not necessary any more.
 func New(pool *pgxpool.Pool, box *secret.Box) *Store {
-	return &Store{pool: pool, box: box, now: time.Now, kek: localKEK{box}, keys: newKeyring()}
+	cfg := pool.Config()
+	cfg.MaxConns, cfg.MinConns = keyPoolConns, 0
+	// NewWithConfig does not connect, thus it fails only for a
+	// configuration that is not valid. The configuration of pool is valid.
+	keyPool, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	if err != nil {
+		panic("store: key pool: " + err.Error())
+	}
+	return &Store{pool: pool, keyPool: keyPool, box: box, now: time.Now, kek: localKEK{box}, keys: newKeyring()}
 }
+
+// keyPoolConns is the largest number of connections for the keys.
+const keyPoolConns = 2
+
+// Close closes the connections of the store for the keys. It does not
+// close the pool of New.
+func (s *Store) Close() { s.keyPool.Close() }
 
 // Ping makes sure that the database responds.
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
@@ -56,25 +76,23 @@ func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 // uses.
 func (s *Store) DeleteExpired(ctx context.Context) error {
 	now := s.now()
-	if _, err := s.pool.Exec(ctx, "DELETE FROM sessions WHERE expires_at < $1", now); err != nil {
+	// Each step runs also if a step before it fails. Thus one value that
+	// cannot be decrypted does not stop all the cleanup.
+	exec := func(sql string, args ...any) error {
+		_, err := s.pool.Exec(ctx, sql, args...)
 		return err
 	}
-	if _, err := s.pool.Exec(ctx, "DELETE FROM oidc_states WHERE expires_at < $1", now); err != nil {
-		return err
-	}
-	if err := s.purgeTrash(ctx); err != nil {
-		return err
-	}
-	if _, err := s.pool.Exec(ctx, "DELETE FROM audit_events WHERE created_at < $1",
-		now.AddDate(0, 0, -AuditDays)); err != nil {
-		return err
-	}
-	// A file that no node uses after one day is an upload that the user
-	// did not save in a document.
-	_, err := s.pool.Exec(ctx, `
-		DELETE FROM files f WHERE f.created_at < $1
-		AND NOT EXISTS (SELECT 1 FROM file_refs r WHERE r.file_id = f.id)`, now.Add(-unusedFileAge))
-	return err
+	return errors.Join(
+		exec("DELETE FROM sessions WHERE expires_at < $1", now),
+		exec("DELETE FROM oidc_states WHERE expires_at < $1", now),
+		s.purgeTrash(ctx),
+		exec("DELETE FROM audit_events WHERE created_at < $1", now.AddDate(0, 0, -AuditDays)),
+		// A file that no node uses after one day is an upload that the
+		// user did not save in a document.
+		exec(`
+			DELETE FROM files f WHERE f.created_at < $1
+			AND NOT EXISTS (SELECT 1 FROM file_refs r WHERE r.file_id = f.id)`, now.Add(-unusedFileAge)),
+	)
 }
 
 // unusedFileAge is the time after which DeleteExpired removes a file that
@@ -106,7 +124,6 @@ func sqlState(err error) string {
 const (
 	codeUniqueViolation     = "23505"
 	codeForeignKeyViolation = "23503"
-	codeCheckViolation      = "23514"
 )
 
 // PublicIDLength is the length of a public node ID.

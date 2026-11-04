@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"regexp"
 	"slices"
@@ -530,7 +531,13 @@ func (s *Server) handleAdminRoleDelete(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	if !s.storeResult(w, r, s.store.DeleteRole(r.Context(), tenantOf(r).ID, id)) {
+	err := s.store.DeleteRole(r.Context(), tenantOf(r).ID, id)
+	if errors.Is(err, store.ErrRoleInUse) {
+		s.renderError(w, r, http.StatusConflict,
+			"The role is the default role of the tenant, a space or an item. Change the default role first.")
+		return
+	}
+	if !s.storeResult(w, r, err) {
 		return
 	}
 	http.Redirect(w, r, adminPath(r)+"/roles", http.StatusSeeOther)

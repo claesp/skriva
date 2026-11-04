@@ -229,6 +229,11 @@ CREATE INDEX nodes_classification_idx ON nodes (classification_id);
 CREATE INDEX nodes_trash_idx ON nodes (trash_id) WHERE trash_id IS NOT NULL;
 -- The items in the trash: the nodes that the users deleted.
 CREATE INDEX nodes_trash_root_idx ON nodes (space_id, deleted_at) WHERE trash_id = id;
+-- The deletion of a user sets these columns to NULL. Without the indexes,
+-- PostgreSQL reads the full table for each user of a deleted tenant.
+CREATE INDEX nodes_created_by_idx ON nodes (created_by) WHERE created_by IS NOT NULL;
+CREATE INDEX nodes_updated_by_idx ON nodes (updated_by) WHERE updated_by IS NOT NULL;
+CREATE INDEX nodes_deleted_by_idx ON nodes (deleted_by) WHERE deleted_by IS NOT NULL;
 
 -- Each saved version of a node.
 CREATE TABLE revisions (
@@ -245,6 +250,7 @@ CREATE TABLE revisions (
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (node_id, version)
 );
+CREATE INDEX revisions_author_idx ON revisions (author_id) WHERE author_id IS NOT NULL;
 
 -- An uploaded file, for example an image in a document. A file belongs
 -- to a space. The data is in the database, thus a backup of the database
@@ -263,6 +269,7 @@ CREATE TABLE files (
     UNIQUE (space_id, id)
 );
 CREATE INDEX files_created_idx ON files (created_at);
+CREATE INDEX files_created_by_idx ON files (created_by) WHERE created_by IS NOT NULL;
 
 -- The nodes that use a file, in one or more of their revisions. A user
 -- can read a file if the user can read one of these nodes. The server
@@ -299,8 +306,10 @@ CREATE INDEX node_links_token_idx ON node_links (space_id, target_token) WHERE t
 -- A role binding gives a role to one user or to one group. A binding
 -- without a space applies in all spaces of the tenant. A binding with a
 -- space applies only in that space. A binding with a node applies to that
--- node and its subtree. The composite foreign keys make sure that all
--- parts are in the same tenant and in the same space.
+-- node and its subtree. The composite foreign keys make sure that the
+-- user, the group, the space and the node are in the same tenant and in
+-- the same space. A built-in role has no tenant, thus the store checks
+-- the tenant of the role.
 CREATE TABLE role_bindings (
     id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id  bigint      NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
@@ -352,6 +361,7 @@ CREATE TABLE audit_events (
 );
 CREATE INDEX audit_events_tenant_idx ON audit_events (tenant_id, id DESC);
 CREATE INDEX audit_events_created_idx ON audit_events (created_at);
+CREATE INDEX audit_events_actor_idx ON audit_events (actor_id) WHERE actor_id IS NOT NULL;
 
 -- The database keeps only a SHA-256 hash of the session token. A NULL
 -- tenant_id identifies a system administrator session.

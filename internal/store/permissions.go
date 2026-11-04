@@ -13,8 +13,8 @@ import (
 //   - A role binding for a space applies only in that space. A role
 //     binding for a node (a folder or a document) applies to the node and
 //     its subtree. These
-//     bindings give only the space permissions of the role
-//     (rbac.Permission.SpaceScoped).
+//     bindings give only the space permissions of the role (the
+//     permissions that start with "doc.").
 //   - The default role of the tenant applies everywhere, except where a
 //     space or a node has its own default role. The nearest setting
 //     applies: first the node, then its parents, then the space, then the
@@ -24,8 +24,7 @@ import (
 //     permissions from bindings at a higher level.
 //
 // Thus a binding for a space or a folder can never give tenant.manage or
-// space.manage. The SQL uses 'doc.%' for the space permissions. Keep it
-// the same as rbac.Permission.SpaceScoped.
+// space.manage. The SQL uses 'doc.%' for the space permissions.
 
 // boundRoles returns SQL that selects the IDs of the roles of user u
 // through bindings to the user or to a group of the user. scope is an SQL

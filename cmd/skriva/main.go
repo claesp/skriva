@@ -53,6 +53,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	st := store.New(pool, box)
+	defer st.Close()
 	if cfg.PreviousEncryptionKey != nil {
 		previous, err := secret.New(cfg.PreviousEncryptionKey)
 		if err != nil {
@@ -149,6 +150,8 @@ func run(log *slog.Logger) error {
 		return err
 	case <-ctx.Done():
 	}
+	// A second signal stops the process at once.
+	stop()
 	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

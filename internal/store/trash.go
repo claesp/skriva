@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -35,9 +36,6 @@ type TrashItem struct {
 
 // IsFolder reports whether the item is a folder.
 func (t *TrashItem) IsFolder() bool { return t.Kind == KindFolder }
-
-// ExpiresAt returns the time at which DeleteExpired removes the item.
-func (t *TrashItem) ExpiresAt() time.Time { return t.DeletedAt.AddDate(0, 0, TrashDays) }
 
 // TrashNode moves a node and its subtree into the trash. The items of the
 // subtree that are in the trash already stay separate items. It returns
@@ -237,6 +235,7 @@ func (s *Store) purgeTrash(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var errs []error
 	for _, spaceID := range spaces {
 		err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 			if err := lockSpace(ctx, tx, spaceID); err != nil {
@@ -263,7 +262,10 @@ func (s *Store) purgeTrash(ctx context.Context) error {
 			// The cleanup task has no actor. Thus the log shows "System".
 			for _, it := range items {
 				title, err := s.openText(ctx, spaceID, titlePlace(spaceID, it.id), it.title)
-				if err != nil {
+				if errors.Is(err, ErrKey) {
+					// Delete the item also if the title is not readable.
+					title = "(The title cannot be decrypted.)"
+				} else if err != nil {
 					return err
 				}
 				if err := s.audit(ctx, tx, auditEntry{SpaceID: spaceID, Action: AuditNodePurge, Target: title,
@@ -274,10 +276,11 @@ func (s *Store) purgeTrash(ctx context.Context) error {
 			return deleteUnusedPaths(ctx, tx, spaceID)
 		})
 		if err != nil {
-			return err
+			// Try the other spaces also.
+			errs = append(errs, fmt.Errorf("space %d: %w", spaceID, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // itemCount describes the number of items in a subtree for the audit log.

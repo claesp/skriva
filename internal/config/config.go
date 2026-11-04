@@ -173,6 +173,8 @@ func load(getenv func(string) string) (*Config, error) {
 		errs = append(errs, errors.New("SKRIVA_BASE_URL: must be an absolute http or https URL"))
 	case base.Path != "" && base.Path != "/":
 		errs = append(errs, errors.New("SKRIVA_BASE_URL: must not have a path"))
+	case base.User != nil || base.RawQuery != "" || base.ForceQuery || base.Fragment != "":
+		errs = append(errs, errors.New("SKRIVA_BASE_URL: must not have a user, a query or a fragment"))
 	default:
 		base.Path = ""
 		c.BaseURL = base

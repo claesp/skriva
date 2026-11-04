@@ -280,15 +280,6 @@ func (s *Store) Roles(ctx context.Context, tenantID int64) ([]Role, error) {
 	return out, rows.Err()
 }
 
-// RoleExists reports whether the tenant can use a role with the given name.
-func (s *Store) RoleExists(ctx context.Context, tenantID int64, name string) (bool, error) {
-	err := checkRole(ctx, s.pool, tenantID, name)
-	if err == ErrInvalid {
-		return false, nil
-	}
-	return err == nil, err
-}
-
 // CreateRole makes a custom role in a tenant. It returns ErrConflict if
 // the tenant or a built-in role has the name already.
 func (s *Store) CreateRole(ctx context.Context, tenantID int64, name, description string, perms []rbac.Permission) error {
@@ -328,8 +319,14 @@ func (s *Store) CreateRole(ctx context.Context, tenantID int64, name, descriptio
 	return err
 }
 
+// ErrRoleInUse tells that a role is the default role of the tenant, of a
+// space or of an item.
+var ErrRoleInUse = errors.New("the role is a default role")
+
 // DeleteRole removes a custom role of a tenant and its bindings. Built-in
-// roles are permanent.
+// roles are permanent. The store refuses to delete a default role, with
+// ErrRoleInUse. Else a new role with the same name becomes the default
+// role.
 func (s *Store) DeleteRole(ctx context.Context, tenantID, id int64) error {
 	return s.tx(ctx, func(tx pgx.Tx) error {
 		var name string
@@ -338,6 +335,21 @@ func (s *Store) DeleteRole(ctx context.Context, tenantID, id int64) error {
 			tenantID, id).Scan(&name)
 		if err != nil {
 			return notFound(err)
+		}
+		// The functions that set a default role check that the role
+		// exists. Only a change at the same time as the delete can
+		// still use the name.
+		var used bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM tenants WHERE id = $1 AND default_role = $2)
+			    OR EXISTS (SELECT 1 FROM spaces WHERE tenant_id = $1 AND default_role = $2)
+			    OR EXISTS (SELECT 1 FROM nodes n JOIN spaces sp ON sp.id = n.space_id
+			               WHERE sp.tenant_id = $1 AND n.default_role = $2)`,
+			tenantID, name).Scan(&used); err != nil {
+			return err
+		}
+		if used {
+			return ErrRoleInUse
 		}
 		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, Action: AuditRoleDelete, Target: name})
 	})

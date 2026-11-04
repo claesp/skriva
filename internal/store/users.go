@@ -86,9 +86,11 @@ func (s *Store) SyncLogin(ctx context.Context, tenantID *int64, id Identity) (*U
 		if groups == nil {
 			groups = []string{}
 		}
+		// The sorted order of the names prevents a deadlock between two
+		// first logins with the same new groups.
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO groups (tenant_id, name, source)
-			SELECT DISTINCT $1::bigint, unnest($2::text[]), 'oidc'
+			SELECT DISTINCT $1::bigint, g, 'oidc' FROM unnest($2::text[]) g ORDER BY g
 			ON CONFLICT (tenant_id, source, name) DO NOTHING`, *tenantID, groups); err != nil {
 			return fmt.Errorf("insert groups: %w", err)
 		}

@@ -115,9 +115,14 @@ func embedDiagrams(get func(string) ([]byte, error)) func(string) (string, error
 // embedImages changes the "file:" source of each image to a data URI.
 // It changes body. An image that does not exist, an image of a type that
 // is not permitted and the images after MaxEmbeddedBytes keep their
-// sources.
+// sources. Each use of an image counts for MaxEmbeddedBytes, because the
+// file contains the data again for each use.
 func embedImages(body *doc.Node, get func(id string) (*Image, error)) error {
-	cache := map[string]string{}
+	type embedded struct {
+		uri  string // "" if the image is not embedded
+		size int
+	}
+	cache := map[string]embedded{}
 	total := 0
 	var err error
 	body.MapImages(func(src string) string {
@@ -125,19 +130,19 @@ func embedImages(body *doc.Node, get func(id string) (*Image, error)) error {
 		if !ok || err != nil {
 			return src
 		}
-		if uri, ok := cache[id]; ok {
-			return uri
+		e, ok := cache[id]
+		if !ok {
+			var img *Image
+			if img, err = get(id); err == nil && img != nil && embeddedTypes[img.ContentType] {
+				e = embedded{"data:" + img.ContentType + ";base64," + base64.StdEncoding.EncodeToString(img.Data), len(img.Data)}
+			}
+			cache[id] = e
 		}
-		var img *Image
-		if img, err = get(id); err != nil || img == nil || !embeddedTypes[img.ContentType] ||
-			total+len(img.Data) > MaxEmbeddedBytes {
-			cache[id] = src
+		if e.uri == "" || total+e.size > MaxEmbeddedBytes {
 			return src
 		}
-		total += len(img.Data)
-		uri := "data:" + img.ContentType + ";base64," + base64.StdEncoding.EncodeToString(img.Data)
-		cache[id] = uri
-		return uri
+		total += e.size
+		return e.uri
 	})
 	return err
 }

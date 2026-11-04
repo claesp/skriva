@@ -237,7 +237,7 @@ func (s *Store) UpdateTenant(ctx context.Context, id int64, code string, ts Tena
 // DeleteTenant removes a tenant and all its data. The default tenant is
 // permanent: the function returns ErrInvalid for it.
 func (s *Store) DeleteTenant(ctx context.Context, id int64) error {
-	return s.tx(ctx, func(tx pgx.Tx) error {
+	err := s.tx(ctx, func(tx pgx.Tx) error {
 		var code, name string
 		err := tx.QueryRow(ctx, "DELETE FROM tenants WHERE id = $1 AND NOT is_default RETURNING code, name",
 			id).Scan(&code, &name)
@@ -253,6 +253,11 @@ func (s *Store) DeleteTenant(ctx context.Context, id int64) error {
 		}
 		return s.audit(ctx, tx, auditEntry{Action: AuditTenantDelete, Target: name, TargetID: code})
 	})
+	if err == nil {
+		// The keys do not exist any more. Remove them from memory also.
+		s.forgetTenant(id)
+	}
+	return err
 }
 
 // ClientSecret returns the decrypted OIDC client secret of the tenant.

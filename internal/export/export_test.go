@@ -201,3 +201,22 @@ func TestHTMLDiagrams(t *testing.T) {
 		t.Errorf("Markdown = %s", m.String())
 	}
 }
+
+// Each use of an image counts for the limit, because the file contains
+// the data for each use.
+func TestEmbedImageUses(t *testing.T) {
+	img := `{"type":"image","attrs":{"src":"file:aaaaaaaaaaaaaa"}}`
+	body, err := doc.Parse([]byte(`{"type":"doc","content":[`+img+","+img+","+img+`]}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := &Image{ContentType: "image/gif", Data: make([]byte, MaxEmbeddedBytes/2)}
+	if err := embedImages(body, func(string) (*Image, error) { return data, nil }); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []string{"data:", "data:", "file:"} {
+		if src, _ := body.Content[i].Attrs["src"].(string); !strings.HasPrefix(src, want) {
+			t.Errorf("image %d has the source %.40q, want %q", i, src, want)
+		}
+	}
+}

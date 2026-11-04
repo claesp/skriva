@@ -17,7 +17,6 @@ type Session struct {
 	User        *User
 	TenantID    *int64
 	CSRFToken   string
-	ExpiresAt   time.Time
 	Permissions rbac.Set
 }
 
@@ -57,7 +56,7 @@ func (s *Store) Session(ctx context.Context, token string, tenantID *int64) (*Se
 	var perms []string
 	err := s.pool.QueryRow(ctx, `
 		SELECT `+prefixed("u.", userColumns)+`,
-		       s.tenant_id, s.csrf_token, s.expires_at,
+		       s.tenant_id, s.csrf_token,
 		       ARRAY(`+permissionsQuery+`)
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
@@ -68,7 +67,7 @@ func (s *Store) Session(ctx context.Context, token string, tenantID *int64) (*Se
 		hashToken(token), s.now(), tenantID,
 	).Scan(&u.ID, &u.TenantID, &u.Issuer, &u.Subject, &u.Username, &u.Email, &u.DisplayName,
 		&u.Disabled, &u.CreatedAt, &u.LastLoginAt,
-		&sess.TenantID, &sess.CSRFToken, &sess.ExpiresAt, &perms)
+		&sess.TenantID, &sess.CSRFToken, &perms)
 	if err != nil {
 		return nil, notFound(err)
 	}
