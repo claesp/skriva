@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -308,5 +309,17 @@ func TestDiagramAlt(t *testing.T) {
 		if got := DiagramAlt(src); got != want {
 			t.Errorf("DiagramAlt(%q) = %q, want %q", src, got, want)
 		}
+	}
+}
+
+func TestHeadingIDs(t *testing.T) {
+	h := htmlWriter{ids: map[string]bool{}, next: map[string]int{}}
+	var got []string
+	for _, text := range []string{"A", "A-1", "A", "A", ""} {
+		got = append(got, h.headingID(text))
+	}
+	want := []string{"a", "a-1", "a-2", "a-3", "heading"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("IDs = %v, want %v", got, want)
 	}
 }

@@ -103,9 +103,9 @@ func TestRenderSourceError(t *testing.T) {
 
 func TestRenderUnavailable(t *testing.T) {
 	for name, body := range map[string]string{
-		"timeout": "sleep 5",
-		"not svg": "echo hello",
-		"signal":  "kill -9 $$",
+		"not svg":   "echo hello",
+		"signal":    "kill -9 $$",
+		"exit code": "exit 2",
 	} {
 		t.Run(name, func(t *testing.T) {
 			prog, runs := fake(t, body)
@@ -124,6 +124,41 @@ func TestRenderUnavailable(t *testing.T) {
 	r := New(Options{Program: filepath.Join(t.TempDir(), "missing")})
 	if _, err := r.Render(context.Background(), "graph TD"); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("Render without a program = %v", err)
+	}
+}
+
+// A text that takes too long or that makes mmdr panic gives the same
+// result each time. Thus the cache keeps the error.
+func TestRenderCachedFailure(t *testing.T) {
+	for name, tc := range map[string]struct{ body, msg string }{
+		"timeout": {"sleep 5", "takes more than 200ms"},
+		"panic":   {"echo 'panicked at /src/x.rs:1' >&2; exit 101", "mmdr cannot read the text"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			prog, runs := fake(t, tc.body)
+			r := New(Options{Program: prog, Timeout: 200 * time.Millisecond})
+			for range 2 {
+				_, err := r.Render(context.Background(), "graph TD")
+				var se *SourceError
+				if !errors.As(err, &se) || se.Msg != tc.msg && !strings.Contains(se.Msg, tc.msg) {
+					t.Fatalf("Render error = %v, want %q", err, tc.msg)
+				}
+			}
+			if n := count(t, runs); n != 1 {
+				t.Fatalf("the program ran %d times, want 1", n)
+			}
+		})
+	}
+}
+
+// If the request stops, the error is not a property of the text.
+func TestRenderCanceled(t *testing.T) {
+	prog, _ := fake(t, "sleep 5")
+	r := New(Options{Program: prog})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := r.Render(ctx, "graph TD"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("Render error = %v", err)
 	}
 }
 

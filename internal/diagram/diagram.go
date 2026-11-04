@@ -198,6 +198,7 @@ func (r *Renderer) Render(ctx context.Context, source string) ([]byte, error) {
 // empty environment. The program reads no other files, except system
 // fonts if they exist.
 func (r *Renderer) run(ctx context.Context, source string) ([]byte, error) {
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, r.opts.Timeout)
 	defer cancel()
 	config, err := r.configPipe()
@@ -217,12 +218,25 @@ func (r *Renderer) run(ctx context.Context, source string) ([]byte, error) {
 	stderr := &limitedBuffer{max: 4 << 10}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	err = cmd.Run()
-	if ctx.Err() != nil {
-		return nil, fmt.Errorf("mmdr: %w", ctx.Err())
+	switch {
+	case parent.Err() != nil:
+		return nil, fmt.Errorf("mmdr: %w", parent.Err())
+	case ctx.Err() != nil:
+		// The same text takes the same time. Thus Render keeps this
+		// error in the cache, and the server does not try again on
+		// each view.
+		return nil, &SourceError{fmt.Sprintf("the diagram takes more than %s to make", r.opts.Timeout)}
 	}
 	var exit *exec.ExitError
-	if errors.As(err, &exit) && exit.ExitCode() > 0 {
-		return nil, &SourceError{message(stderr.String())}
+	if errors.As(err, &exit) {
+		switch exit.ExitCode() {
+		case 1:
+			return nil, &SourceError{message(stderr.String())}
+		case 101:
+			// A panic of the Rust program. The output can contain
+			// paths of the source code, thus do not show it.
+			return nil, &SourceError{"mmdr cannot read the text"}
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("mmdr: %w", err)

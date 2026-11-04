@@ -111,7 +111,7 @@ type HTMLOptions struct {
 // HTMLWith converts the document to safe HTML with the options o. See
 // HTML.
 func (n *Node) HTMLWith(l Links, o HTMLOptions) template.HTML {
-	h := htmlWriter{links: l, ids: map[string]bool{}, diagram: o.Diagram}
+	h := htmlWriter{links: l, ids: map[string]bool{}, next: map[string]int{}, diagram: o.Diagram}
 	h.children(n)
 	p := policy
 	if o.DataImages {
@@ -126,6 +126,7 @@ type htmlWriter struct {
 	b       strings.Builder
 	links   Links
 	ids     map[string]bool
+	next    map[string]int // the next number for each base ID
 	diagram func(string) (string, error)
 }
 
@@ -315,9 +316,12 @@ func (h *htmlWriter) headingID(text string) string {
 	if id == "" {
 		id = "heading"
 	}
+	// The counter for each base ID keeps the time linear for many
+	// headings with the same text.
 	unique := id
-	for i := 1; h.ids[unique]; i++ {
-		unique = id + "-" + strconv.Itoa(i)
+	for h.ids[unique] {
+		h.next[id]++
+		unique = id + "-" + strconv.Itoa(h.next[id])
 	}
 	h.ids[unique] = true
 	return unique
