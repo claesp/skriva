@@ -414,7 +414,11 @@ flowchart LR
 - If the diagram has an error, the page shows the text of the diagram
   and the error message.
 - The editor shows the text, not the image. Save the document to see
-  the image.
+  the image. In a diagram, the buttons that do not apply are disabled,
+  for example **Quote**, **Horizontal line** and **Table**.
+- The diagram uses the font of the interface (Inter) and has a
+  transparent background, thus it matches the page. You can change the
+  colors and the font of one diagram with an `%%{init: ...}%%` line.
 - Links in a diagram (`click` lines) do not work, because the diagram
   is an image.
 - The server makes the image with the

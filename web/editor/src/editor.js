@@ -486,11 +486,25 @@ function start(root) {
     link: () => editor.isActive('link'),
   }
 
+  // The commands that do not apply in a Mermaid diagram. ProseMirror can
+  // put a code block in a quote, or a line, an image or a table in a code
+  // block, but the text of the diagram must stay in one code block. A
+  // code block cannot contain links.
+  const notInDiagram = new Set(['blockquote', 'horizontalRule', 'link', 'image', 'table'])
+
   function update() {
+    const inDiagram = editor.isActive('codeBlock', { language: 'mermaid' })
     for (const btn of toolbar.querySelectorAll('button[data-command]')) {
       const name = btn.dataset.command
       if (pressed[name]) btn.setAttribute('aria-pressed', String(pressed[name]()))
-      if (commands[name]) btn.disabled = !commands[name](editor.can().chain().focus()).run()
+      const blocked = inDiagram && notInDiagram.has(name)
+      if (commands[name]) {
+        btn.disabled = blocked || !commands[name](editor.can().chain().focus()).run()
+      } else if (notInDiagram.has(name)) {
+        // Link and Image open their own dialogs, thus they have no entry
+        // in commands.
+        btn.disabled = blocked
+      }
     }
     tableGroup.hidden = !editor.isActive('table')
     const level = LEVELS.find((l) => editor.isActive('heading', { level: l }))

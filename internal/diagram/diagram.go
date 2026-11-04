@@ -17,7 +17,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +39,44 @@ type Options struct {
 	// CacheBytes is the largest size of the cache of images. Zero means
 	// DefaultCacheBytes.
 	CacheBytes int
+	// Config is the configuration of mmdr in JSON format, for example
+	// the theme variables of Mermaid. Nil means DefaultConfig. An init
+	// directive in a diagram (%%{init: ...}%%) changes these values.
+	Config []byte
+}
+
+// DefaultConfig gives the images the style of the pages of Skriva:
+//   - The font is Inter, the font of the interface. The image does not
+//     contain the font. See the package web.
+//   - The background color is the color of the page. mmdr also uses it in
+//     some shapes, for example the inside of the end state of a state
+//     diagram. The labels on lines have the same color, thus the lines
+//     do not go through the text. Render removes the rectangle of the
+//     background, thus the image is transparent.
+var DefaultConfig = []byte(`{"themeVariables": {` +
+	`"fontFamily": "Inter Variable, sans-serif", ` +
+	`"background": "#fffff8", ` +
+	`"edgeLabelBackground": "#fffff8"}}`)
+
+// backgroundRE matches the svg element and a first rectangle. The
+// rectangle is the background if it has the size of the view box.
+var backgroundRE = regexp.MustCompile(`^<svg[^>]* viewBox="([-0-9.]+) ([-0-9.]+) ([-0-9.]+) ([-0-9.]+)"[^>]*>` +
+	`(<rect x="([-0-9.]+)" y="([-0-9.]+)" width="([-0-9.]+)" height="([-0-9.]+)" fill="[^"]*"/>)`)
+
+// removeBackground removes the rectangle of the background from the image
+// of mmdr.
+func removeBackground(svg []byte) []byte {
+	m := backgroundRE.FindSubmatchIndex(svg)
+	if m == nil {
+		return svg
+	}
+	group := func(i int) string { return string(svg[m[2*i]:m[2*i+1]]) }
+	for i := 1; i <= 4; i++ {
+		if group(i) != group(i+5) {
+			return svg
+		}
+	}
+	return append(svg[:m[10]:m[10]], svg[m[11]:]...)
 }
 
 // Default values of Options.
@@ -111,6 +151,9 @@ func New(o Options) *Renderer {
 	if o.CacheBytes <= 0 {
 		o.CacheBytes = DefaultCacheBytes
 	}
+	if o.Config == nil {
+		o.Config = DefaultConfig
+	}
 	return &Renderer{
 		opts: o, jobs: make(chan struct{}, o.MaxJobs),
 		lru: list.New(), byKey: map[string]*list.Element{},
@@ -149,15 +192,23 @@ func (r *Renderer) Render(ctx context.Context, source string) ([]byte, error) {
 	return svg, nil
 }
 
-// run runs mmdr. The program gets the source on the standard input and
-// writes the SVG to the standard output. It gets an empty environment.
-// The program reads no other files, except system fonts if they exist.
+// run runs mmdr. The program gets the source on the standard input, and
+// the configuration on file descriptor 3. Thus the server writes no
+// files. The program writes the SVG to the standard output. It gets an
+// empty environment. The program reads no other files, except system
+// fonts if they exist.
 func (r *Renderer) run(ctx context.Context, source string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.opts.Timeout)
 	defer cancel()
+	config, err := r.configPipe()
+	if err != nil {
+		return nil, err
+	}
+	defer config.Close()
 	// #nosec G204 -- the program comes from the configuration, and the
 	// arguments are constants.
-	cmd := exec.CommandContext(ctx, r.opts.Program, "--input", "-")
+	cmd := exec.CommandContext(ctx, r.opts.Program, "--configFile", "/dev/fd/3", "--input", "-")
+	cmd.ExtraFiles = []*os.File{config}
 	cmd.Env = []string{}
 	cmd.Dir = "/"
 	cmd.WaitDelay = time.Second
@@ -165,7 +216,7 @@ func (r *Renderer) run(ctx context.Context, source string) ([]byte, error) {
 	stdout := &limitedBuffer{max: MaxSVG}
 	stderr := &limitedBuffer{max: 4 << 10}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	err := cmd.Run()
+	err = cmd.Run()
 	if ctx.Err() != nil {
 		return nil, fmt.Errorf("mmdr: %w", ctx.Err())
 	}
@@ -183,7 +234,26 @@ func (r *Renderer) run(ctx context.Context, source string) ([]byte, error) {
 	if !bytes.HasPrefix(svg, []byte("<svg")) && !bytes.HasPrefix(svg, []byte("<?xml")) {
 		return nil, errors.New("mmdr: the output is not SVG")
 	}
-	return svg, nil
+	return removeBackground(svg), nil
+}
+
+// configPipe returns the read end of a pipe that contains the
+// configuration. The configuration is small, thus it fits in the buffer
+// of the pipe.
+func (r *Renderer) configPipe() (*os.File, error) {
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	_, err = pw.Write(r.opts.Config)
+	if cerr := pw.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		pr.Close()
+		return nil, err
+	}
+	return pr, nil
 }
 
 // message returns the first line of the error output of mmdr, without

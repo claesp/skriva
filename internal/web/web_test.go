@@ -1982,8 +1982,9 @@ func TestDiagrams(t *testing.T) {
 		h.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("headers: %v", h)
 	}
-	if b := readBody(t, resp); !strings.HasPrefix(b, "<svg") || !strings.Contains(b, "Write") {
-		t.Fatalf("image: %.200q", b)
+	if b := readBody(t, resp); !strings.HasPrefix(b, "<svg") || !strings.Contains(b, "Write") ||
+		!strings.Contains(b, `><style>@font-face { font-family: "Inter Variable"; font-weight: 100 900; src: url(data:font/woff2;base64,`) {
+		t.Fatalf("image: %.300q", b)
 	}
 	// Only the diagrams of the document have images.
 	wantStatus(t, bob.get(sp+"/diagram/"+other+"/"+diagram.Key(good)), http.StatusNotFound)
@@ -2012,5 +2013,18 @@ func TestDiagrams(t *testing.T) {
 	}
 	if b := readBody(t, bob.get(sp+"/export/"+id+"/markdown")); !strings.Contains(b, "```mermaid\nflowchart LR\n") {
 		t.Fatalf("Markdown export has no diagram:\n%s", b)
+	}
+}
+
+func TestWithFont(t *testing.T) {
+	style := string(diagramFontStyle())
+	for in, want := range map[string]string{
+		`<svg a="1"><g/></svg>`: `<svg a="1">` + style + `<g/></svg>`,
+		`<svg/>`:                `<svg/>`,
+		`no image`:              `no image`,
+	} {
+		if got := string(withFont([]byte(in))); got != want {
+			t.Errorf("withFont(%q) = %.80q", in, got)
+		}
 	}
 }

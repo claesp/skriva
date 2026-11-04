@@ -373,6 +373,17 @@ one static program in Rust. It does not use a browser or Node.js.
 - `/diagram/{id}/{key}` reads the document (or the version in `?v=`),
   finds the diagram with the key, and sends its image. The server does
   not store images. Thus the URL works on each server of a cluster.
+- The images have the style of the page (`diagram.DefaultConfig`): the
+  font Inter, and the page color behind labels. mmdr gets the
+  configuration on file descriptor 3 (`-c /dev/fd/3`), thus the server
+  writes no files. An `%%{init}%%` line in a diagram changes these
+  values. `Render` removes the rectangle of the background, thus the
+  image is transparent.
+- An image in an `img` element cannot use the fonts of the page. Thus
+  the image response contains the Latin part of Inter as a `data:`
+  font (approximately 64 KB). The SVG policy permits `data:` fonts.
+  mmdr measures the text with its own estimate, because the container
+  has no system fonts. The PDF export uses the fonts of Typst.
 - `diagram.Renderer` keeps the recent images and error messages in a
   cache in memory (32 MB). A key is the same only for the same text.
   Thus the cache needs no invalidation.

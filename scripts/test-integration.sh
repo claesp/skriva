@@ -39,7 +39,7 @@ podman build -q --target mmdr -t "$MMDR_IMAGE" -f "$ROOT/Containerfile" "$ROOT" 
 {
 	echo '#!/bin/sh'
 	echo "export HOME='$HOME' PATH='$PATH' XDG_RUNTIME_DIR='${XDG_RUNTIME_DIR:-}'"
-	echo "exec podman run --rm -i --network none --read-only --entrypoint /out/bin/mmdr '$MMDR_IMAGE' \"\$@\""
+	echo "exec podman run --rm -i --network none --read-only --preserve-fds 1 --entrypoint /out/bin/mmdr '$MMDR_IMAGE' \"\$@\""
 } >"$WORK/mmdr"
 chmod +x "$WORK/mmdr"
 export SKRIVA_TEST_MMDR="$WORK/mmdr"

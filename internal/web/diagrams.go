@@ -1,10 +1,13 @@
 package web
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"regexp"
 	"strconv"
+	"sync"
 
 	"github.com/claesp/skriva/internal/diagram"
 	"github.com/claesp/skriva/internal/doc"
@@ -13,6 +16,40 @@ import (
 
 // diagramKeyRE matches the result of diagram.Key.
 var diagramKeyRE = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// diagramFont is the font of the text in the diagrams: the Latin part of
+// Inter, the font of the interface. An image in an img element cannot
+// use the fonts of the page. Thus each image contains the font as a
+// data: URI (approximately 64 KB). The SVG security policy permits fonts
+// in data: URIs. See diagram.DefaultConfig for the font name.
+const diagramFont = "static/fonts/inter-5.3.0/inter-latin-wght-normal.woff2"
+
+var diagramFontStyle = sync.OnceValue(func() []byte {
+	data, err := staticFS.ReadFile(diagramFont)
+	if err != nil {
+		panic(err) // The file is embedded. TestDiagrams uses it.
+	}
+	return []byte(`<style>@font-face { font-family: "Inter Variable"; font-weight: 100 900; ` +
+		`src: url(data:font/woff2;base64,` + base64.StdEncoding.EncodeToString(data) + `) format("woff2"); }</style>`)
+})
+
+// withFont returns a copy of svg with the font in the first element.
+func withFont(svg []byte) []byte {
+	start := bytes.Index(svg, []byte("<svg"))
+	if start < 0 {
+		return svg
+	}
+	end := bytes.IndexByte(svg[start:], '>')
+	if end < 0 || svg[start+end-1] == '/' {
+		return svg
+	}
+	end += start + 1
+	style := diagramFontStyle()
+	out := make([]byte, 0, len(svg)+len(style))
+	out = append(out, svg[:end]...)
+	out = append(out, style...)
+	return append(out, svg[end:]...)
+}
 
 // renderDiagram returns the SVG image of a Mermaid diagram. The error is a
 // *diagram.SourceError or diagram.ErrUnavailable. Its message is for the
@@ -110,7 +147,7 @@ func (s *Server) handleDiagram(w http.ResponseWriter, r *http.Request, n *store.
 		h.Set("Content-Security-Policy", fileSVGSecurityPolicy)
 		h.Set("Content-Disposition", "inline")
 		h.Set("Cache-Control", "private, max-age=3600")
-		_, _ = w.Write(svg)
+		_, _ = w.Write(withFont(svg))
 		return
 	}
 	s.notFound(w, r)

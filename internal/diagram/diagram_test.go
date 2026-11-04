@@ -38,7 +38,7 @@ func count(t *testing.T, runs string) int {
 
 func TestRender(t *testing.T) {
 	// The fake program writes the input inside an svg element.
-	prog, runs := fake(t, `[ "$1 $2" = "--input -" ] || exit 9; printf '<svg>'; cat; printf '</svg>'`)
+	prog, runs := fake(t, `[ "$*" = "--configFile /dev/fd/3 --input -" ] || exit 9; printf '<svg>'; cat; printf '</svg>'`)
 	r := New(Options{Program: prog})
 	ctx := context.Background()
 	for range 2 {
@@ -49,6 +49,35 @@ func TestRender(t *testing.T) {
 	}
 	if n := count(t, runs); n != 1 {
 		t.Fatalf("the program ran %d times, want 1 (cache)", n)
+	}
+}
+
+// TestConfig checks that the program gets the configuration on file
+// descriptor 3.
+func TestConfig(t *testing.T) {
+	prog, _ := fake(t, `printf '<svg>'; cat /dev/fd/3; printf '</svg>'`)
+	svg, err := New(Options{Program: prog}).Render(context.Background(), "graph TD")
+	if err != nil || string(svg) != "<svg>"+string(DefaultConfig)+"</svg>" {
+		t.Fatalf("Render = %q, %v", svg, err)
+	}
+	svg, err = New(Options{Program: prog, Config: []byte(`{"a":1}`)}).Render(context.Background(), "graph TD")
+	if err != nil || string(svg) != `<svg>{"a":1}</svg>` {
+		t.Fatalf("Render with a config = %q, %v", svg, err)
+	}
+}
+
+func TestRemoveBackground(t *testing.T) {
+	const red = `<rect x="0" y="0" width="1" height="1" fill="red"/></svg>`
+	for in, want := range map[string]string{
+		`<svg a="1" viewBox="0 0 10.5 20"><rect x="0" y="0" width="10.5" height="20" fill="#fffff8"/>` + red:      `<svg a="1" viewBox="0 0 10.5 20">` + red,
+		`<svg viewBox="-50 -10 450 219" b="2"><rect x="-50" y="-10" width="450" height="219" fill="#fff"/>` + red: `<svg viewBox="-50 -10 450 219" b="2">` + red,
+		// A rectangle with another size is not the background.
+		`<svg viewBox="0 0 10 20">` + red: `<svg viewBox="0 0 10 20">` + red,
+		`<svg>` + red:                     `<svg>` + red,
+	} {
+		if got := string(removeBackground([]byte(in))); got != want {
+			t.Errorf("removeBackground(%q) = %q", in, got)
+		}
 	}
 }
 
@@ -147,6 +176,22 @@ func TestMmdr(t *testing.T) {
 	svg, err := r.Render(context.Background(), "flowchart LR\n  A[Översikt] --> B{OK?}\n  B -->|Yes| C[Save]\n")
 	if err != nil || !strings.Contains(string(svg), "Översikt") {
 		t.Fatalf("Render = %.200q, %v", svg, err)
+	}
+	// The image has the style of DefaultConfig.
+	if !strings.Contains(string(svg), `font-family="Inter Variable,sans-serif"`) {
+		t.Error("image does not have the font of DefaultConfig")
+	}
+	// The images have no background. A sequence diagram has a view box
+	// that does not start at 0 0.
+	seq, err := r.Render(context.Background(), "sequenceDiagram\n  A->>B: Hello\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, img := range [][]byte{svg, seq} {
+		if strings.Contains(string(img[:min(len(img), 400)]), `fill="#fffff8"/><defs>`) ||
+			strings.Contains(string(img[:min(len(img), 400)]), `<rect x="0" y="0"`) {
+			t.Errorf("image has a background: %.400s", img)
+		}
 	}
 	_, err = r.Render(context.Background(), "flowchart LR\n  A -->\n")
 	var se *SourceError
