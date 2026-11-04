@@ -543,13 +543,6 @@ ol.results { list-style: none; padding: 0; margin: 0.5rem 0 0; }
 .results .meta-line { display: block; color: var(--muted); font-size: var(--ui-size); }
 .results p { margin: 0.3rem 0 0; font-family: var(--serif); font-size: 1rem; line-height: 1.55; }
 mark { background: var(--mark); color: inherit; }
-dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
-dl.facts dt { color: var(--muted); }
-dl.facts dd { margin: 0; }
-
-ul.cards { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 1rem; }
-ul.cards li { padding: 0.75rem 1rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
-ul.cards p { margin: 0.25rem 0; color: var(--muted); }
 
 /* The reading text. */
 .reading { width: 100%; max-width: calc(var(--measure) + 3rem); margin: 0 auto; }
@@ -745,7 +738,7 @@ main:has(.with-sidebar) { max-width: none; padding: 0; }
 .breadcrumbs a:hover { color: var(--accent); }
 
 ul.tree { list-style: none; margin: 0; padding-left: 1rem; }
-.sidebar > ul.tree, .tree-root > ul.tree { padding-left: 0; }
+.sidebar > ul.tree { padding-left: 0; }
 ul.tree li { margin: 0.2rem 0; }
 ul.tree a { color: var(--fg); text-decoration: none; }
 ul.tree a:hover { color: var(--accent); text-decoration: underline; }

@@ -103,7 +103,6 @@ type defaultRoleArgs struct {
 
 var funcs = template.FuncMap{
 	"date":    func(t time.Time) template.HTML { return timeElement(t, now()) },
-	"add":     func(a, b int) int { return a + b },
 	"sub":     func(a, b int) int { return a - b },
 	"docpath": docPath,
 	"upper":   strings.ToUpper,

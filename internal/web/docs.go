@@ -220,8 +220,6 @@ type nodePage struct {
 	Crumb     string
 	Ancestors []store.NodeSummary
 	Tree      []*store.TreeNode
-	// Editor is true on the form of a document.
-	Editor bool
 	// SaveForm is the ID of the form of the page, or "". The bar at the
 	// top then has the Save button of the form.
 	SaveForm string
@@ -551,10 +549,10 @@ func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status i
 		f.Crumb = "New " + f.Kind
 		f.NewKind = f.Kind
 	}
-	f.Editor = !f.IsFolder()
+	editor := !f.IsFolder()
 	f.SaveForm = "nodeform"
 	f.Classification = ""
-	if f.Editor {
+	if editor {
 		if f.Classifications, err = s.store.Classifications(r.Context(), reqInfoFrom(r.Context()).Tenant.ID); err != nil {
 			s.serverError(w, r, err)
 			return
@@ -570,7 +568,7 @@ func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status i
 			}
 		}
 	}
-	if f.Editor {
+	if editor {
 		// The upload checks the permission for the node, or for the
 		// parent of a new node.
 		f.UploadURL = base(r) + "/files"

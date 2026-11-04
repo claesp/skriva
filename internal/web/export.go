@@ -84,7 +84,7 @@ func (s *Server) exportFile(w http.ResponseWriter, r *http.Request, n *store.Nod
 		UpdatedAt:      n.UpdatedAt,
 		URL:            site + docPath(base(r), n.PublicID, n.Slug),
 		Body:           body,
-		Links:          doc.Links{Wiki: b + "/w/", Files: b + "/files/", Doc: b + "/d/"},
+		Links:          doc.Links{Wiki: b + "/w/", Files: b + "/files/", Doc: b + "/d/", Site: site},
 		Image: func(id string) (*export.Image, error) {
 			f, err := s.readableFile(r, id)
 			if errors.Is(err, store.ErrNotFound) {

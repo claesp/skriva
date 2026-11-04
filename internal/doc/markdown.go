@@ -1,6 +1,7 @@
 package doc
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -8,7 +9,8 @@ import (
 // Markdown converts the document to Markdown (GitHub Flavored Markdown).
 // Markdown does not have all formats of a document. The converter ignores
 // the alignment and the underline. A cell that covers more than one
-// column becomes one cell and empty cells. Wiki links become [[Title]].
+// column or row becomes one cell and empty cells. Wiki links become
+// [[Title]].
 func (n *Node) Markdown(l Links) string {
 	return n.MarkdownWith(l, MarkdownOptions{WikiLinks: true})
 }
@@ -52,7 +54,7 @@ func (m *mdWriter) blocks(nodes []*Node, prefix string) {
 func (m *mdWriter) block(n *Node, first, prefix string) {
 	switch n.Type {
 	case "paragraph":
-		m.lines(first, prefix, m.inline(n))
+		m.lines(first, prefix, escapeLineStarts(m.inline(n)))
 	case "heading":
 		// Markdown has six heading levels. Higher levels become level 6.
 		level := min(max(n.level()+m.opts.HeadingOffset, 1), 6)
@@ -139,26 +141,50 @@ func (m *mdWriter) list(n *Node, first, prefix string) {
 }
 
 func (m *mdWriter) image(n *Node) string {
-	out := "![" + escapeMD(attrString(n.Attrs, "alt")) + "](" + escapeURL(m.links.Src(attrString(n.Attrs, "src")))
-	if t := attrString(n.Attrs, "title"); t != "" {
-		out += ` "` + strings.ReplaceAll(t, `"`, `\"`) + `"`
+	// An image is on one line.
+	oneLine := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+	out := "![" + escapeMD(oneLine(attrString(n.Attrs, "alt"))) + "](" + escapeURL(m.links.Src(attrString(n.Attrs, "src")))
+	if t := oneLine(attrString(n.Attrs, "title")); t != "" {
+		out += ` "` + titleEscaper.Replace(t) + `"`
 	}
 	return out + ")"
 }
+
+var titleEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 
 // table writes a GFM table. The first row is the header row.
 func (m *mdWriter) table(n *Node, first, prefix string) {
 	var rows [][]string
 	width := 0
+	// covered[c] is the number of rows below that a cell with a rowspan
+	// covers in the column c.
+	var covered []int
 	for _, row := range n.Content {
 		var cells []string
+		col := 0
+		// skip adds empty cells for the columns that a cell above covers.
+		skip := func() {
+			for col < len(covered) && covered[col] > 0 {
+				covered[col]--
+				cells = append(cells, "")
+				col++
+			}
+		}
 		for _, cell := range row.Content {
-			text := strings.ReplaceAll(m.cellText(cell), "|", `\|`)
-			cells = append(cells, text)
+			skip()
+			cells = append(cells, strings.ReplaceAll(m.cellText(cell), "|", `\|`))
 			for k := 1; k < cell.span("colspan"); k++ {
 				cells = append(cells, "")
 			}
+			for k := range cell.span("colspan") {
+				for len(covered) <= col+k {
+					covered = append(covered, 0)
+				}
+				covered[col+k] = max(covered[col+k], cell.span("rowspan")-1)
+			}
+			col += cell.span("colspan")
 		}
+		skip()
 		width = max(width, len(cells))
 		rows = append(rows, cells)
 	}
@@ -196,77 +222,167 @@ func (m *mdWriter) cellText(cell *Node) string {
 	return strings.Join(parts, " ")
 }
 
-// inline returns the Markdown of the inline content of n.
+// emphasis are the marks that Markdown writes with delimiters, from the
+// outside to the inside.
+var emphasis = []struct{ mark, delim string }{{"bold", "**"}, {"italic", "*"}, {"strike", "~~"}}
+
+// inline returns the Markdown of the inline content of n. A mark that
+// continues over more than one text node opens and closes only once.
+// Thus "**a *b***" is correct, not "**a****_b_**".
 func (m *mdWriter) inline(n *Node) string {
-	var b strings.Builder
+	var b []byte
+	var open []string // the delimiters of the open marks, outside first
+	// closeTo closes the marks after the first k.
+	closeTo := func(k int) {
+		if k >= len(open) {
+			return
+		}
+		// A closing delimiter must follow a character that is not a
+		// space. Thus the spaces go after it.
+		end := len(b)
+		for end > 0 && b[end-1] == ' ' {
+			end--
+		}
+		spaces := string(b[end:])
+		b = b[:end]
+		for i := len(open) - 1; i >= k; i-- {
+			b = append(b, open[i]...)
+		}
+		b = append(b, spaces...)
+		open = open[:k]
+	}
 	for _, c := range n.Content {
 		switch c.Type {
 		case "text":
-			b.WriteString(m.text(c))
 		case "hardBreak":
-			b.WriteString("\\\n")
+			closeTo(0)
+			b = append(b, "\\\n"...)
+			continue
 		case "image":
-			b.WriteString(m.image(c))
+			closeTo(0)
+			b = append(b, m.image(c)...)
+			continue
 		default:
-			b.WriteString(m.inline(c))
+			closeTo(0)
+			b = append(b, m.inline(c)...)
+			continue
 		}
+		core := m.textCore(c)
+		if strings.TrimSpace(core) == "" {
+			// Only spaces: the open marks stay open.
+			b = append(b, core...)
+			continue
+		}
+		var want []string
+		for _, e := range emphasis {
+			if c.hasMark(e.mark) {
+				want = append(want, e.delim)
+			}
+		}
+		// Keep the open marks that the node also has, in the same order.
+		k := 0
+		for k < len(open) && k < len(want) && open[k] == want[k] {
+			k++
+		}
+		closeTo(k)
+		// An opening delimiter must come before a character that is not
+		// a space. Thus the spaces go before it.
+		lead := core[:len(core)-len(strings.TrimLeft(core, " "))]
+		b = append(b, lead...)
+		for _, d := range want[k:] {
+			b = append(b, d...)
+			open = append(open, d)
+		}
+		b = append(b, core[len(lead):]...)
 	}
-	return b.String()
+	closeTo(0)
+	return string(b)
 }
 
-func (m *mdWriter) text(n *Node) string {
-	has := map[string]bool{}
+// hasMark reports whether the node has a mark of type t.
+func (n *Node) hasMark(t string) bool {
+	for _, mk := range n.Marks {
+		if mk.Type == t {
+			return true
+		}
+	}
+	return false
+}
+
+// textCore returns the Markdown of a text node, with the code and the
+// link marks but without the emphasis marks.
+func (m *mdWriter) textCore(n *Node) string {
 	var href string
 	for _, mk := range n.Marks {
-		has[mk.Type] = true
 		if mk.Type == "link" {
 			href = attrString(mk.Attrs, "href")
 		}
 	}
 	var s string
-	if has["code"] {
-		fence := "`"
-		for strings.Contains(n.Text, fence) {
-			fence += "`"
-		}
-		s = fence + n.Text + fence
+	if n.hasMark("code") {
+		s = codeSpan(n.Text)
 	} else {
 		s = escapeMD(n.Text)
 	}
-	// Markdown does not permit spaces inside the emphasis marks. Thus
-	// the spaces stay outside.
-	core := strings.TrimSpace(s)
+	if href == "" {
+		return s
+	}
+	// The spaces stay outside the link.
+	core := strings.Trim(s, " ")
 	if core == "" {
 		return s
 	}
 	lead := s[:strings.Index(s, core)]
 	trail := s[len(lead)+len(core):]
-	if has["strike"] {
-		core = "~~" + core + "~~"
-	}
-	if has["italic"] {
-		core = "_" + core + "_"
-	}
-	if has["bold"] {
-		core = "**" + core + "**"
-	}
-	if href != "" {
-		if title, ok := strings.CutPrefix(href, WikiPrefix); ok && m.opts.WikiLinks {
-			if title == n.Text {
-				core = "[[" + title + "]]"
-			} else {
-				core = "[[" + title + "|" + core + "]]"
-			}
+	if title, ok := strings.CutPrefix(href, WikiPrefix); ok && m.opts.WikiLinks {
+		if title == n.Text {
+			core = "[[" + title + "]]"
 		} else {
-			core = "[" + core + "](" + escapeURL(m.links.Href(href)) + ")"
+			core = "[[" + title + "|" + core + "]]"
 		}
+	} else {
+		core = "[" + core + "](" + escapeURL(m.links.Href(href)) + ")"
 	}
 	return lead + core + trail
 }
 
+// codeSpan returns text as a code span. The fence is longer than each
+// run of backticks in text. CommonMark removes one space at each end, if
+// both ends have a space. Thus the function adds spaces if text starts or
+// ends with a backtick or with a space.
+func codeSpan(text string) string {
+	fence := "`"
+	for strings.Contains(text, fence) {
+		fence += "`"
+	}
+	if strings.HasPrefix(text, "`") || strings.HasSuffix(text, "`") ||
+		(strings.HasPrefix(text, " ") && strings.HasSuffix(text, " ") && strings.Trim(text, " ") != "") {
+		text = " " + text + " "
+	}
+	return fence + text + fence
+}
+
+// lineStartRE finds text at the start of a line that Markdown reads as a
+// block: a list item ("- ", "+ ", "1. ", "1) "), a line of a heading or
+// a rule ("===", "---").
+var lineStartRE = regexp.MustCompile(`(?m)^( {0,3})([-+=]|[0-9]{1,9}[.)])`)
+
+// escapeLineStarts escapes the text at the start of each line that
+// Markdown reads as a block.
+func escapeLineStarts(s string) string {
+	return lineStartRE.ReplaceAllStringFunc(s, func(m string) string {
+		sp := strings.TrimLeft(m, " ")
+		ind := m[:len(m)-len(sp)]
+		if last := sp[len(sp)-1]; last == '.' || last == ')' {
+			return ind + sp[:len(sp)-1] + `\` + string(last)
+		}
+		return ind + `\` + sp
+	})
+}
+
 var mdEscaper = strings.NewReplacer(
 	`\`, `\\`, "`", "\\`", `*`, `\*`, `_`, `\_`, `[`, `\[`, `]`, `\]`,
-	`<`, `\<`, `>`, `\>`, `#`, `\#`, `~`, `\~`,
+	`<`, `\<`, `>`, `\>`, `#`, `\#`, `~`, `\~`, `&`, `\&`,
 )
 
 // escapeMD escapes the characters that have a meaning in Markdown.

@@ -24,6 +24,10 @@ type Links struct {
 	// Doc is the prefix of document links. The link "doc:ID#Part"
 	// becomes Doc + ID + "#" + slug.Make("Part").
 	Doc string
+	// Site is the scheme and the host of the site, or "". If it is set,
+	// a path on the same site ("/tenant/...") becomes Site + path. An
+	// exported file needs this, because it is not on the site.
+	Site string
 }
 
 // Href returns the URL of a link destination.
@@ -37,6 +41,9 @@ func (l Links) Href(href string) string {
 	}
 	title, ok := strings.CutPrefix(href, WikiPrefix)
 	if !ok {
+		if l.Site != "" && strings.HasPrefix(href, "/") && !strings.HasPrefix(href, "//") {
+			return l.Site + href
+		}
 		return href
 	}
 	title, frag, _ := strings.Cut(title, "#")
@@ -93,9 +100,6 @@ var (
 	}()
 )
 
-// HTML converts the document to safe HTML.
-func (n *Node) HTML(l Links) template.HTML { return n.HTMLWith(l, HTMLOptions{}) }
-
 // HTMLOptions change the result of HTMLWith.
 type HTMLOptions struct {
 	// DataImages permits images in data URIs. Use MapImages to put the
@@ -108,8 +112,7 @@ type HTMLOptions struct {
 	Diagram func(source string) (src string, err error)
 }
 
-// HTMLWith converts the document to safe HTML with the options o. See
-// HTML.
+// HTMLWith converts the document to safe HTML with the options o.
 func (n *Node) HTMLWith(l Links, o HTMLOptions) template.HTML {
 	h := htmlWriter{links: l, ids: map[string]bool{}, next: map[string]int{}, diagram: o.Diagram}
 	h.children(n)

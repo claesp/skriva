@@ -149,6 +149,21 @@ func TestPDF(t *testing.T) {
 	}))
 	check("empty document", &Document{Title: "Empty", Version: 1})
 
+	// A row can be wider than the first row, and a rowspan takes columns
+	// in the next row. An empty first row does not hide the table.
+	cell := func(attrs string) string {
+		return `{"type":"tableCell","attrs":{` + attrs + `},"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
+	}
+	table, err := doc.Parse([]byte(`{"type":"doc","content":[{"type":"table","content":[`+
+		`{"type":"tableRow","content":[]},`+
+		`{"type":"tableRow","content":[`+cell("")+`]},`+
+		`{"type":"tableRow","content":[`+cell(`"rowspan":2`)+`,`+cell(`"colspan":3`)+`]},`+
+		`{"type":"tableRow","content":[`+cell("")+`,`+cell("")+`,`+cell("")+`]}]}]}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check("table", &Document{Title: "Table", Version: 1, Body: table})
+
 	// A canceled request stops the export.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

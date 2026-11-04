@@ -131,7 +131,7 @@
     // A Mermaid diagram. The Go code wrote the image.
     picture(n)
   } else if t == "codeBlock" {
-    let code = children(n).map(c => c.at("text", default: "")).join()
+    let code = children(n).map(c => if c.type == "hardBreak" { "\n" } else { c.at("text", default: "") }).join()
     block(fill: luma(244), inset: 0.8em, radius: 3pt, width: 100%,
       raw(if code == none { "" } else { code }, block: true, lang: attr(n, "language", none)))
     let error = attr(n, "error", "")
@@ -154,23 +154,41 @@
     picture(n)
   } else if t == "table" {
     let rows = children(n)
+    // Each cell gets its position. A row can be shorter or wider than the
+    // first row, and a cell with a rowspan takes columns in the rows below
+    // it. covered.at(i) is the number of rows from the current row that a
+    // cell covers in the column i.
     let width = 0
-    for c in children(rows.at(0, default: (:))) { width += attr(c, "colspan", 1) }
+    let covered = ()
+    let cells = ()
+    for (y, r) in rows.enumerate() {
+      let col = 0
+      for c in children(r) {
+        while col < covered.len() and covered.at(col) > 0 { col += 1 }
+        let cs = attr(c, "colspan", 1)
+        let rs = attr(c, "rowspan", 1)
+        for k in range(cs) {
+          while covered.len() <= col + k { covered.push(0) }
+          covered.at(col + k) = calc.max(covered.at(col + k), rs)
+        }
+        let body = blocks(children(c))
+        cells.push(table.cell(
+          x: col, y: y, colspan: cs, rowspan: rs,
+          fill: if c.type == "tableHeader" { luma(240) } else { none },
+          if c.type == "tableHeader" { strong(body) } else { body },
+        ))
+        col += cs
+      }
+      width = calc.max(width, col, covered.len())
+      covered = covered.map(x => calc.max(x - 1, 0))
+    }
     if width > 0 {
       set text(size: 0.9em)
       table(
         columns: width,
         stroke: 0.5pt + luma(170),
         inset: 0.45em,
-        ..rows.map(r => children(r).map(c => {
-          let body = blocks(children(c))
-          table.cell(
-            colspan: attr(c, "colspan", 1),
-            rowspan: attr(c, "rowspan", 1),
-            fill: if c.type == "tableHeader" { luma(240) } else { none },
-            if c.type == "tableHeader" { strong(body) } else { body },
-          )
-        })).flatten()
+        ..cells,
       )
     }
   } else {

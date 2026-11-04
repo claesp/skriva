@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -151,7 +152,7 @@ const sample = `{"type":"doc","content":[
 ]}`
 
 func TestHTML(t *testing.T) {
-	got := string(mustParse(t, sample).HTML(links))
+	got := string(mustParse(t, sample).HTMLWith(links, HTMLOptions{}))
 	for _, want := range []string{
 		`<h2 id="intro" class="level-1">Intro</h2>`,
 		`<p class="align-right">Plain <strong>bold</strong> and <a href="/t/s/w/start" rel="nofollow noreferrer">Start</a> &lt;x&gt; <u>u</u></p>`,
@@ -185,7 +186,7 @@ func TestHeadingLevels(t *testing.T) {
 	}
 	b.WriteString("]}")
 	d := mustParse(t, b.String())
-	got := string(d.HTML(links))
+	got := string(d.HTMLWith(links, HTMLOptions{}))
 	for _, want := range []string{
 		`<h2 id="l1" class="level-1">L1</h2>`,
 		`<h6 id="l5" class="level-5">L5</h6>`,
@@ -249,7 +250,7 @@ func FuzzParse(f *testing.F) {
 		if err != nil {
 			return
 		}
-		h := strings.ToLower(string(n.HTML(links)))
+		h := strings.ToLower(string(n.HTMLWith(links, HTMLOptions{})))
 		if strings.Contains(h, "<script") || unsafeAttr.MatchString(h) {
 			t.Fatalf("unsafe HTML: %s", h)
 		}
@@ -272,7 +273,7 @@ func TestDiagrams(t *testing.T) {
 		t.Fatalf("Diagrams = %d, want 2", n)
 	}
 	// Without the option, a diagram is a code block.
-	if got := string(d.HTML(links)); !strings.Contains(got, `<code class="language-mermaid">graph TD`) {
+	if got := string(d.HTMLWith(links, HTMLOptions{})); !strings.Contains(got, `<code class="language-mermaid">graph TD`) {
 		t.Fatalf("HTML without diagrams = %s", got)
 	}
 	got := string(d.HTMLWith(links, HTMLOptions{Diagram: func(src string) (string, error) {
@@ -321,5 +322,75 @@ func TestHeadingIDs(t *testing.T) {
 	want := []string{"a", "a-1", "a-2", "a-3", "heading"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("IDs = %v, want %v", got, want)
+	}
+}
+
+func TestLinksSite(t *testing.T) {
+	l := Links{Wiki: "https://w.example/t/s/w/", Site: "https://w.example"}
+	for in, want := range map[string]string{
+		"/t/s/d/abc":          "https://w.example/t/s/d/abc",
+		"//evil.example/x":    "//evil.example/x",
+		"#part":               "#part",
+		"https://a.example/":  "https://a.example/",
+		"wiki:Start page#Top": "https://w.example/t/s/w/start-page#top",
+	} {
+		if got := l.Href(in); got != want {
+			t.Errorf("Href(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestMarkdownInline checks marks over more than one text node, code
+// spans, the start of lines and the characters that need escapes.
+func TestMarkdownInline(t *testing.T) {
+	text := func(s string, marks ...string) string {
+		var ms []string
+		for _, m := range marks {
+			ms = append(ms, `{"type":"`+m+`"}`)
+		}
+		return `{"type":"text","text":` + strconv.Quote(s) + `,"marks":[` + strings.Join(ms, ",") + `]}`
+	}
+	for _, c := range []struct{ in, want string }{
+		{text("a", "bold") + "," + text("b", "bold", "italic"), "**a*b***"},
+		{text("foo") + "," + text("bar", "italic") + "," + text("baz"), "foo*bar*baz"},
+		{text("a ", "bold") + "," + text("b"), "**a** b"},
+		{text("x", "bold") + "," + text(" ", "bold") + "," + text("y", "bold"), "**x y**"},
+		{text("`x", "code"), "`` `x ``"},
+		{text("a`b", "code"), "``a`b``"},
+		{text("1. Intro"), `1\. Intro`},
+		{text("- note"), `\- note`},
+		{text("==="), `\===`},
+		{text("a &amp; b"), `a \&amp; b`},
+	} {
+		d := mustParse(t, `{"type":"doc","content":[{"type":"paragraph","content":[`+c.in+`]}]}`)
+		if got := strings.TrimSuffix(d.Markdown(links), "\n"); got != c.want {
+			t.Errorf("Markdown of %s = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestMarkdownRowspan checks that the cells below a cell with a rowspan
+// stay in their columns.
+func TestMarkdownRowspan(t *testing.T) {
+	cell := func(s, attrs string) string {
+		return `{"type":"tableCell","attrs":{` + attrs + `},"content":[{"type":"paragraph","content":[{"type":"text","text":"` + s + `"}]}]}`
+	}
+	row := func(cells ...string) string {
+		return `{"type":"tableRow","content":[` + strings.Join(cells, ",") + `]}`
+	}
+	d := mustParse(t, `{"type":"doc","content":[{"type":"table","content":[`+
+		row(cell("A", ""), cell("B", ""), cell("C", ""))+","+
+		row(cell("x", `"rowspan":2`), cell("y", ""), cell("z", ""))+","+
+		row(cell("y2", ""), cell("z2", ""))+`]}]}`)
+	want := "| A | B | C |\n| --- | --- | --- |\n| x | y | z |\n|  | y2 | z2 |\n"
+	if got := d.Markdown(links); got != want {
+		t.Fatalf("Markdown:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestMarkdownImageAlt(t *testing.T) {
+	d := mustParse(t, `{"type":"doc","content":[{"type":"image","attrs":{"src":"https://x.example/a.png","alt":"a\nb","title":"t\\"}}]}`)
+	if got, want := d.Markdown(links), `![a b](https://x.example/a.png "t\\")`+"\n"; got != want {
+		t.Fatalf("Markdown = %q, want %q", got, want)
 	}
 }
