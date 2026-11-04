@@ -6,8 +6,9 @@ This document describes the security controls of Skriva.
 
 - Each tenant has its own identity provider, users, groups, roles and
   sessions.
-- The session cookie has the name `skriva_<tenant code>`. A session is
-  valid only for its tenant. The server checks the tenant of the
+- The session cookie has the name `skriva_t<tenant ID>` (with the
+  `__Host-` prefix for an `https` base URL). A session is valid only for
+  its tenant. The server checks the tenant of the
   session and of the user at each request.
 - Each store function for tenant data has the tenant ID as a parameter,
   and each query uses it. Composite foreign keys in the database also
@@ -26,7 +27,9 @@ This document describes the security controls of Skriva.
   user who has the `admin` role in one space cannot change the access
   control of the tenant.
 - The tenant page and the search in all spaces show only the spaces
-  that the user can read.
+  that the user can read. If a user can read nothing in a space, all
+  pages of the space send status 404. The page does not show the name
+  of the space.
 - The server checks the permissions for each item. If a user cannot
   read an item, the server sends status 404 and not 403. Thus a user
   cannot find out that the item exists. The tree, the lists and the
@@ -42,7 +45,8 @@ This document describes the security controls of Skriva.
   Thus the trash uses the permissions of the old place. A restored item
   goes back to its old place only. If the old parent is in the trash,
   the server refuses the restore. Thus a restore cannot give an item
-  different permissions.
+  different permissions. The trash shows the title of the old parent
+  only if the user can read the parent.
 - A move requires `doc.create` at the new place. Thus a user cannot move
   an item into a folder where the user cannot make items.
 
@@ -51,7 +55,7 @@ This document describes the security controls of Skriva.
 - The server encrypts the OIDC client secret of each tenant with
   AES-256-GCM. The key is `SKRIVA_ENCRYPTION_KEY` (the KEK, see
   [Encryption at rest](#encryption-at-rest)).
-- The associated data of the encryption contains the tenant code. Thus a
+- The associated data of the encryption contains the tenant ID. Thus a
   person who can write to the database cannot move a secret to a
   different tenant.
 - The tenant page never shows the secret. A system administrator can
@@ -96,8 +100,11 @@ at each request.
   system administration uses `SKRIVA_SESSION_TTL`.
 - At each sign-in, the server makes a new token. This prevents session
   fixation.
-- Logout deletes the session in the database. Then the server sends the
-  browser to the logout endpoint of the identity provider.
+- Logout deletes the session in the database, also if the identity
+  provider is not available. Then the server sends a page that goes to
+  the logout endpoint of the identity provider (a meta refresh). The
+  server does not send a redirect, because the policy `form-action
+  'self'` does not permit a redirect to a different site after a form.
 
 ## Cross-site request forgery (CSRF)
 
@@ -120,8 +127,8 @@ data.
   other items. A document cannot contain HTML: the converter makes all
   HTML from the list, and escapes all text. See
   [Document format](architecture.md#document-format).
-- A link can go only to `http`, `https`, `mailto`, `wiki:` and paths on
-  the same site. An image can come only from an uploaded file or an
+- A link can go only to `http`, `https`, `mailto`, `wiki:`, `doc:`,
+  fragments (`#…`) and paths on the same site. An image can come only from an uploaded file or an
   `https` URL. Thus a document cannot contain `javascript:` or `data:`
   URLs.
 - The bluemonday sanitizer removes unsafe HTML from the result a second
@@ -165,9 +172,11 @@ apply:
   1. The upload check (`checkDrawioSVG`). The file must be well-formed
      XML with a root `svg` element that contains a draw.io diagram (the
      `content` attribute with an `mxfile`). The check refuses script,
-     iframe, object, embed and similar elements, all event attributes
-     (`on…`), `javascript:` and `vbscript:` URLs, `data:` URLs that are
-     not raster images, entity definitions, and more than 256 levels.
+     iframe, object, embed and similar elements, animation elements
+     (`set`, `animate`), processing instructions (for example
+     `xml-stylesheet`), all event attributes (`on…`), `javascript:` and
+     `vbscript:` URLs, `data:` URLs that are not raster images, entity
+     definitions, and more than 256 levels.
   2. The page shows the diagram in an `img` element. A browser does not
      run scripts and does not load other resources in an image.
   3. The server sends the file with the policy `default-src 'none';
@@ -177,6 +186,9 @@ apply:
 - A user can read a file only if the user can read a document that uses
   it. Before a document uses the file, only the user that uploaded it
   can read it. A file that no document uses after one day is deleted.
+- A document uses a file only if the author can read the file when the
+  author saves the document. Thus a user cannot get access to the file
+  of a private document with a copy of its URL in a new document.
 - The server sends a file with its type, `X-Content-Type-Options:
   nosniff` and the security policy `default-src 'none'; sandbox`. Thus a
   browser does not run content from a file, also if a user opens the
@@ -196,8 +208,9 @@ The server sends these headers with each response:
 | `Referrer-Policy` | `same-origin` |
 | `Cross-Origin-Opener-Policy` | `same-origin` |
 | `Cross-Origin-Resource-Policy` | `same-origin` |
-| `Cache-Control` | `no-store` (not for static files) |
-| `Strict-Transport-Security` | Only with an `https` base URL |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), interest-cohort=()` |
+| `Cache-Control` | `no-store`. Static files: `public, max-age=300`, or one year (`immutable`) for the fonts and for the files with a version in the URL. Uploaded files and diagram images: `private, max-age=3600`. |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains`, only with an `https` base URL |
 
 ## Destructive actions
 
@@ -231,7 +244,6 @@ control characters.
   server updates the cache in the same transaction as each change to
   the tree or to the access settings of an item. The integration tests
   compare the cache with a full calculation after many random changes.
-  `Store.RebuildAccessPaths` calculates the cache of a space again.
 - The HTTP server has timeouts for headers, reading, writing and idle
   connections.
 
@@ -275,7 +287,9 @@ comes from a user.
   server sends only the images of the diagrams in the document.
 - The process gets the text on the standard input. It has an empty
   environment and no arguments from the user. It has a time limit of 5
-  seconds. At most two processes run at the same time.
+  seconds. At most two processes run at the same time. The server keeps
+  the result in a cache, also a time-out or an error. Thus a slow
+  diagram does not run again at each view.
 - The text can have a maximum of 32 KB. The image can have a maximum of
   4 MB. The error message has a maximum of 300 characters.
 - The page shows the error message of mmdr as text. The message can
@@ -312,8 +326,8 @@ roles, role bindings, default roles), to spaces and tenants, the moves,
 the restored versions, the trash actions and the sign-ins. See
 [Administration: audit log](administration.md#audit-log).
 
-- Each event is written in the transaction of the change. If the event
-  cannot be written, the change fails.
+- The server writes each event in the transaction of the change. If the
+  server cannot write the event, the change fails.
 - Only users with `tenant.manage` can read the audit log of a tenant.
   Only system administrators can read the system audit log.
 - The application has no function to change or delete an event. The
@@ -357,8 +371,10 @@ for the methods that the project compared.
   logs of a proxy and in the history of the browser.
 - **Not encrypted.** The names of users, groups, roles and spaces, the
   structure of the tree, the times, the classification names of the
-  versions, and the events of the system administration (tenant names
-  and codes).
+  versions, the events of the system administration (tenant names and
+  codes), and the ID token of each session (`sessions.id_token`, for the
+  logout). The ID token contains the name, the email address and the
+  groups of the user.
 - **Key rotation.** A system administrator can make a new data key for a
   tenant (tenant page, **Encryption**). New values use the new key at
   once. The cleanup task encrypts the old values again, and then deletes
@@ -369,7 +385,8 @@ for the methods that the project compared.
 - **Backups.** A backup of the database contains only encrypted content.
   To restore a backup, you need the KEK of the time of the backup. Keep
   the KEK in a different place than the backups.
-- **Deletion of a tenant.** The keys of the tenant are deleted. Old
+- **Deletion of a tenant.** The keys of the tenant are deleted, also from
+  the memory of the server that deletes the tenant. Old
   backups still contain the wrapped keys. They can be decrypted with the
   KEK of that time. Change the KEK to make old backups unreadable.
 - **Limits.** The server decrypts the content for each request. Thus an

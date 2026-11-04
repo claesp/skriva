@@ -540,6 +540,8 @@ func (s *Server) handleAdminRoleDelete(w http.ResponseWriter, r *http.Request) {
 	if !s.storeResult(w, r, err) {
 		return
 	}
+	s.log.Info("role deleted", "tenant", tenantOf(r).Code, "role_id", id,
+		"user_id", reqInfoFrom(r.Context()).Session.User.ID)
 	http.Redirect(w, r, adminPath(r)+"/roles", http.StatusSeeOther)
 }
 

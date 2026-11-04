@@ -54,11 +54,18 @@ These rules apply to the tree:
 | `/` | Goes to the default tenant. |
 | `/admin/` | System administration. |
 | `/{tenant}/` | The spaces of the tenant. |
+| `/{tenant}/login`, `/{tenant}/auth/callback` | The sign-in through the identity provider. |
+| `/{tenant}/logout`, `/{tenant}/signed-out` | The sign-out (`POST`), and the page after it. |
+| `/{tenant}/search?q=` | The search in all spaces that the user can read. |
 | `/{tenant}/admin/` | Tenant administration. `/{tenant}/admin/audit` is the audit log. |
 | `/{tenant}/{space}/` | The tree of the space. |
 | `/{tenant}/{space}/d/{id}/{slug}` | One folder or document. |
 | `/{tenant}/{space}/d/{id}` | Short link. It goes to the full link. |
 | `/{tenant}/{space}/w/{slug}` | The target of a wiki link. |
+| `/{tenant}/{space}/new`, `/edit/{id}`, `/move/{id}`, `/delete/{id}` | The forms to make, change, move and delete an item. |
+| `/{tenant}/{space}/history/{id}` | The versions of a document. `/history/{id}/{version}` shows one version. |
+| `/{tenant}/{space}/access/{id}` | The access settings of an item. |
+| `/{tenant}/{space}/search?q=` | The search in the space. |
 | `/{tenant}/{space}/compare/{id}?from=&to=` | The changes between two versions of a document. |
 | `/{tenant}/{space}/export/{id}` | The export formats of a document. `/export/{id}/{format}` downloads the file. `/export/{id}/{format}/text` shows a text format as plain text. |
 | `/{tenant}/{space}/trash` | The trash of the space. |
@@ -113,7 +120,7 @@ space `default0` ("Default").
 | `internal/store`    | Contains all SQL queries. |
 | `internal/rbac`     | Defines the permissions and the permission set. |
 | `internal/auth`     | Connects to the OIDC providers. Keeps one client for each tenant. |
-| `internal/secret`   | Encrypts the client secrets of the tenants. |
+| `internal/secret`   | AES-256-GCM with the KEK. It encrypts the client secrets and wraps the keys of the tenants. |
 | `internal/doc`      | Checks the documents. Converts a document to HTML, Markdown and plain text. |
 | `internal/export`   | Makes the export files of a document. See [Export](#export). |
 | `internal/diagram`  | Makes the images of Mermaid diagrams with the mmdr program. See [Mermaid diagrams](#mermaid-diagrams). |
@@ -154,7 +161,7 @@ space `default0` ("Default").
 | `revisions`        | All versions of each node, with the name of the classification of each version. |
 | `tenant_keys`      | The data key and the search key of each tenant, wrapped with the KEK. |
 | `classifications`  | The levels of information classification of each tenant. `nodes.classification_id` gives the level of a document. |
-| `files`            | Uploaded images. The data is in the table. |
+| `files`            | Uploaded images. The data is in the table, encrypted. |
 | `file_refs`        | The nodes that use each file, in one or more versions. |
 | `node_links`       | The links in the current version of each node: the target node of a `doc:` link, or the keyed hash of the slug of a wiki link. |
 | `users`            | Users. The key is (tenant, issuer, subject). A user with no tenant is a system administrator. |
@@ -164,7 +171,7 @@ space `default0` ("Default").
 | `role_permissions` | The permissions of each role. |
 | `role_bindings`    | Each row gives one role to one user or to one group of a tenant, in all spaces, in one space or in one item. |
 | `audit_events`     | The audit log. A row with no tenant is an event of the system administration. |
-| `sessions`         | Browser sessions. The table keeps only a token hash. |
+| `sessions`         | Browser sessions. The table keeps a hash of the token, not the token. It also keeps the CSRF token and the ID token for the logout. |
 | `oidc_states`      | Data for logins that are in progress. |
 | `schema_migrations`| The migrations that the server applied. |
 
@@ -301,8 +308,9 @@ Each document has one level (`nodes.classification_id`); a folder has
 none (a check constraint). The table `nodes` has no tenant column, thus
 a foreign key cannot make sure that the level belongs to the tenant of
 the space. The store makes this check: it finds the level with a join
-on the space (`classificationFor`). The foreign key to the level is
-deferred to the end of the transaction. Thus the deletion of a tenant
+on the space (`classificationFor`). The database checks the foreign key
+to the level at the end of the transaction (deferred). Thus the deletion
+of a tenant
 removes the levels and the documents in one statement, and the deletion
 of a level that documents use fails.
 
@@ -323,13 +331,15 @@ all formats in the list.
   stays with the text outside of Skriva. The text does not repeat the
   classification.
 - Links and images get absolute URLs with `SKRIVA_BASE_URL`, because
-  the file is not on the server. Wiki links become normal links.
+  the file is not on the server. Also a link to a path on the same site
+  (`/tenant/...`) gets the base URL. Wiki links become normal links.
 - The HTML file contains the images as `data:` URIs. The file server
   sends `Cross-Origin-Resource-Policy: same-origin`, thus a file on
   the disk of the user cannot load the images from Skriva. The export
   uses the same permission check as the file server
   (`Server.readableFile`). The images have a maximum total size of
-  32 MB (`export.MaxEmbeddedBytes`). Images after the limit, and images
+  32 MB (`export.MaxEmbeddedBytes`). Each use of an image counts,
+  because the file contains the data again for each use. Images after the limit, and images
   of other types, keep their URLs.
 - The HTML body comes from the same converter and the same bluemonday
   policy as the page. The export policy also permits `data:` URIs of
@@ -386,7 +396,8 @@ one static program in Rust. It does not use a browser or Node.js.
   mmdr measures the text with its own estimate, because the container
   has no system fonts. The PDF export uses the fonts of Typst.
 - `diagram.Renderer` keeps the recent images and error messages in a
-  cache in memory (32 MB). A key is the same only for the same text.
+  cache in memory (32 MB). A diagram that takes more than 5 seconds is
+  also an error in the cache. A key is the same only for the same text.
   Thus the cache needs no invalidation.
 - The HTML export contains the images as `data:` URIs. The PDF export
   writes the images into the temporary folder of Typst. The Markdown
@@ -422,10 +433,16 @@ line at the same position, word by word. The page shows three equal
 lines around each change.
 
 The time of the algorithm grows with the number of changes. Thus a
-small change in a long document is fast. If two versions have more
-than 1000 changed lines, the result shows the middle part as removed
-and added, without a search for equal lines. This limits the time and
-the memory of one request.
+small change in a long document is fast. These limits keep the time and
+the memory of one request small:
+
+- If two versions have more than 1000 changed lines, the result shows
+  the middle part as removed and added, without a search for equal
+  lines.
+- A line with more than 2000 words, or with more than 200 changed words,
+  shows as fully changed.
+- The comparison word by word stops after 200000 words in all lines.
+  The lines after this limit show as fully changed.
 
 ### Uploaded files
 
@@ -493,9 +510,16 @@ plain text.
 - The store makes the keys of a tenant when it needs them for the first
   time, in its own transaction. Thus a key that encrypted a value is
   always saved, also if the transaction of the value fails.
+- The store reads the keys with a separate small connection pool (two
+  connections). The store can need a key in a transaction, which holds a
+  connection of the main pool. With one pool, many requests at the same
+  time could wait for each other until all connections are in use.
 - The keys stay in memory for 5 minutes. Then the store reads the
   current version again, because a different server can rotate the key.
-  A retired key is deleted only after one hour, when no value uses it.
+  The store deletes a retired key only after one hour, when no value
+  uses it. The re-encryption encrypts all values of one row with the
+  same key. It does not stop for a value that it cannot decrypt: that
+  value keeps its key, thus the key stays.
 - The title of a node is encrypted as the text. The store decrypts the
   titles of a list and sorts them in memory: folders first, then the
   titles in the root collation of Unicode (CLDR), case ignored. The
@@ -525,7 +549,8 @@ letters and digits, in lower case. A search makes the hashes of the
 search words and finds the rows that contain all of them (`@>`). Items
 with the words in the title (`nodes.title_tokens`) come first. The store decrypts the plain
 text of the results and makes the parts of the text with the words.
-The search finds whole words only, not word parts or phrases.
+The search finds whole words only, not word parts or phrases. A word
+with `-` before it (`-word`) excludes the items with that word.
 
 ## Migrations
 

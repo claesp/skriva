@@ -27,8 +27,8 @@ missing or not valid.
 | `SKRIVA_SYSTEM_ADMIN_GROUP`      |                         | The OIDC group of the system administrators. If it is empty, nobody can sign in at `/admin/`. |
 | `SKRIVA_ADMIN_GROUP`             |                         | The admin group of the default tenant, if the tenant has none. |
 | `SKRIVA_GROUP_ROLES`             |                         | More group roles in the default tenant, for example `editors=editor,writers=maintainer`. |
-| `SKRIVA_SESSION_TTL`             | `4h`                    | The maximum life of a system administrator session. |
-| `SKRIVA_BASE_URL`                | `http://localhost:8080` | The public URL of the server. It must not have a path. |
+| `SKRIVA_SESSION_TTL`             | `4h`                    | The maximum life of a system administrator session. It must be one minute or more. |
+| `SKRIVA_BASE_URL`                | `http://localhost:8080` | The public URL of the server. It must not have a path, a user, a query or a fragment. |
 | `SKRIVA_LISTEN_ADDR`             | `:8080`                 | The address for the HTTP server. |
 | `SKRIVA_TYPST`                   | `/typst` in the image   | The path of the [Typst](https://typst.app) program for the PDF export. If it is set, the program must exist, or the server does not start. If it is not set, the server finds `typst` in the `PATH`. Without the program, the PDF export is not available. |
 | `SKRIVA_MMDR`                    | `/mmdr` in the image    | The path of the [mmdr](https://github.com/1jehuang/mermaid-rs-renderer) program for Mermaid diagrams. If it is set, the program must exist, or the server does not start. If it is not set, the server finds `mmdr` in the `PATH`. Without the program, a diagram is a code block. |
@@ -57,8 +57,8 @@ head -c 32 /dev/urandom | base64
 ```
 
 Keep the key in a secret store. Make a backup of the key. Without the
-key, the server cannot read the client secrets of the tenants. Then a
-system administrator must type each client secret again.
+key, the server does not start, and nobody can read the documents, the
+files or the client secrets, also not from a backup.
 
 ## Base URL
 

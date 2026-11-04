@@ -111,7 +111,7 @@ Skriva uses **Tiptap 3** (MIT) with the JSON format. The reasons are:
   inline scripts, no `eval`, no inline styles. The server checks all
   data again.
 - **Performance.** ProseMirror changes only the parts of the DOM that
-  change. The script is 445 KB minified (140 KB with gzip). Only the
+  change. The script is approximately 460 KB minified (145 KB with gzip). Only the
   form of a document loads it, and the browser keeps it in its cache.
 
 WebAssembly is not an option: no maintained WYSIWYG editor uses it, and

@@ -16,7 +16,7 @@ and these guidelines for long-form text:
 
 | Item | Value | Reason |
 |------|-------|--------|
-| Font | Source Serif 4. The fallback fonts are Charter, Sitka Text, Cambria, Palatino and Georgia. | Tufte CSS uses a serif font for the text. The server supplies the font, thus all systems show the same font. See [Fonts](fonts.md). |
+| Font | Source Serif 4. The fallback fonts are Charter, Sitka Text, Cambria, Iowan Old Style, Palatino and Georgia. | Tufte CSS uses a serif font for the text. The server supplies the font, thus all systems show the same font. See [Fonts](fonts.md). |
 | Size | 18 px on small screens to 22 px on large screens (1.125rem to 1.375rem). | Butterick recommends 15 to 25 px on the web. |
 | Line height | 1.6 | WCAG 1.4.8 recommends at least 1.5. |
 | Line length | 75% of the window, from 40rem to 90rem. On a small window, the text uses all of the column. This is approximately 40 characters on a telephone and 125 characters on a 1440 px screen. | By decision of the project: the text uses most of the width on large screens. The guidelines recommend 45 to 75 characters, and WCAG 1.4.8 permits a maximum of 80. |
@@ -82,7 +82,7 @@ and these guidelines for long-form text:
   break only at spaces. A table with many columns (the audit log) is in
   a box that scrolls to the side.
 - The page of a document has a bar below the toolbar: "This document is
-  classified RESTRICTED". The level is in capital letters and bold. The
+  classified as RESTRICTED". The level is in capital letters and bold. The
   bar covers the width of the window without the column at the left
   side. It has a faint background in the accent color and a bottom
   border in the accent color. On a small window, the bar is directly
@@ -93,8 +93,9 @@ and these guidelines for long-form text:
 - The accent color (`--accent`) is the color of the folder icons, the
   links and the main buttons. Change the color in one place: the
   tokens at the top of `style.css`, for light and dark mode.
-- In a table, a date column is the last data column. The text in it is
-  right-aligned.
+- In a table, a date column is at the right side of the other data
+  columns. Only a column with the user who made the change can come
+  after it. The text in a date column is right-aligned.
 - All toolbars and all columns of action buttons show all their
   buttons. A button for an action that the user cannot do (no
   permission, or not possible for this item) is disabled: gray, without

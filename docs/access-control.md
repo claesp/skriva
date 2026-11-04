@@ -50,7 +50,7 @@ have the name of a built-in role.
 
 ## Scope of a role binding
 
-A role binding has one of two scopes:
+A role binding has one of three scopes:
 
 | Scope      | Effect |
 |------------|--------|
@@ -112,8 +112,8 @@ also private.
 ### Make a private folder or document
 
 1. Open the folder or the document.
-2. Click **Access** (lock) in the toolbar. Only users with `tenant.manage`
-   see this button.
+2. Click **Access** (lock) in the toolbar. For users without
+   `tenant.manage`, the button is gray.
 3. Click **Change the default role** (pencil). Select "None". Click
    **Save**.
 4. Click **New role binding** (+) for each user or group that must
@@ -133,8 +133,9 @@ access to a private item:
 
 The server does not read the full tree of a space to calculate the
 permissions. Each item has a cached **access path**. The access path is
-the list of the items above the item (and the item itself) that have
-their own access settings: a default role or a role binding. The
+a list of items: the items above the item, and the item itself, that
+have their own access settings. An access setting is a default role or a
+role binding. The
 permissions of a user for an item depend only on its access path.
 
 Many items share one access path. For example, all items in a space
@@ -181,7 +182,7 @@ The server uses these permissions:
 
 | Action | Permission |
 |--------|------------|
-| Open an item, its history or its source | `doc.read` for the item |
+| Open an item, its history, a comparison or an export | `doc.read` for the item |
 | Make an item | `doc.create` for the new parent (or for the top level of the space) |
 | Edit or rename an item | `doc.edit` for the item |
 | Move an item | `doc.edit` for the item, and `doc.create` for the new parent |
@@ -195,7 +196,11 @@ server does not tell that the item exists. The tree, the path above the
 title, the lists, "Recent changes", the search and the wiki links show
 only items that the user can read. If the user can read an item but not
 its parent folder, the tree shows the item at a higher level, without
-the title of the folder.
+the title of the folder. The trash also does not show the title of the
+old parent.
+
+If a user can read nothing in a space, the space is "not found". The
+page does not show the name of the space.
 
 Outside a space (for example on the administration pages), the
 permissions are the union of the default role of the tenant and the

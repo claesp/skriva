@@ -10,11 +10,13 @@ A KMS for the KEK is not done yet.
 
 ## The data to protect
 
-The content of the documents is in these columns:
+Before the encryption, the content of the documents was in these
+columns. The current columns are in
+[Security: encryption at rest](security.md#encryption-at-rest).
 
 | Table | Columns | Contents |
 |-------|---------|----------|
-| `nodes` | `title`, `slug`, `body`, `plain_text`, `search` | The current version. `search` is a `tsvector`: it contains the words of the title and the text. |
+| `nodes` | `title`, `slug`, `body`, `plain_text`, `search` | The current version. `search` was a `tsvector`: it contained the words of the title and the text. |
 | `revisions` | `title`, `body` | All old versions. |
 | `files` | `data` | Uploaded images and draw.io diagrams. |
 | `node_links` | `target_slug` | The titles of the targets of wiki links. |
@@ -130,7 +132,8 @@ The design:
 3. Skriva encrypts each value with AES-256-GCM and the DEK of the
    tenant. The package `internal/secret` already does this for the
    client secrets. The additional data (AAD) of GCM contains the table,
-   the column and the row (for example `revisions.body:<node>:<version>`).
+   the column and the row. The implementation uses
+   `skriva:<tenant>:revisions.body:<space>:<public ID>:<version>`.
    Thus an attacker cannot move a ciphertext to a different row.
 4. Each ciphertext starts with the version of the key. Thus a new key
    can come into use, and a background task can encrypt the old values
@@ -139,7 +142,9 @@ The design:
 - Protects against: T1, T2 (also `pg_dump` files), and T3. A database
   administrator sees only ciphertext.
 - Crypto-shredding: when a tenant is deleted, the deletion of its DEK
-  makes all its data unreadable, also in old backups.
+  makes its data unreadable in the live database. Old backups contain
+  the wrapped DEK. The KEK of that time can decrypt it. Change the KEK
+  to make old backups unreadable.
 - Changes to Skriva: large. See the next section.
 - Performance: AES-GCM with AES-NI encrypts more than 1 GB/s on one CPU
   core. A document is at most 1 MiB. The cost is small. The KMS call
@@ -147,7 +152,7 @@ The design:
 
 #### Effects of method 5 on the functions of Skriva
 
-| Function | Now | With encrypted content |
+| Function | Before the encryption | With encrypted content |
 |----------|-----|------------------------|
 | Full text search | `tsvector` in PostgreSQL with a GIN index. | Not possible on ciphertext. A plain `tsvector` would contain all words of the text. See "Search" below. |
 | Title search for links, wiki links (slug), sort by title | SQL (`ILIKE`, `lower(title)`, `slug = $1`). | The titles must stay plain text, or the application sorts and filters in memory. A slug can be a keyed hash (HMAC) of the title. |
@@ -199,6 +204,9 @@ Option 1 is the best compromise.
 
 ## Recommendation
 
+The project implemented recommendation 2 (method 5). The notes at each
+step tell what the implementation does.
+
 1. **Now, without changes to Skriva:** require encrypted storage
    (method 1) and encrypted backups (method 2) in the operation guide.
    This protects against the most frequent losses: disks, snapshots and
@@ -209,18 +217,25 @@ Option 1 is the best compromise.
    Skriva (method 5), in steps:
    1. Keys: the table `tenant_keys`, a KEK from the configuration first,
       and an interface for a KMS (Vault Transit) later. Key versions and
-      rotation from the start.
+      rotation from the start. Done, except the KMS: the interface
+      `store.KEK` exists, but only the KEK from the configuration
+      implements it.
    2. Encrypt `files.data`, `revisions.body` and `nodes.body`. These have
-      no SQL functions on them. Remove `plain_text`.
+      no SQL functions on them. Remove `plain_text`. Done. The
+      implementation keeps `plain_text`, encrypted, for the parts of the
+      text in the search results.
    3. Replace the `tsvector` with a blind index (search option 1), and
-      the plain slugs with HMAC values.
+      the plain slugs with HMAC values. Done.
    4. Decide about the titles. Encrypted titles need sorting and title
       search in the application. Plain titles are simpler, but they can
-      be sensitive. A per-tenant setting is possible.
+      be sensitive. A per-tenant setting is possible. The implementation
+      encrypts all titles.
    5. Encrypt `audit_events.target` and `details`, or keep only IDs.
+      Done: the column `sealed` contains them, encrypted.
 3. Make a decision about the information classification: for example,
    documents with a high level could require method 5, while the other
-   levels use method 1 only.
+   levels use method 1 only. This is open. Now all documents use
+   method 5.
 
 ## Sources
 

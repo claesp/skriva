@@ -19,7 +19,9 @@ sign-in. If you use more than one tenant, sign in to each tenant.
   example "2026-10-31". Put the mouse pointer on a date to see the full
   time in UTC.
 - A document contains text. It can also contain other documents, for
-  example a main document with sub-documents.
+  example a main document with sub-documents. Below the text, the page
+  shows the list **Sub-documents** with the documents in it that you
+  can read.
 
 The pages of a space, a folder and a document show the tree of the
 space at the left side of the window. The start page shows the list of
@@ -147,7 +149,7 @@ classification of that version. A printed document also shows the bar.
 
 To change the classification, open the document with **Edit** and
 select the level in **Classification**, at the right side of the
-**Table** button in the toolbar of the editor. The bar
+**Mermaid diagram** button in the toolbar of the editor. The bar
 changes when you select a level. Click **Save**. The history keeps the
 classification of each version, and the audit log records the change.
 Folders do not have a classification.

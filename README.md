@@ -1,8 +1,10 @@
 # Skriva
 
 Skriva is a wiki. Users write documents in a WYSIWYG editor, with
-headings, lists, tables, alignment and images. The server keeps the
-documents, their images and all their versions in PostgreSQL.
+headings, lists, tables, alignment, images, draw.io diagrams and Mermaid
+diagrams. The server keeps the documents, their images and all their
+versions in PostgreSQL, encrypted. A document can have an information
+classification, and users can export it as Markdown, HTML or PDF.
 
 - A **tenant** is the main organizational unit. Each tenant has its own
   identity provider (OpenID Connect), users, groups, roles and settings.

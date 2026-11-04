@@ -58,12 +58,13 @@ again.
 | `make dev-app`   | Build the container image. Start all services in the pod. |
 | `make dev-down`  | Remove the pod. The database volume stays. |
 | `scripts/dev.sh down --volumes` | Remove the pod and the database volume. |
+| `scripts/dev.sh logs app`       | Show the log of a container (`db`, `keycloak` or `app`). |
+| `scripts/dev.sh status`         | Show the pod and its containers. |
 
 After a change to `0001_init.sql`, remove the database volume with
 `scripts/dev.sh down --volumes`. Then start the pod again with
 `make dev-up`. The server does not apply a changed migration file to an
 existing database.
-| `scripts/dev.sh logs app`       | Show the log of a container (`db`, `keycloak` or `app`). |
 
 Do not use `make run` and `make dev-app` at the same time. Both use port
 8080.

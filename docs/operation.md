@@ -50,7 +50,9 @@ Put a reverse proxy with TLS in front of the server. See
   It waits a maximum of 20 seconds for the open requests.
 
 You can run more than one server with the same database. The servers
-keep no state in memory, except a cache of the OIDC provider data.
+keep no state in memory, except caches: the OIDC provider data, the
+keys of the tenants (5 minutes) and the diagram images. These caches are
+safe with more than one server.
 
 ## Health checks
 
@@ -68,7 +70,8 @@ also record these events:
 - Sign-in of a user.
 - Creation, change and deletion of tenants and spaces.
 - Deletion of folders and documents.
-- Changes to users, roles and role bindings.
+- Changes to users, roles and role bindings. Changes to the members of
+  groups are only in the audit log.
 - Failed CSRF checks and failed sign-ins.
 
 The logs do not contain session tokens, ID tokens or secrets.
@@ -80,15 +83,22 @@ audit log cannot miss a change that the database saved.
 
 ## Maintenance
 
-The server deletes expired sessions and login data every 10 minutes.
-At the same time, it permanently deletes the items that are in the
-trash for more than 30 days, the audit events that are older than 365
-days, and the uploaded images that no document uses after one day.
+Every 10 minutes, the cleanup task does these steps:
+
+1. It deletes the expired sessions and login data.
+2. It permanently deletes these items:
+   - the items that are in the trash for more than 30 days,
+   - the audit events that are older than 365 days,
+   - the uploaded images that no document uses after one day.
+3. It encrypts the values that use an old data key again, for a maximum
+   of 2 minutes. See [Encryption keys](#encryption-keys).
+
+If one step fails, the other steps still run. The log shows the error.
 
 ## Encryption keys
 
-The content of the documents is encrypted with keys of the tenants. The
-keys are encrypted with `SKRIVA_ENCRYPTION_KEY`. See
+The server encrypts the content of the documents with the keys of the
+tenants. `SKRIVA_ENCRYPTION_KEY` encrypts these keys. See
 [Security: encryption at rest](security.md#encryption-at-rest).
 
 - **Keep the key safe.** Without the key, nobody can read the documents,
@@ -98,7 +108,8 @@ keys are encrypted with `SKRIVA_ENCRYPTION_KEY`. See
   tenant, then **Make a new data key** in **Encryption**. The cleanup
   task (every 10 minutes) encrypts the old values again. The tenant page
   shows the number of values that still use an old key.
-- **New key encryption key.** Make a new key (`openssl rand -base64 32`).
+- **New key encryption key.** Make a new key
+  (`head -c 32 /dev/urandom | base64`).
   Set it in `SKRIVA_ENCRYPTION_KEY`, and the old key in
   `SKRIVA_ENCRYPTION_KEY_PREVIOUS`. Start the server. The log tells when
   the server wrapped the keys again. Then remove
@@ -107,9 +118,10 @@ keys are encrypted with `SKRIVA_ENCRYPTION_KEY`. See
 
 ## Backup
 
-All data is in PostgreSQL, also the uploaded images. Also make a backup of the encryption key.
-Without the key, the server cannot read the client secrets of the
-tenants. Use `pg_dump` or the backup system of your database. Example:
+All data is in PostgreSQL, also the uploaded images. Also make a backup
+of the encryption key. Without the key, nobody can read the documents,
+the files and the client secrets of a backup. Use `pg_dump` or the
+backup system of your database. Example:
 
 ```sh
 pg_dump --format=custom --file=skriva.dump "$SKRIVA_DATABASE_URL"

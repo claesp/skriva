@@ -5,7 +5,7 @@ There are two levels of administration.
 | Level  | URL                | Who |
 |--------|--------------------|-----|
 | System | `/admin/`          | Members of `SKRIVA_SYSTEM_ADMIN_GROUP` at the system identity provider. |
-| Tenant | `/{tenant}/admin/` | Users of the tenant with the permission `tenant.manage` or `space.manage`. |
+| Tenant | `/{tenant}/admin/` | Users of the tenant with the permission `tenant.manage`. With only `space.manage`, a user can open `/{tenant}/admin/spaces`. |
 
 A system administrator does not have access to the documents of a
 tenant. A tenant administrator does not have access to the system
@@ -19,8 +19,10 @@ document, on the two levels:
 - The bar below the page header covers the full width. It shows the
   path at the left side and the toolbar of the item at the right side.
 - The menu at the left side shows the main sections: **Users**,
-  **Groups**, **Roles**, **Role bindings**, **Recent changes**, **Audit
-  log** and **Spaces**. The menu always shows all sections. A section
+  **Groups**, **Roles**, **Role bindings**, **Classifications**,
+  **Recent changes**, **Audit log** and **Spaces**. The menu of the
+  system administration has **Tenants** and **Audit log**. The menu
+  always shows all sections. A section
   that you do not have permission for is gray and has no link. For
   example, a user with only `space.manage` can open **Spaces** only.
 - Each page has one function: a list, the data of one item, or one
@@ -101,14 +103,14 @@ for example `/acme/handbook/`.
 |---------|-------------|
 | Name | The name in the page header. |
 | Disabled | Nobody can use a disabled tenant. The server deletes all sessions of the tenant. |
-| Issuer URL | The issuer of the identity provider. It must be an `https` URL. An `http` URL is permitted only for `localhost`. |
+| Issuer URL | The issuer of the identity provider. It must be an `https` URL. An `http` URL is permitted only for `localhost`. If it is empty, the tenant has no identity provider and nobody can sign in. |
 | Client ID | The client ID at the identity provider. |
 | Client secret | The client secret. The server encrypts it. The page never shows it. An empty field keeps the current secret. |
 | Scopes | The OIDC scopes. `openid` is always included. |
 | Groups claim | The ID token claim with the group names. |
 | Admin group | An OIDC group. Its members always have the `admin` role. |
 | Default role | The role of all signed-in users of the tenant. "(None)" means that a user needs a role binding. |
-| Session life | The maximum life of a session, for example `12h`. |
+| Session life | The maximum life of a session, from `1m` to `720h`, for example `12h`. |
 | Maximum document size | The maximum size of the text of one document, from 1 to 1024 KiB. |
 
 ### Delete a tenant
@@ -133,9 +135,13 @@ Users with the permission `tenant.manage` manage these items:
   **Members** and **Role bindings**. For an OIDC group,
   **New member**, **Remove** and **Delete** are disabled, because the
   identity provider controls the members. See [Access control](access-control.md).
-- **Roles.** Custom roles for the tenant.
-- **Role bindings.** Roles for users and groups, for all spaces or for
-  one space.
+- **Roles.** Custom roles for the tenant. You cannot delete a role that
+  is the default role of the tenant, of a space or of an item. Change
+  the default role first.
+- **Role bindings.** Roles for users and groups, for all spaces, for one
+  space or for one item.
+- **Recent changes.** The documents that changed last, in all spaces.
+  The list shows only the documents that you can read.
 - **Access to a space.** The default role and the role bindings of one
   space. Open **Spaces**, then click **Access** (lock) in the row of
   the space. See [Access control](access-control.md).
@@ -186,10 +192,12 @@ The tenant audit log records these events:
 | Roles | Make, delete |
 | Role bindings | Give a role, remove a role (with the scope) |
 | Spaces | Make, change, delete, change the default role |
-| Folders and documents | Move, change the default role, restore an old version, delete (to the trash), restore from the trash, delete permanently |
+| Classifications | Make, change, delete a level |
+| Folders and documents | Move, change the default role, change the classification, restore an old version, delete (to the trash), restore from the trash, delete permanently |
 
 The system audit log records the sign-ins of the system administrators
-and these changes to tenants: make, change and delete.
+and these changes to tenants: make, change, delete and make a new data
+key.
 
 Each row shows the user, the action, the item, the details and the time.
 The newest events come first. A page shows 100 events. Click **Older
