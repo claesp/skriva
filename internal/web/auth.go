@@ -37,6 +37,20 @@ type authScope struct {
 // scope returns the authScope for the request. It returns false and
 // writes an error if the identity provider is not available.
 func (s *Server) scope(w http.ResponseWriter, r *http.Request) (*authScope, bool) {
+	sc, err := s.scopeOf(r)
+	if err != nil {
+		s.log.Warn("no identity provider for tenant", "tenant", reqInfoFrom(r.Context()).Tenant.Code, "error", err)
+		s.renderError(w, r, http.StatusServiceUnavailable,
+			"Sign-in is not available for this tenant. Ask a system administrator to set the identity provider.")
+		return nil, false
+	}
+	return sc, true
+}
+
+// scopeOf returns the authScope for the request. If the identity
+// provider of the tenant is not available, the result has no auth and
+// the error tells why.
+func (s *Server) scopeOf(r *http.Request) (*authScope, error) {
 	ri := reqInfoFrom(r.Context())
 	if ri.Tenant == nil {
 		return &authScope{
@@ -48,16 +62,10 @@ func (s *Server) scope(w http.ResponseWriter, r *http.Request) (*authScope, bool
 			allow: func(id store.Identity) bool {
 				return s.opts.SystemAdminGroup != "" && slices.Contains(id.Groups, s.opts.SystemAdminGroup)
 			},
-		}, true
+		}, nil
 	}
 	t := ri.Tenant
 	auth, err := s.opts.TenantAuth(r.Context(), t)
-	if err != nil {
-		s.log.Warn("no identity provider for tenant", "tenant", t.Code, "error", err)
-		s.renderError(w, r, http.StatusServiceUnavailable,
-			"Sign-in is not available for this tenant. Ask a system administrator to set the identity provider.")
-		return nil, false
-	}
 	return &authScope{
 		tenantID:      &t.ID,
 		base:          tenantPath(t),
@@ -65,7 +73,7 @@ func (s *Server) scope(w http.ResponseWriter, r *http.Request) (*authScope, bool
 		stateCookie:   s.cookieName("skriva_login_t" + strconv.FormatInt(t.ID, 10)),
 		sessionTTL:    t.SessionTTL,
 		auth:          auth,
-	}, true
+	}, err
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -179,11 +187,14 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, safeReturnTo(st.ReturnTo, sc.base), http.StatusSeeOther) // #nosec G710 -- checked.
 }
 
+// handleLogout ends the session. Then it sends the browser to the
+// identity provider, which ends its session also. The answer is a page
+// that goes to the identity provider, not a redirect: the
+// Content-Security-Policy (form-action 'self') does not permit a redirect
+// to a different site after a form.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	sc, ok := s.scope(w, r)
-	if !ok {
-		return
-	}
+	// End the session also if the identity provider is not available.
+	sc, scopeErr := s.scopeOf(r)
 	var idToken string
 	if c, err := r.Cookie(sc.sessionCookie); err == nil {
 		if idToken, err = s.store.DeleteSession(r.Context(), c.Value); err != nil {
@@ -192,11 +203,21 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.clearCookie(w, sc.sessionCookie)
-	target := sc.auth.LogoutURL(r.Context(), idToken, s.absURL(sc.base+"/signed-out"))
-	if target == "" {
-		target = sc.base + "/signed-out"
+	signedOut := sc.base + "/signed-out"
+	if scopeErr != nil {
+		s.log.Warn("sign-out without the identity provider", "base", sc.base, "error", scopeErr)
+		http.Redirect(w, r, signedOut, http.StatusSeeOther)
+		return
 	}
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	target := sc.auth.LogoutURL(r.Context(), idToken, s.absURL(signedOut))
+	if u, err := url.Parse(target); target == "" || err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+		http.Redirect(w, r, signedOut, http.StatusSeeOther)
+		return
+	}
+	v := s.newView(r, "Signing out", target)
+	v.Session, v.Space, v.New = nil, nil, nil // the session ended
+	v.Refresh = target
+	s.write(w, r, http.StatusOK, "signing-out", v)
 }
 
 func (s *Server) handleSignedOut(w http.ResponseWriter, r *http.Request) {

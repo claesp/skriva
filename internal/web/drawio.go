@@ -25,11 +25,13 @@ var (
 )
 
 // unsafeSVGElements are elements that can run scripts or load documents.
-// draw.io does not make them.
+// draw.io does not make them. The animation elements can set an
+// attribute, for example href to a javascript: URL.
 var unsafeSVGElements = map[string]bool{
 	"script": true, "iframe": true, "object": true, "embed": true, "frame": true,
 	"frameset": true, "applet": true, "base": true, "meta": true, "link": true,
 	"handler": true, "listener": true,
+	"set": true, "animate": true, "animatemotion": true, "animatetransform": true, "animatecolor": true,
 }
 
 // checkDrawioSVG makes sure that data is a draw.io diagram in SVG format:
@@ -58,6 +60,11 @@ func checkDrawioSVG(data []byte) error {
 			return errNotXML
 		}
 		switch t := tok.(type) {
+		case xml.ProcInst:
+			// Only the XML declaration. A style sheet can load a file.
+			if !strings.EqualFold(t.Target, "xml") {
+				return errUnsafeSVG
+			}
 		case xml.Directive:
 			// draw.io writes a DOCTYPE without an internal subset. An
 			// internal subset can define entities.

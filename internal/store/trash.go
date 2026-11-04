@@ -29,7 +29,10 @@ type TrashItem struct {
 	// the trash with the item.
 	Descendants int
 	// ParentTitle is the title of the old parent, or "" for the top level.
+	// The caller must remove it if the user cannot read the parent.
 	ParentTitle string
+	// ParentAccessPathID is the access path of the old parent, or 0.
+	ParentAccessPathID int64
 	// ParentInTrash is true if the old parent is also in the trash.
 	ParentInTrash bool
 }
@@ -78,7 +81,7 @@ const trashSelect = `
 	SELECT n.id, n.public_id, n.space_id, n.kind, n.title, n.access_path_id, n.deleted_at,
 	       COALESCE(NULLIF(u.display_name, ''), u.username, ''),
 	       (SELECT count(*) FROM nodes d WHERE d.trash_id = n.id AND d.id <> n.id),
-	       p.public_id, p.title, COALESCE(p.deleted_at IS NOT NULL, false)
+	       p.public_id, p.title, COALESCE(p.access_path_id, 0), COALESCE(p.deleted_at IS NOT NULL, false)
 	FROM nodes n
 	LEFT JOIN users u ON u.id = n.deleted_by
 	LEFT JOIN nodes p ON p.id = n.parent_id
@@ -95,7 +98,7 @@ type trashRow struct {
 func scanTrashItem(row pgx.CollectableRow) (trashRow, error) {
 	var t trashRow
 	err := row.Scan(&t.ID, &t.PublicID, &t.spaceID, &t.Kind, &t.title, &t.AccessPathID, &t.DeletedAt,
-		&t.DeletedBy, &t.Descendants, &t.parentID, &t.parent, &t.ParentInTrash)
+		&t.DeletedBy, &t.Descendants, &t.parentID, &t.parent, &t.ParentAccessPathID, &t.ParentInTrash)
 	return t, err
 }
 

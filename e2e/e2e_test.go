@@ -21,6 +21,7 @@ var (
 	formActionRE = regexp.MustCompile(`<form[^>]+id="kc-form-login"[^>]+action="([^"]+)"`)
 	csrfRE       = regexp.MustCompile(`name="csrf_token" value="([^"]+)"`)
 	docIDRE      = regexp.MustCompile(`/d/([0-9a-z]{14})(/|$)`)
+	refreshRE    = regexp.MustCompile(`<meta http-equiv="refresh" content="0; url=([^"]+)">`)
 )
 
 type browser struct {
@@ -131,8 +132,15 @@ func TestTenantDocumentsAndRBAC(t *testing.T) {
 	resp, body = alice.get(sp + "/d/" + doc)
 	wantCode(t, resp, body, http.StatusNotFound)
 
-	resp, _ = alice.post("/dflt/logout", url.Values{})
-	if resp.Request.URL.Path != "/dflt/signed-out" {
+	// The logout page goes to Keycloak with a meta refresh. Keycloak
+	// then goes back to the signed-out page.
+	resp, body = alice.post("/dflt/logout", url.Values{})
+	m = refreshRE.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("the logout page has no refresh: %s", body)
+	}
+	req, _ := http.NewRequest(http.MethodGet, html.UnescapeString(m[1]), nil)
+	if resp, _ = alice.do(req); resp.Request.URL.Path != "/dflt/signed-out" {
 		t.Fatalf("logout ended at %s", resp.Request.URL)
 	}
 }

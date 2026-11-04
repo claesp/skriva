@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -80,7 +81,7 @@ func TestEncryptionAtRest(t *testing.T) {
 
 	// Search finds whole words. It does not find parts of words.
 	results, err := st2.Search(ctx, tn.ID, []int64{sp.ID}, "SWORDFISH launch", 10)
-	if err != nil || len(results) != 1 || results[0].Snippet != "The «launch» code is «swordfish.»" {
+	if err != nil || len(results) != 1 || fmt.Sprint(results[0].Snippet) != "[{The  false} {launch true} { code is  false} {swordfish. true}]" {
 		t.Fatalf("search = %+v, %v", results, err)
 	}
 	if results, _ := st2.Search(ctx, tn.ID, []int64{sp.ID}, "sword", 10); len(results) != 0 {

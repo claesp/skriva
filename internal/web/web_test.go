@@ -759,9 +759,37 @@ func TestLogout(t *testing.T) {
 	e := newEnv(t)
 	bob := e.login("bob")
 	resp := bob.post("/dflt/logout", nil)
+	// A page goes to the identity provider. The CSP (form-action 'self')
+	// does not permit a redirect to a different site after a form.
+	wantStatus(t, resp, http.StatusOK)
+	page := readBody(t, resp)
+	for _, want := range []string{
+		`<meta http-equiv="refresh" content="0; url=https://idp.example/logout?post_logout_redirect_uri=` +
+			url.QueryEscape("http://example.test/dflt/signed-out"),
+		`href="https://idp.example/logout?`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the page does not contain %s:\n%s", want, page)
+		}
+	}
+	if strings.Contains(page, "bob") {
+		t.Error("the page shows the user after the logout")
+	}
+	wantStatus(t, bob.get("/dflt/"), http.StatusSeeOther)
+}
+
+// Without an identity provider, the logout still ends the session.
+func TestLogoutWithoutProvider(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob")
+	ts := e.dft.TenantSettings
+	ts.OIDCIssuer = ""
+	if _, err := e.st.UpdateTenant(ctx, e.dft.ID, e.dft.Code, ts, nil); err != nil {
+		t.Fatal(err)
+	}
+	resp := bob.post("/dflt/logout", nil)
 	wantStatus(t, resp, http.StatusSeeOther)
-	if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, "https://idp.example/logout") ||
-		!strings.Contains(loc, url.QueryEscape("http://example.test/dflt/signed-out")) {
+	if loc := resp.Header.Get("Location"); loc != "/dflt/signed-out" {
 		t.Fatalf("logout redirects to %q", loc)
 	}
 	wantStatus(t, bob.get("/dflt/"), http.StatusSeeOther)
@@ -1022,9 +1050,9 @@ func TestSystemAdmin(t *testing.T) {
 	wantStatus(t, root.post("/admin/tenants/dflt/delete", url.Values{"confirm": {"dflt"}}), http.StatusBadRequest)
 
 	resp = root.post("/admin/logout", nil)
-	wantStatus(t, resp, http.StatusSeeOther)
-	if loc := resp.Header.Get("Location"); !strings.Contains(loc, url.QueryEscape("http://example.test/admin/signed-out")) {
-		t.Fatalf("system logout redirects to %q", loc)
+	if b := readBody(t, resp); resp.StatusCode != http.StatusOK ||
+		!strings.Contains(b, url.QueryEscape("http://example.test/admin/signed-out")) {
+		t.Fatalf("system logout: status %d:\n%s", resp.StatusCode, b)
 	}
 }
 
@@ -1054,7 +1082,13 @@ func TestSpacePermissions(t *testing.T) {
 	// Carol has only the tenant default role, thus no access. Bob is an
 	// editor through a group binding for all spaces. That binding applies
 	// also in the private space.
-	wantStatus(t, carol.get("/dflt/secret00/"), http.StatusForbidden)
+	// For carol, the space does not exist: the page does not show its
+	// name.
+	resp = carol.get("/dflt/secret00/")
+	if b := readBody(t, resp); resp.StatusCode != http.StatusNotFound || strings.Contains(b, "Secret") {
+		t.Fatalf("the page shows the name of the space:\n%s", b)
+	}
+	wantStatus(t, carol.get("/dflt/secret00/search?q=x"), http.StatusNotFound)
 	wantStatus(t, carol.get(doc), http.StatusNotFound)
 	wantStatus(t, bob.get(doc), http.StatusOK)
 
@@ -2034,5 +2068,84 @@ func TestWithFont(t *testing.T) {
 		if got := string(withFont([]byte(in))); got != want {
 			t.Errorf("withFont(%q) = %.80q", in, got)
 		}
+	}
+}
+
+// A user cannot get access to a file through a new document, only because
+// the user knows the ID of the file.
+func TestFileOfOtherDocument(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	carol := e.login("carol")
+	users, _ := e.st.Users(ctx, e.dft.ID)
+	var carolID int64
+	for _, u := range users {
+		if u.Username == "carol" {
+			carolID = u.ID
+		}
+	}
+
+	private := alice.create("document", "", "Private", "x")
+	resp := alice.upload(sp+"/files?node="+private, "a.png", png)
+	wantStatus(t, resp, http.StatusOK)
+	var out struct{ URL string }
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	image := `{"type":"doc","content":[{"type":"image","attrs":{"src":"` + out.URL + `"}}]}`
+	wantStatus(t, alice.save(private, "Private", image, 1), http.StatusSeeOther)
+	wantStatus(t, alice.post(sp+"/access/"+private+"/default-role", url.Values{"default_role": {""}}), http.StatusSeeOther)
+	wantStatus(t, carol.get(out.URL), http.StatusNotFound)
+
+	// Carol can make documents in her folder. A document with the image
+	// does not give her access to the file.
+	mine := alice.create("folder", "", "Mine", "")
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"editor"}, "subject": {"user:" + strconv.FormatInt(carolID, 10)}, "space": {"default0"}, "node": {mine},
+	}), http.StatusSeeOther)
+	carol.create("document", mine, "Copy", image)
+	wantStatus(t, carol.get(out.URL), http.StatusNotFound)
+}
+
+// The trash does not show the title of a parent that the user cannot
+// read.
+func TestTrashParentTitle(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	carol := e.login("carol")
+	users, _ := e.st.Users(ctx, e.dft.ID)
+	var carolID int64
+	for _, u := range users {
+		if u.Username == "carol" {
+			carolID = u.ID
+		}
+	}
+	hr := alice.create("folder", "", "Layoffs", "")
+	memo := alice.create("document", hr, "Memo", "x")
+	wantStatus(t, alice.post(sp+"/access/"+hr+"/default-role", url.Values{"default_role": {""}}), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/roles", url.Values{"name": {"deleter"}, "permission": {"doc.read", "doc.delete"}}), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/bindings", url.Values{
+		"role": {"deleter"}, "subject": {"user:" + strconv.FormatInt(carolID, 10)}, "space": {"default0"}, "node": {memo},
+	}), http.StatusSeeOther)
+	wantStatus(t, carol.post(sp+"/delete/"+memo, nil), http.StatusSeeOther)
+	page := readBody(t, carol.get(sp+"/trash"))
+	if !strings.Contains(page, "Memo") || strings.Contains(page, "Layoffs") || !strings.Contains(page, "A folder that you cannot read") {
+		t.Fatalf("trash of carol:\n%s", page)
+	}
+	if page := readBody(t, alice.get(sp+"/trash")); !strings.Contains(page, "Layoffs") {
+		t.Fatalf("trash of alice:\n%s", page)
+	}
+}
+
+// The marks of a snippet are elements. The « and » characters in the
+// text stay text.
+func TestSearchSnippet(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob")
+	bob.create("document", "", "Quotes", "He said «hello» to <b>zebra</b> and »")
+	page := readBody(t, bob.get(sp+"/search?q=zebra"))
+	if !strings.Contains(page, "He said «hello» to <mark>&lt;b&gt;zebra&lt;/b&gt;</mark> and »") {
+		t.Fatalf("search page:\n%s", page)
 	}
 }

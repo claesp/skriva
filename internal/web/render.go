@@ -227,8 +227,10 @@ type view struct {
 	// Section is the menu item of the page, for example "groups".
 	Section string
 	// New is the place for the buttons for new items in the header.
-	New  *newTarget
-	Data any
+	New *newTarget
+	// Refresh is a URL. The page goes to it at once (meta refresh).
+	Refresh string
+	Data    any
 }
 
 // TenantPath returns the URL path of the tenant, for example "/dflt".

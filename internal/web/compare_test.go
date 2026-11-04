@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -39,5 +40,23 @@ func TestCompareLines(t *testing.T) {
 	}
 	if l := compareLines("a\n", "a"); len(l) != 1 || l[0].Kind != "skip" {
 		t.Fatalf("same text = %+v", l)
+	}
+}
+
+// Two very different versions do not use too much time: after the budget,
+// the lines show as fully changed.
+func TestCompareBudget(t *testing.T) {
+	var old, cur []string
+	for i := range 300 {
+		old = append(old, strings.Repeat("w ", 900)+"old"+strconv.Itoa(i))
+		cur = append(cur, strings.Repeat("w ", 900)+"new"+strconv.Itoa(i))
+	}
+	lines := compareLines(strings.Join(old, "\n"), strings.Join(cur, "\n"))
+	last := lines[len(lines)-1]
+	if last.Kind != "insert" || len(last.Parts) != 1 || !last.Parts[0].Changed {
+		t.Fatalf("the last line is %+v", last.Kind)
+	}
+	if first := lines[0]; len(first.Parts) < 2 {
+		t.Fatalf("the first line has no word changes: %d parts", len(first.Parts))
 	}
 }

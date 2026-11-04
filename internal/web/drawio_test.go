@@ -41,6 +41,9 @@ func TestCheckDrawioSVG(t *testing.T) {
 		"javascript link":    {insert(`<a xlink:href=" java&#9;script:alert(1)"><text>x</text></a>`), errUnsafeSVG},
 		"data HTML link":     {insert(`<a href="data:text/html,x"><text>x</text></a>`), errUnsafeSVG},
 		"nested SVG image":   {insert(`<image href="data:image/svg+xml;base64,PHN2Zz4="/>`), errUnsafeSVG},
+		"set href":           {insert(`<a><set attributeName="href" to="javascript:alert(1)"/><text>x</text></a>`), errUnsafeSVG},
+		"animate":            {insert(`<a><animate attributeName="href" values="javascript:alert(1)"/></a>`), errUnsafeSVG},
+		"style sheet":        {[]byte(`<?xml version="1.0"?><?xml-stylesheet href="https://evil.example/x.css"?><svg ` + content + `/>`), errUnsafeSVG},
 		"entities":           {[]byte(`<!DOCTYPE svg [<!ENTITY x "y">]><svg ` + content + `>&x;</svg>`), errSVGEntities},
 		"too deep":           {[]byte(`<svg ` + content + `>` + strings.Repeat("<g>", maxSVGDepth) + strings.Repeat("</g>", maxSVGDepth) + `</svg>`), errSVGTooDeep},
 	} {

@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} · {{if .Tenant}}{{.Tenant.Name}}{{else}}Skriva{{end}}</title>
+{{with .Refresh}}<meta http-equiv="refresh" content="0; url={{.}}">
+{{end}}<title>{{.Title}} · {{if .Tenant}}{{.Tenant.Name}}{{else}}Skriva{{end}}</title>
 <link rel="stylesheet" href="{{.StyleURL}}">
 </head>
 <body>

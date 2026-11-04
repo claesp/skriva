@@ -41,6 +41,7 @@ type diffLine struct {
 func compareLines(oldText, newText string) []diffLine {
 	a, b := splitLines(oldText), splitLines(newText)
 	ops := diff.Diff(a, b)
+	budget := maxWordBudget
 	var out []diffLine
 	for i := 0; i < len(ops); {
 		if ops[i].Kind == diff.Equal {
@@ -67,7 +68,11 @@ func compareLines(oldText, newText string) []diffLine {
 			insLines[k] = diffLine{Kind: "insert", Parts: []diffPart{{Text: b[op.J], Changed: true}}, New: op.J + 1}
 		}
 		for k := range min(len(dels), len(ins)) {
-			delLines[k].Parts, insLines[k].Parts = compareWords(a[dels[k].I], b[ins[k].J])
+			// After the budget, the lines show as fully changed.
+			if budget <= 0 {
+				break
+			}
+			delLines[k].Parts, insLines[k].Parts, budget = compareWords(a[dels[k].I], b[ins[k].J], budget)
 		}
 		out = append(out, delLines...)
 		out = append(out, insLines...)
@@ -86,16 +91,26 @@ func splitLines(s string) []string {
 // wordRE divides a line into words, spaces and other characters.
 var wordRE = regexp.MustCompile(`\s+|[\p{L}\p{N}_]+|.`)
 
-// maxWordTokens is the maximum number of words in a line for the
-// comparison word by word. A longer line shows as fully changed.
-const maxWordTokens = 2000
+// Limits of the comparison word by word. They keep the time of one
+// comparison short, also for two very different versions:
+//   - maxWordTokens is the maximum number of words in a line. A longer
+//     line shows as fully changed.
+//   - maxWordEdits is the maximum number of changed words in a line.
+//   - maxWordBudget is the maximum number of words in all lines of one
+//     comparison. After it, the lines show as fully changed.
+const (
+	maxWordTokens = 2000
+	maxWordEdits  = 200
+	maxWordBudget = 200_000
+)
 
 // compareWords compares two lines word by word. It returns the parts of
-// the old line and of the new line.
-func compareWords(oldLine, newLine string) (oldParts, newParts []diffPart) {
+// the old line and of the new line, and the budget after the comparison.
+func compareWords(oldLine, newLine string, budget int) (oldParts, newParts []diffPart, rest int) {
 	a, b := wordRE.FindAllString(oldLine, -1), wordRE.FindAllString(newLine, -1)
+	budget -= len(a) + len(b)
 	if len(a) > maxWordTokens || len(b) > maxWordTokens {
-		return []diffPart{{oldLine, true}}, []diffPart{{newLine, true}}
+		return []diffPart{{oldLine, true}}, []diffPart{{newLine, true}}, budget
 	}
 	add := func(parts []diffPart, text string, changed bool) []diffPart {
 		if n := len(parts); n > 0 && parts[n-1].Changed == changed {
@@ -104,7 +119,7 @@ func compareWords(oldLine, newLine string) (oldParts, newParts []diffPart) {
 		}
 		return append(parts, diffPart{text, changed})
 	}
-	for _, op := range diff.Diff(a, b) {
+	for _, op := range diff.DiffMax(a, b, maxWordEdits) {
 		switch op.Kind {
 		case diff.Equal:
 			oldParts = add(oldParts, a[op.I], false)
@@ -115,7 +130,7 @@ func compareWords(oldLine, newLine string) (oldParts, newParts []diffPart) {
 			newParts = add(newParts, b[op.J], true)
 		}
 	}
-	return oldParts, newParts
+	return oldParts, newParts, budget
 }
 
 // collapse replaces the equal lines that are far from a change with
@@ -225,7 +240,7 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request, n *store.
 	}
 	var oldTitle, newTitle []diffPart
 	if revs[0].Title != revs[1].Title {
-		oldTitle, newTitle = compareWords(revs[0].Title, revs[1].Title)
+		oldTitle, newTitle, _ = compareWords(revs[0].Title, revs[1].Title, maxWordBudget)
 	}
 	s.render(w, r, http.StatusOK, "compare",
 		"Compare versions "+strconv.Itoa(from)+" and "+strconv.Itoa(to)+" of "+n.Title, struct {

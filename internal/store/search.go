@@ -82,10 +82,17 @@ func parseSearchQuery(q string) (include, exclude []string) {
 // snippetWords is the number of words in a snippet.
 const snippetWords = 24
 
-// snippet returns a part of text around the first word of words. The
-// marks « and » enclose each word of text that contains one of words.
-// "…" shows that the snippet starts or ends in the text.
-func snippet(text string, words []string) string {
+// SnippetPart is a part of a snippet. Mark is true for a word that
+// matches the search.
+type SnippetPart struct {
+	Text string
+	Mark bool
+}
+
+// snippet returns a part of text around the first word of words. Each
+// word of text that contains one of words is a part with Mark. "…" shows
+// that the snippet starts or ends in the text.
+func snippet(text string, words []string) []SnippetPart {
 	fields := strings.Fields(text)
 	match := func(f string) bool {
 		for _, w := range searchWords(f, 8) {
@@ -104,7 +111,14 @@ func snippet(text string, words []string) string {
 	}
 	start := max(0, first-snippetWords/3)
 	end := min(len(fields), start+snippetWords)
+	var out []SnippetPart
 	var b strings.Builder
+	flush := func(mark bool) {
+		if b.Len() > 0 {
+			out = append(out, SnippetPart{Text: b.String(), Mark: mark})
+			b.Reset()
+		}
+	}
 	if start > 0 {
 		b.WriteString("… ")
 	}
@@ -113,7 +127,9 @@ func snippet(text string, words []string) string {
 			b.WriteByte(' ')
 		}
 		if match(fields[i]) {
-			b.WriteString("«" + fields[i] + "»")
+			flush(false)
+			b.WriteString(fields[i])
+			flush(true)
 		} else {
 			b.WriteString(fields[i])
 		}
@@ -121,5 +137,6 @@ func snippet(text string, words []string) string {
 	if end < len(fields) {
 		b.WriteString(" …")
 	}
-	return b.String()
+	flush(false)
+	return out
 }

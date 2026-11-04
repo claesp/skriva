@@ -30,7 +30,7 @@
   <li>
     <a href="{{docpath (print $.TenantPath "/" .SpaceSlug) .PublicID .Slug}}">{{.Title}}</a>
     <span class="meta-line">{{if not $.Space}}{{.SpaceName}} · {{end}}Changed {{date .UpdatedAt}}</span>
-    <p>{{.SnippetHTML}}</p>
+    <p>{{range .Snippet}}{{if .Mark}}<mark>{{.Text}}</mark>{{else}}{{.Text}}{{end}}{{end}}</p>
   </li>
   {{end}}
 </ol>

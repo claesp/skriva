@@ -1,7 +1,6 @@
 package web
 
 import (
-	"html/template"
 	"net/http"
 	"slices"
 	"strings"
@@ -98,8 +97,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	var results []store.SearchResult
 	if q != "" {
-		// In a space, the route checked doc.read for the space. Outside a
-		// space, search only the spaces that the user can read.
+		// In a space, search only that space. Outside a space, search
+		// only the spaces that the user can read. readableResults then
+		// removes the items that the user cannot read.
 		spaceIDs := []int64{}
 		if ri.Space != nil {
 			spaceIDs = append(spaceIDs, ri.Space.ID)
@@ -137,26 +137,8 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, r, http.StatusOK, "search", "Search", struct {
 		Query   string
-		Results []searchResult
+		Results []store.SearchResult
 		Tree    []*store.TreeNode
 		Spaces  []store.Space
-	}{q, toSearchResults(results), tree, spaces})
-}
-
-type searchResult struct {
-	store.SearchResult
-	SnippetHTML template.HTML
-}
-
-// toSearchResults converts the « and » marks from the database to <mark>
-// elements. The function escapes all other text.
-func toSearchResults(in []store.SearchResult) []searchResult {
-	out := make([]searchResult, len(in))
-	for i, p := range in {
-		esc := template.HTMLEscapeString(p.Snippet)
-		esc = strings.ReplaceAll(esc, "«", "<mark>")
-		esc = strings.ReplaceAll(esc, "»", "</mark>")
-		out[i] = searchResult{SearchResult: p, SnippetHTML: template.HTML(esc)} // #nosec G203 -- esc is escaped above.
-	}
-	return out
+	}{q, results, tree, spaces})
 }

@@ -465,8 +465,12 @@ func (s *Server) validateForm(r *http.Request, f *nodeForm) string {
 			return "The text is not in the correct format."
 		}
 		docLinks, wikiLinks := d.Links()
+		files, err := s.usableFiles(r, d.Files())
+		if err != nil {
+			return "The images cannot be checked now. Try again."
+		}
 		f.content = store.Content{
-			Body: string(d.JSON()), PlainText: d.PlainText(), Files: d.Files(),
+			Body: string(d.JSON()), PlainText: d.PlainText(), Files: files,
 			DocLinks: docLinks, WikiLinks: wikiLinks,
 		}
 		d.MapImages(links(r).Src)

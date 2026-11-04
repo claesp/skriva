@@ -996,9 +996,8 @@ type SearchResult struct {
 	NodeSummary
 	SpaceSlug string
 	SpaceName string
-	// Snippet is a part of the text. The marks « and » enclose the
-	// words that match.
-	Snippet string
+	// Snippet is a part of the text.
+	Snippet []SnippetPart
 }
 
 // Search finds the folders and documents of the given spaces of a tenant

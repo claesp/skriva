@@ -186,3 +186,21 @@ func (s *Server) readableFile(r *http.Request, id string) (*store.File, error) {
 	}
 	return nil, store.ErrNotFound
 }
+
+// usableFiles returns the IDs in ids of the files that the user can read.
+// A document gives read access to the files that it uses. Thus a user
+// must not get access to a file through a new document, only because the
+// user knows the ID of the file.
+func (s *Server) usableFiles(r *http.Request, ids []string) ([]string, error) {
+	out := ids[:0:0]
+	for _, id := range ids {
+		_, err := s.readableFile(r, id)
+		switch {
+		case err == nil:
+			out = append(out, id)
+		case !errors.Is(err, store.ErrNotFound):
+			return nil, err
+		}
+	}
+	return out, nil
+}

@@ -31,6 +31,7 @@ import (
 
 	"github.com/claesp/skriva/internal/diagram"
 	"github.com/claesp/skriva/internal/export"
+	"github.com/claesp/skriva/internal/rbac"
 	"github.com/claesp/skriva/internal/store"
 )
 
@@ -286,6 +287,13 @@ func (s *Server) dispatchTenant(w http.ResponseWriter, r *http.Request) {
 			acc, err := s.store.Access(r.Context(), t.ID, sp.ID, ri.Session.User.ID)
 			if err != nil {
 				s.serverError(w, r, err)
+				return
+			}
+			if !acc.Any(rbac.DocRead) {
+				// The user can read nothing in the space. The space
+				// is "not found", and the page does not show its name.
+				ri.Space = nil
+				s.notFound(w, r)
 				return
 			}
 			ri.Access = acc

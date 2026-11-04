@@ -31,7 +31,10 @@ const MaxEdits = 1000
 
 // Diff returns the operations that change a into b. The operations are
 // in the order of the sequences.
-func Diff[T comparable](a, b []T) []Op {
+func Diff[T comparable](a, b []T) []Op { return DiffMax(a, b, MaxEdits) }
+
+// DiffMax is Diff with a different maximum number of changes.
+func DiffMax[T comparable](a, b []T, maxEdits int) []Op {
 	// Remove the common start and the common end.
 	pre := 0
 	for pre < len(a) && pre < len(b) && a[pre] == b[pre] {
@@ -45,7 +48,7 @@ func Diff[T comparable](a, b []T) []Op {
 	for i := range pre {
 		ops = append(ops, Op{Equal, i, i})
 	}
-	ops = append(ops, middle(a[pre:len(a)-suf], b[pre:len(b)-suf], pre, pre)...)
+	ops = append(ops, middle(a[pre:len(a)-suf], b[pre:len(b)-suf], pre, pre, maxEdits)...)
 	for k := suf; k > 0; k-- {
 		ops = append(ops, Op{Equal, len(a) - k, len(b) - k})
 	}
@@ -54,12 +57,12 @@ func Diff[T comparable](a, b []T) []Op {
 
 // middle compares a and b. offA and offB are the positions of a and b in
 // the full sequences.
-func middle[T comparable](a, b []T, offA, offB int) []Op {
+func middle[T comparable](a, b []T, offA, offB, maxEdits int) []Op {
 	n, m := len(a), len(b)
 	if n == 0 || m == 0 {
 		return replace(n, m, offA, offB)
 	}
-	maxD := min(n+m, MaxEdits)
+	maxD := min(n+m, maxEdits)
 	// v[k+offset] is the end of the furthest path on diagonal k. trace
 	// keeps a copy of v for each D, to find the path afterwards.
 	offset := maxD + 1

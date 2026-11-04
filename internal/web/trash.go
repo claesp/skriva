@@ -94,6 +94,9 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 		if !canSeeTrashItem(ri.Access, &t) {
 			continue
 		}
+		if t.ParentAccessPathID != 0 && !ri.Access.Can(t.ParentAccessPathID, rbac.DocRead) {
+			t.ParentTitle = "A folder that you cannot read"
+		}
 		page.Items = append(page.Items, trashRow{t, ri.Access.Can(t.AccessPathID, rbac.SpaceManage)})
 	}
 	s.render(w, r, http.StatusOK, "trash", "Trash", page)
