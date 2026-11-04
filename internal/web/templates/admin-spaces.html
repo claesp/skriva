@@ -1,17 +1,18 @@
 {{define "content"}}
 {{template "listhead" (head "Spaces" (tool (print .TenantPath "/admin/spaces/new") "new" "New space"))}}
 <table>
-  <thead><tr><th>Name</th><th>Code</th><th class="num">Items</th><th>Description</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>Name</th><th class="optional">Code</th><th class="num">Items</th><th class="optional">Description</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr>
     <td><a href="{{$.TenantPath}}/admin/spaces/{{.Slug}}">{{.Name}}</a></td>
-    <td><code>{{.Slug}}</code></td>
+    <td class="optional"><code>{{.Slug}}</code></td>
     <td class="num">{{.Nodes}}</td>
-    <td>{{.Description}}</td>
+    <td class="optional">{{.Description}}</td>
     <td class="actions">
       {{template "tool" (when ($.Can "tenant.manage") (tool (print $.TenantPath "/admin/spaces/" .Slug "/access") "access" "Access"))}}
       {{template "tool" (tool (print $.TenantPath "/" .Slug "/") "open" "Open the space")}}
+      {{template "tool" (tool (print $.TenantPath "/" .Slug "/trash") "trash" "Trash")}}
     </td>
   </tr>
   {{else}}

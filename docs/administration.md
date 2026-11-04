@@ -50,6 +50,7 @@ document, on the two levels:
 | Pencil | Change the default role | Open the form for the default role. |
 | Lock | Access | Open the default role and the role bindings of a space. |
 | Arrow out of a box | Open | Open the space or the tenant in the wiki. |
+| Box with a lid | Trash | Open the trash of the space. |
 | Circle with a line | Disable | Disable the user. |
 | Circle with a check mark | Enable | Enable the user again. |
 

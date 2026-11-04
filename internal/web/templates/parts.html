@@ -100,6 +100,7 @@
     <span class="group">
       {{template "tool" (when (.Can "tenant.manage") (ntool .Data.Tab "access" (print $s "/access") $s "access" "Access"))}}
       {{template "tool" (tool (print .TenantPath "/" .Data.Space.Slug "/") "open" "Open the space")}}
+      {{template "tool" (tool (print .TenantPath "/" .Data.Space.Slug "/trash") "trash" "Trash")}}
     </span>
     <span class="group">
       {{template "tool" (when (.Can "space.manage") (ntool .Data.Tab "delete" (print $s "/delete") $s "delete" "Delete"))}}

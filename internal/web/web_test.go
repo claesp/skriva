@@ -868,6 +868,14 @@ func TestAdminPages(t *testing.T) {
 		wantStatus(t, carol.get(p), http.StatusForbidden)
 	}
 
+	// The list of spaces and the page of a space link to the trash of the
+	// space.
+	for _, p := range []string{"/dflt/admin/spaces", "/dflt/admin/spaces/default0"} {
+		if b := readBody(t, alice.get(p)); !strings.Contains(b, `href="/dflt/default0/trash"`) {
+			t.Errorf("%s does not link to the trash:\n%s", p, b)
+		}
+	}
+
 	// The form for a binding of a group shows the group and the space as
 	// fixed values.
 	b := readBody(t, alice.get("/dflt/admin/bindings/new?subject=group:"+groupID+"&space=default0"))
