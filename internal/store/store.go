@@ -1,8 +1,11 @@
 // Package store contains all database queries of the application.
 //
-// All functions that read or change tenant data take the tenant ID as a
-// parameter and use it in each query. Thus a request for one tenant
-// cannot read or change the data of a different tenant.
+// The functions for users, groups, roles, spaces and settings take the
+// tenant ID as a parameter and use it in each query. The functions for
+// the data in a space take the space ID. A space ID is unique in all
+// tenants, and the caller gets it from Space with the tenant ID. Thus a
+// request for one tenant cannot read or change the data of a different
+// tenant.
 package store
 
 import (

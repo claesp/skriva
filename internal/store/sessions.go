@@ -2,13 +2,16 @@ package store
 
 import (
 	"context"
+	"crypto/hkdf"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/claesp/skriva/internal/rbac"
+	"github.com/claesp/skriva/internal/secret"
 )
 
 // Session is a signed-in browser session. A session belongs to one tenant,
@@ -25,15 +28,24 @@ func (s *Session) System() bool { return s.TenantID == nil }
 
 // CreateSession makes a new session for the user. It returns the secret
 // token for the cookie. The database keeps only a hash of the token.
-// idToken is the ID token from the login. It can be empty.
+// idToken is the ID token from the login. It can be empty. The database
+// keeps it encrypted with a key from the token (see sessionBox).
 func (s *Store) CreateSession(ctx context.Context, tenantID *int64, userID int64, idToken string, ttl time.Duration) (string, error) {
 	token := rand.Text()
 	csrf := rand.Text()
+	var sealed []byte
+	if idToken != "" {
+		box, err := sessionBox(token)
+		if err != nil {
+			return "", err
+		}
+		sealed = box.Seal([]byte(idToken), idTokenContext)
+	}
 	err := s.tx(ctx, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO sessions (token_hash, tenant_id, user_id, csrf_token, id_token, created_at, expires_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			hashToken(token), tenantID, userID, csrf, idToken, s.now(), s.now().Add(ttl)); err != nil {
+			hashToken(token), tenantID, userID, csrf, sealed, s.now(), s.now().Add(ttl)); err != nil {
 			return err
 		}
 		// A login is an event of the tenant of the user.
@@ -77,15 +89,48 @@ func (s *Store) Session(ctx context.Context, token string, tenantID *int64) (*Se
 }
 
 // DeleteSession removes the session for token. It returns the ID token
-// of the session, or "" if the session does not exist.
+// of the session, or "" if the session does not exist or has no ID
+// token. If the ID token cannot be decrypted, the session is removed and
+// the result is "".
 func (s *Store) DeleteSession(ctx context.Context, token string) (string, error) {
-	var idToken string
+	var sealed []byte
 	err := s.pool.QueryRow(ctx,
-		"DELETE FROM sessions WHERE token_hash = $1 RETURNING id_token", hashToken(token)).Scan(&idToken)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		"DELETE FROM sessions WHERE token_hash = $1 RETURNING id_token", hashToken(token)).Scan(&sealed)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
 		return "", err
 	}
-	return idToken, nil
+	if sealed == nil {
+		return "", nil
+	}
+	box, err := sessionBox(token)
+	if err != nil {
+		return "", err
+	}
+	idToken, err := box.Open(sealed, idTokenContext)
+	if err != nil {
+		// The logout continues without the ID token. Then the identity
+		// provider asks the user to confirm the logout.
+		return "", nil
+	}
+	return string(idToken), nil
+}
+
+// idTokenContext is the associated data of an encrypted ID token.
+const idTokenContext = "session id_token"
+
+// sessionBox returns the key that encrypts the ID token of a session. The
+// key comes from the session token (HKDF-SHA256). The database keeps only
+// a hash of the token. Thus only a request with the cookie can decrypt
+// the ID token, and a copy of the database does not contain it.
+func sessionBox(token string) (*secret.Box, error) {
+	key, err := hkdf.Key(sha256.New, []byte(token), nil, "skriva session id_token", secret.KeySize)
+	if err != nil {
+		return nil, err
+	}
+	return secret.New(key)
 }
 
 // LoginState is the data that the application keeps between the start

@@ -83,3 +83,11 @@ func (s *Store) AccessCacheReport(ctx context.Context, spaceID int64) (cached, c
 
 // SetNow replaces the clock of the store.
 func (s *Store) SetNow(now func() time.Time) { s.now = now }
+
+// RawIDToken returns the id_token column of the session for token, as the
+// database keeps it.
+func (s *Store) RawIDToken(ctx context.Context, token string) ([]byte, error) {
+	var raw []byte
+	err := s.pool.QueryRow(ctx, "SELECT id_token FROM sessions WHERE token_hash = $1", hashToken(token)).Scan(&raw)
+	return raw, err
+}

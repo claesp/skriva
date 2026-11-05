@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -439,6 +440,14 @@ func TestSessions(t *testing.T) {
 	}
 
 	token, _ = st.CreateSession(ctx, &tn.ID, u.ID, "id-token-2", time.Hour)
+	// The database keeps the ID token encrypted.
+	if raw, err := st.RawIDToken(ctx, token); err != nil || len(raw) == 0 || bytes.Contains(raw, []byte("id-token-2")) {
+		t.Fatalf("id_token in the database = %q, %v", raw, err)
+	}
+	noID, _ := st.CreateSession(ctx, &tn.ID, u.ID, "", time.Hour)
+	if raw, err := st.RawIDToken(ctx, noID); err != nil || raw != nil {
+		t.Fatalf("empty id_token in the database = %q, %v", raw, err)
+	}
 	if idt, err := st.DeleteSession(ctx, token); err != nil || idt != "id-token-2" {
 		t.Fatalf("DeleteSession = %q, %v", idt, err)
 	}

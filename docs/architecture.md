@@ -171,7 +171,7 @@ space `default0` ("Default").
 | `role_permissions` | The permissions of each role. |
 | `role_bindings`    | Each row gives one role to one user or to one group of a tenant, in all spaces, in one space or in one item. |
 | `audit_events`     | The audit log. A row with no tenant is an event of the system administration. |
-| `sessions`         | Browser sessions. The table keeps a hash of the token, not the token. It also keeps the CSRF token and the ID token for the logout. |
+| `sessions`         | Browser sessions. The table keeps a hash of the token, not the token. It also keeps the CSRF token and the ID token for the logout, encrypted with a key from the session token. |
 | `oidc_states`      | Data for logins that are in progress. |
 | `schema_migrations`| The migrations that the server applied. |
 

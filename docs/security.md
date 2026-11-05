@@ -10,10 +10,19 @@ This document describes the security controls of Skriva.
   `__Host-` prefix for an `https` base URL). A session is valid only for
   its tenant. The server checks the tenant of the
   session and of the user at each request.
-- Each store function for tenant data has the tenant ID as a parameter,
-  and each query uses it. Composite foreign keys in the database also
-  make sure that group members, role bindings and parent nodes are in
-  the correct tenant or space.
+- The store functions for users, groups, roles, spaces and settings
+  have the tenant ID as a parameter, and each query uses it.
+- The functions for the data in a space (documents, files, the trash,
+  search) have the space ID as a parameter. A space ID is an internal
+  number (`spaces.id`), not the slug in the URL. The database makes it,
+  and it is unique in all tenants. The server gets the space with the
+  tenant ID and the slug (`Store.Space`). Thus a request can get only a
+  space ID of its own tenant. The public ID of a document or a file is
+  also unique in all tenants, and each query uses it together with the
+  space ID.
+- Composite foreign keys in the database also make sure that group
+  members, role bindings and parent nodes are in the correct tenant or
+  space.
 - The system administration has its own cookie (`skriva_system`) and its
   own sessions. A system session has no permissions in a tenant. A
   tenant session gives no access to the system administration.
@@ -91,7 +100,9 @@ at each request.
 
 - The session token is a random value with 128 bits.
 - The database keeps only the SHA-256 hash of the token. Thus a copy of
-  the database does not give access to sessions.
+  the database does not give access to sessions. The ID token for the
+  logout is encrypted with a key from the session token. See
+  [Encryption](#encryption-at-rest).
 - The cookie has `HttpOnly` and `SameSite=Lax`.
 - Each tenant has its own cookie. Thus a browser can have sessions in
   more than one tenant. With an `https` base URL,
@@ -400,10 +411,15 @@ for the methods that the project compared.
   logs of a proxy and in the history of the browser.
 - **Not encrypted.** The names of users, groups, roles and spaces, the
   structure of the tree, the times, the classification names of the
-  versions, the events of the system administration (tenant names and
-  codes), and the ID token of each session (`sessions.id_token`, for the
-  logout). The ID token contains the name, the email address and the
-  groups of the user.
+  versions, and the events of the system administration (tenant names and
+  codes).
+- **ID tokens.** The session keeps the ID token for the logout
+  (`sessions.id_token`). The ID token contains the name, the email
+  address and the groups of the user. The server encrypts it with
+  AES-256-GCM. The key comes from the session token (HKDF-SHA256), and
+  the database keeps only a hash of the token. Thus only a request with
+  the cookie can decrypt the ID token. The key is not a tenant key, thus
+  the ID token is also encrypted for system administrator sessions.
 - **Key rotation.** A system administrator can make a new data key for a
   tenant (tenant page, **Encryption**). New values use the new key at
   once. The cleanup task encrypts the old values again, and then deletes

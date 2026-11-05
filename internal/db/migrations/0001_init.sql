@@ -370,9 +370,10 @@ CREATE TABLE sessions (
     tenant_id  bigint      REFERENCES tenants (id) ON DELETE CASCADE,
     user_id    bigint      NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     csrf_token text        NOT NULL,
-    -- The ID token from the login. The logout request to the identity
-    -- provider sends it as id_token_hint.
-    id_token   text        NOT NULL DEFAULT '',
+    -- The ID token from the login, encrypted with a key from the session
+    -- token, or NULL. The logout request to the identity provider sends
+    -- it as id_token_hint.
+    id_token   bytea,
     created_at timestamptz NOT NULL DEFAULT now(),
     expires_at timestamptz NOT NULL
 );
