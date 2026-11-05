@@ -304,6 +304,7 @@
   {{if and $n (.Can "doc.delete")}}{{template "tool" (ntool $t "delete" (print $s "/delete/" $id) $c "delete" "Delete")}}{{else}}{{template "tool" (dtool "delete" "Delete")}}{{end}}
 </span>
 <span class="group">
+  {{if and $n $folder (.Can "space.manage")}}{{template "tool" (ntool $t "classification" (print $s "/classification/" $id) $c "classification" "Classification limits")}}{{else}}{{template "tool" (dtool "classification" "Classification limits")}}{{end}}
   {{if and $n (.Can "tenant.manage")}}{{template "tool" (ntool $t "access" (print $s "/access/" $id) $c "access" "Access")}}{{else}}{{template "tool" (dtool "access" "Access")}}{{end}}
 </span>
 {{end}}

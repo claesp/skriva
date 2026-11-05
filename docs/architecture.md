@@ -307,12 +307,32 @@ Each tenant has its levels in `classifications`. The function
 Each document has one level (`nodes.classification_id`); a folder has
 none (a check constraint). The table `nodes` has no tenant column, thus
 a foreign key cannot make sure that the level belongs to the tenant of
-the space. The store makes this check: it finds the level with a join
-on the space (`classificationFor`). The database checks the foreign key
+the space. The store makes this check: it reads the levels of the
+tenant of the space (`classLimits`). The database checks the foreign key
 to the level at the end of the transaction (deferred). Thus the deletion
 of a tenant
 removes the levels and the documents in one statement, and the deletion
 of a level that documents use fails.
+
+The classification limits are in `spaces` and in the folder rows of
+`nodes`: `default_classification_id` and `min_classification_id`. NULL
+means "the same as the parent". `classLimits` calculates the limits at a
+place: it reads the settings of the folders from the place to the top
+(a recursive query) and the setting of the space.
+
+- The lowest level is the highest of all lowest levels. The store
+  compares the levels by `position`.
+- The default level is the default of the nearest folder with a
+  default, else of the space, else of the tenant. If it is lower than
+  the lowest level, the default is the lowest level.
+
+The store checks the limits in `CreateNode`, `UpdateNode`, `MoveNode`,
+`RestoreNode`, `SetFolderClassification` and `UpdateSpace`. A failed
+check gives a `*ClassificationError` (`ErrClassification`) with the name
+of the lowest level and the number of documents with a lower level.
+The changes of the tree and of the limits lock the row of the space.
+`UpdateNode` takes a shared lock on the row. Thus the limits cannot
+change during a save, and two saves do not wait for each other.
 
 ### Export
 

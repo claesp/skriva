@@ -364,7 +364,15 @@ an image, change the tag and the digest together:
   for the readers. Use the access settings to control who can read a
   document.
 - The audit log records each change of the classification of a
-  document and each change to the levels.
+  document, each change to the levels and each change to the
+  classification limits of a space or a folder.
+- A folder can only make the limits of the space and of its parents
+  stricter. The store calculates the limits from all parents at each
+  check. Thus a folder setting cannot permit a level that a parent does
+  not permit, also after a move.
+- The limits of a folder need `space.manage`. A role binding for a
+  folder gives only document permissions, thus only a space manager can
+  change them.
 
 ## Audit log
 

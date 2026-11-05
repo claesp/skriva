@@ -50,6 +50,8 @@ func (s *Server) spaceRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+p+"/access/{id}", s.node(rbac.TenantManage, s.handleNodeAccess))
 	mux.Handle("GET "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRoleForm))
 	mux.Handle("POST "+p+"/access/{id}/default-role", s.node(rbac.TenantManage, s.handleNodeDefaultRole))
+	mux.Handle("GET "+p+"/classification/{id}", s.node(rbac.SpaceManage, s.handleFolderClassificationForm))
+	mux.Handle("POST "+p+"/classification/{id}", s.node(rbac.SpaceManage, s.handleFolderClassification))
 	mux.Handle("GET "+p+"/w/{slug}", s.require("", s.handleWikiLink))
 	mux.Handle("GET "+p+"/trash", s.require("", s.handleTrash))
 	mux.Handle("POST "+p+"/trash/{id}/restore", s.trashed(rbac.DocDelete, s.handleRestore))
@@ -357,7 +359,8 @@ type nodeForm struct {
 	// RestoredFrom is the old version that the form restores, or 0.
 	RestoredFrom int
 	// ClassificationID is the selected classification of a document, or
-	// 0 for the default. Classifications are the levels of the tenant.
+	// 0 for the default. Classifications are the levels that the place of
+	// the document permits.
 	ClassificationID int64
 	Classifications  []store.Classification
 	Error            string
@@ -512,6 +515,11 @@ func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
 		Content: f.content, Comment: f.Comment, AuthorID: ri.Session.User.ID,
 		ClassificationID: f.ClassificationID,
 	})
+	if errors.Is(err, store.ErrClassification) {
+		f.Error = classificationMessage(err)
+		s.renderNodeForm(w, r, http.StatusConflict, "New "+f.Kind, &f)
+		return
+	}
 	if !s.storeResult(w, r, err) {
 		return
 	}
@@ -553,20 +561,44 @@ func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status i
 	f.SaveForm = "nodeform"
 	f.Classification = ""
 	if editor {
-		if f.Classifications, err = s.store.Classifications(r.Context(), reqInfoFrom(r.Context()).Tenant.ID); err != nil {
+		all, err := s.store.Classifications(r.Context(), reqInfoFrom(r.Context()).Tenant.ID)
+		if err != nil {
 			s.serverError(w, r, err)
 			return
 		}
+		// The place of the document: the parent of the document, or the
+		// parent of the new document.
+		var parentID *int64
+		switch {
+		case f.Node != nil:
+			parentID = f.Node.ParentID
+		case f.parent != nil:
+			parentID = &f.parent.ID
+		}
+		limits, err := s.store.ClassificationLimits(r.Context(), reqInfoFrom(r.Context()).Space.ID, parentID)
+		if err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		f.Classifications = f.Classifications[:0]
+		for _, c := range all {
+			if limits.Permits(store.ClassLevel{ID: c.ID, Name: c.Name, Position: c.Position}) {
+				f.Classifications = append(f.Classifications, c)
+			}
+		}
 		// The form shows the selected level, the level of the document,
-		// or the default level of the tenant.
+		// or the default level of the place. A level that the place does
+		// not permit now becomes the default level of the place.
 		if f.ClassificationID == 0 && f.Node != nil {
 			f.ClassificationID = f.Node.ClassificationID
 		}
+		selected := limits.Default
 		for _, c := range f.Classifications {
-			if c.ID == f.ClassificationID || (f.ClassificationID == 0 && c.IsDefault) {
-				f.ClassificationID, f.Classification = c.ID, c.Name
+			if c.ID == f.ClassificationID {
+				selected = store.ClassLevel{ID: c.ID, Name: c.Name}
 			}
 		}
+		f.ClassificationID, f.Classification = selected.ID, selected.Name
 	}
 	if editor {
 		// The upload checks the permission for the node, or for the
@@ -648,6 +680,11 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Nod
 		Comment: f.Comment, AuthorID: ri.Session.User.ID, RestoredFrom: f.RestoredFrom,
 		ClassificationID: f.ClassificationID,
 	})
+	if errors.Is(err, store.ErrClassification) {
+		f.Error = classificationMessage(err)
+		s.renderNodeForm(w, r, http.StatusConflict, "Edit "+f.Title, &f)
+		return
+	}
 	if errors.Is(err, store.ErrConflict) {
 		f.Error = "A different user changed this item after you started to edit it. " +
 			"Copy your text, open the item again and add your changes."
@@ -1001,4 +1038,92 @@ func (s *Server) handleNodeDefaultRole(w http.ResponseWriter, r *http.Request, n
 	s.log.Info("node default role changed", "tenant", ri.Tenant.Code, "space", ri.Space.Slug,
 		"node", n.PublicID, "user_id", ri.Session.User.ID)
 	http.Redirect(w, r, base(r)+"/access/"+n.PublicID, http.StatusSeeOther)
+}
+
+// folderClassPage is the data of the classification page of a folder.
+type folderClassPage struct {
+	nodePage
+	// Inherited are the limits from the parents and the space. Current
+	// are the limits for the documents in the folder now.
+	Inherited, Current *store.ClassLimits
+	// Levels are the levels that the folder can select: the levels that
+	// the parents permit.
+	Levels []store.Classification
+	// DefaultID and MinID are the selected values. 0 means the same as
+	// the parent.
+	DefaultID, MinID int64
+	Error            string
+}
+
+// loadFolderClassPage reads the data of the classification page.
+func (s *Server) loadFolderClassPage(r *http.Request, n *store.Node, p *folderClassPage) error {
+	var err error
+	if p.nodePage, err = s.loadNodePage(r, n, "classification", "Classification limits"); err != nil {
+		return err
+	}
+	ri := reqInfoFrom(r.Context())
+	if p.Inherited, err = s.store.ClassificationLimits(r.Context(), ri.Space.ID, n.ParentID); err != nil {
+		return err
+	}
+	if p.Current, err = s.store.ClassificationLimits(r.Context(), ri.Space.ID, &n.ID); err != nil {
+		return err
+	}
+	all, err := s.store.Classifications(r.Context(), ri.Tenant.ID)
+	if err != nil {
+		return err
+	}
+	for _, c := range all {
+		if p.Inherited.Permits(store.ClassLevel{ID: c.ID, Position: c.Position}) {
+			p.Levels = append(p.Levels, c)
+		}
+	}
+	return nil
+}
+
+// handleFolderClassificationForm shows the default and the lowest
+// classification of the documents in a folder.
+func (s *Server) handleFolderClassificationForm(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	if !n.IsFolder() {
+		s.notFound(w, r)
+		return
+	}
+	p := folderClassPage{DefaultID: n.DefaultClassificationID, MinID: n.MinClassificationID}
+	if err := s.loadFolderClassPage(r, n, &p); err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, "node-classification", "Classification limits of "+n.Title, p)
+}
+
+// handleFolderClassification saves the classification setting of a
+// folder. The value 0 means "the same as the parent".
+func (s *Server) handleFolderClassification(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	if !n.IsFolder() {
+		s.notFound(w, r)
+		return
+	}
+	def, err1 := strconv.ParseInt(r.PostFormValue("default_classification"), 10, 64)
+	min, err2 := strconv.ParseInt(r.PostFormValue("min_classification"), 10, 64)
+	if err1 != nil || err2 != nil {
+		s.badRequest(w, r, "The classification is not valid.")
+		return
+	}
+	ri := reqInfoFrom(r.Context())
+	err := s.store.SetFolderClassification(r.Context(), ri.Space.ID, n.PublicID,
+		store.FolderClassification{DefaultID: def, MinID: min})
+	if errors.Is(err, store.ErrClassification) {
+		p := folderClassPage{DefaultID: def, MinID: min, Error: classificationMessage(err)}
+		if err := s.loadFolderClassPage(r, n, &p); err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		s.render(w, r, http.StatusConflict, "node-classification", "Classification limits of "+n.Title, p)
+		return
+	}
+	if !s.storeResult(w, r, err) {
+		return
+	}
+	s.log.Info("folder classification changed", "tenant", ri.Tenant.Code, "space", ri.Space.Slug,
+		"node", n.PublicID, "user_id", ri.Session.User.ID)
+	http.Redirect(w, r, base(r)+"/classification/"+n.PublicID, http.StatusSeeOther)
 }

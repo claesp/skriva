@@ -851,7 +851,7 @@ func TestTenantAdmin(t *testing.T) {
 	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Team"}, "slug": {"teamspce"}}), http.StatusSeeOther)
 	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Again"}, "slug": {"teamspce"}}), http.StatusConflict)
 	wantStatus(t, alice.get("/dflt/teamspce/"), http.StatusOK)
-	edit := url.Values{"name": {"Team space"}, "slug": {"teamspce"}, "upload_quota_mb": {"5"}, "search_results": {"20"}}
+	edit := url.Values{"name": {"Team space"}, "slug": {"teamspce"}, "upload_quota_mb": {"5"}, "search_results": {"20"}, "default_classification": {"0"}, "min_classification": {"0"}}
 	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce", edit), http.StatusSeeOther)
 	for field, bad := range map[string]string{"upload_quota_mb": "0", "search_results": "5000"} {
 		v := url.Values{}
@@ -2000,9 +2000,9 @@ func TestChangeCodes(t *testing.T) {
 	// A space code with 2 characters and a code with "-".
 	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"HR"}, "slug": {"hr"}}), http.StatusSeeOther)
 	wantStatus(t, alice.get("/dflt/hr/"), http.StatusOK)
-	wantStatus(t, alice.post("/dflt/admin/spaces/hr", url.Values{"name": {"HR"}, "slug": {"default0"}, "upload_quota_mb": {"1024"}, "search_results": {"50"}}), http.StatusConflict)
-	wantStatus(t, alice.post("/dflt/admin/spaces/hr", url.Values{"name": {"HR"}, "slug": {"admin"}, "upload_quota_mb": {"1024"}, "search_results": {"50"}}), http.StatusBadRequest)
-	wantStatus(t, alice.post("/dflt/admin/spaces/default0", url.Values{"name": {"Main"}, "slug": {"main-docs"}, "upload_quota_mb": {"1024"}, "search_results": {"50"}}), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/spaces/hr", url.Values{"name": {"HR"}, "slug": {"default0"}, "upload_quota_mb": {"1024"}, "search_results": {"50"}, "default_classification": {"0"}, "min_classification": {"0"}}), http.StatusConflict)
+	wantStatus(t, alice.post("/dflt/admin/spaces/hr", url.Values{"name": {"HR"}, "slug": {"admin"}, "upload_quota_mb": {"1024"}, "search_results": {"50"}, "default_classification": {"0"}, "min_classification": {"0"}}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/spaces/default0", url.Values{"name": {"Main"}, "slug": {"main-docs"}, "upload_quota_mb": {"1024"}, "search_results": {"50"}, "default_classification": {"0"}, "min_classification": {"0"}}), http.StatusSeeOther)
 	wantStatus(t, alice.get("/dflt/default0/"), http.StatusNotFound)
 	if b := readBody(t, alice.get("/dflt/main-docs/d/"+id+"/plan")); !strings.Contains(b, "text") {
 		t.Fatalf("document after the space code changed:\n%s", b)
@@ -2197,4 +2197,94 @@ func TestSearchSnippet(t *testing.T) {
 	if !strings.Contains(page, "He said «hello» to <mark>&lt;b&gt;zebra&lt;/b&gt;</mark> and »") {
 		t.Fatalf("search page:\n%s", page)
 	}
+}
+
+// The space and the folders can set the default and the lowest
+// classification of their documents.
+func TestClassificationLimitsPages(t *testing.T) {
+	e := newEnv(t)
+	alice := e.login("alice")
+	bob := e.login("bob")
+	levels, err := e.st.Classifications(ctx, e.dft.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := map[string]string{}
+	for _, c := range levels {
+		id[c.Name] = strconv.FormatInt(c.ID, 10)
+	}
+	low := bob.create("document", "", "Low", "x")
+	spaceForm := func(def, min string) url.Values {
+		return url.Values{"name": {"Default"}, "slug": {"default0"}, "upload_quota_mb": {"1024"},
+			"search_results": {"50"}, "default_classification": {def}, "min_classification": {min}}
+	}
+
+	// A document with a lower level prevents the limit of the space.
+	resp := alice.post("/dflt/admin/spaces/default0", spaceForm("0", id["Public"]))
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("space limit with a low document: status %d", resp.StatusCode)
+	}
+	if b := readBody(t, resp); !strings.Contains(b, "1 document has a classification lower than Public") {
+		t.Fatalf("space limit with a low document:\n%s", b)
+	}
+	if err := e.st.UpdateNode(ctx, e.sp.ID, low, store.NodeUpdate{BaseVersion: 1, Title: "Low",
+		Content: store.Content{Body: `{"type":"doc","content":[]}`}, AuthorID: 0, ClassificationID: levels[1].ID}); err != nil {
+		t.Fatal(err)
+	}
+	wantStatus(t, alice.post("/dflt/admin/spaces/default0", spaceForm(id["Restricted"], id["Public"])), http.StatusSeeOther)
+	resp = alice.get("/dflt/admin/spaces/default0")
+	wantStatus(t, resp, http.StatusOK)
+	if b := readBody(t, resp); !strings.Contains(b, "<td>Restricted</td>") || !strings.Contains(b, "<td>Public</td>") {
+		t.Fatalf("space page does not show the limits:\n%s", b)
+	}
+
+	// A folder has a page for its limits. A document has no page.
+	folder := bob.create("folder", "", "Vault", "")
+	resp = bob.get(sp + "/d/" + low + "/low")
+	wantStatus(t, resp, http.StatusOK)
+	if b := readBody(t, resp); !strings.Contains(b, `title="Classification limits (not available)"`) {
+		t.Fatal("document page has no disabled Classification limits button")
+	}
+	wantStatus(t, bob.get(sp+"/classification/"+folder), http.StatusForbidden)
+	wantStatus(t, alice.get(sp+"/classification/"+low), http.StatusNotFound)
+	resp = alice.get(sp + "/classification/" + folder)
+	wantStatus(t, resp, http.StatusOK)
+	if b := readBody(t, resp); !strings.Contains(b, "Same as the parent (Public)") || strings.Contains(b, ">Unclassified<") {
+		t.Fatalf("folder page:\n%s", b)
+	}
+	resp = alice.post(sp+"/classification/"+folder, url.Values{"min_classification": {id["Unclassified"]}, "default_classification": {"0"}})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("folder limit below the space limit: status %d", resp.StatusCode)
+	}
+	if b := readBody(t, resp); !strings.Contains(b, "must be Public or higher") {
+		t.Fatalf("folder limit below the space limit:\n%s", b)
+	}
+	wantStatus(t, alice.post(sp+"/classification/"+folder, url.Values{"min_classification": {id["Secret"]}, "default_classification": {"0"}}), http.StatusSeeOther)
+
+	// The editor shows only the permitted levels. A new document gets the
+	// default of the folder.
+	resp = bob.get(sp + "/new?kind=document&parent=" + folder)
+	wantStatus(t, resp, http.StatusOK)
+	b := readBody(t, resp)
+	if !strings.Contains(b, `selected>Secret</option>`) || strings.Contains(b, ">Restricted</option>") {
+		t.Fatalf("new document form:\n%s", b)
+	}
+	resp = bob.post(sp+"/new", url.Values{"kind": {"document"}, "parent": {folder}, "title": {"Plan"},
+		"body": {docBody("x")}, "classification": {id["Public"]}})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("document below the folder limit: status %d", resp.StatusCode)
+	}
+	if b := readBody(t, resp); !strings.Contains(b, "must be Secret or higher") {
+		t.Fatalf("document below the folder limit:\n%s", b)
+	}
+	doc := bob.create("document", folder, "Plan", "x")
+	if n, _ := e.st.Node(ctx, e.sp.ID, doc); n.Classification != "Secret" {
+		t.Fatalf("new document in the folder = %q", n.Classification)
+	}
+	// A move into the folder checks the level.
+	resp = bob.post(sp+"/move/"+low, url.Values{"parent": {folder}})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("move below the folder limit: status %d", resp.StatusCode)
+	}
+	resp.Body.Close()
 }

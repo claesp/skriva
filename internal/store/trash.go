@@ -160,7 +160,8 @@ func (s *Store) TrashedNode(ctx context.Context, spaceID int64, publicID string)
 
 // RestoreNode moves an item and its subtree out of the trash, back to
 // their old place. It returns ErrNotFound if the item is not in the trash,
-// and ErrInvalid if the old parent is in the trash. Then the user must
+// a *ClassificationError if a document has a level lower than the old
+// place permits now, and ErrInvalid if the old parent is in the trash. Then the user must
 // restore the parent first. An item cannot go to a different place,
 // because the place controls the permissions.
 func (s *Store) RestoreNode(ctx context.Context, spaceID int64, publicID string) error {
@@ -169,13 +170,14 @@ func (s *Store) RestoreNode(ctx context.Context, spaceID int64, publicID string)
 			return err
 		}
 		var id int64
+		var parentID *int64
 		var sealedTitle []byte
 		var parentInTrash bool
 		err := tx.QueryRow(ctx, `
-			SELECT n.id, n.title, COALESCE(p.deleted_at IS NOT NULL, false)
+			SELECT n.id, n.parent_id, n.title, COALESCE(p.deleted_at IS NOT NULL, false)
 			FROM nodes n LEFT JOIN nodes p ON p.id = n.parent_id
 			WHERE n.space_id = $1 AND n.public_id = $2 AND n.trash_id = n.id`,
-			spaceID, publicID).Scan(&id, &sealedTitle, &parentInTrash)
+			spaceID, publicID).Scan(&id, &parentID, &sealedTitle, &parentInTrash)
 		if err != nil {
 			return notFound(err)
 		}
@@ -185,6 +187,14 @@ func (s *Store) RestoreNode(ctx context.Context, spaceID int64, publicID string)
 		}
 		if parentInTrash {
 			return ErrInvalid
+		}
+		// The limits of the old place can be stricter now.
+		limits, _, err := classLimits(ctx, tx, spaceID, parentID)
+		if err != nil {
+			return err
+		}
+		if err := checkSubtree(ctx, tx, spaceID, &id, true, limits.Min); err != nil {
+			return err
 		}
 		tag, err := tx.Exec(ctx, `
 			UPDATE nodes SET deleted_at = NULL, deleted_by = NULL, trash_id = NULL

@@ -40,6 +40,8 @@ const (
 	AuditClassificationUpdate = "classification.update"
 	AuditClassificationDelete = "classification.delete"
 	AuditNodeClassify         = "node.classify"
+	AuditNodeClassLimits      = "node.class_limits"
+	AuditSpaceClassLimits     = "space.class_limits"
 	AuditTenantCreate         = "tenant.create"
 	AuditTenantUpdate         = "tenant.update"
 	AuditTenantDelete         = "tenant.delete"

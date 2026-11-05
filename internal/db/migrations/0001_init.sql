@@ -86,6 +86,12 @@ CREATE TABLE spaces (
     -- The largest number of search results from the space. The search
     -- counts only the items that the user can read.
     search_results  integer NOT NULL DEFAULT 50 CHECK (search_results BETWEEN 10 AND 1000),
+    -- The default classification of new documents in the space. NULL
+    -- means the default level of the tenant.
+    default_classification_id bigint REFERENCES classifications (id) DEFERRABLE INITIALLY DEFERRED,
+    -- The lowest classification of the documents in the space. NULL means
+    -- no limit. The store compares the levels by their position.
+    min_classification_id     bigint REFERENCES classifications (id) DEFERRABLE INITIALLY DEFERRED,
     created_at   timestamptz NOT NULL DEFAULT now(),
     UNIQUE (tenant_id, slug),
     UNIQUE (tenant_id, id)
@@ -207,6 +213,11 @@ CREATE TABLE nodes (
     -- at the end of the transaction. Thus the deletion of a tenant can
     -- remove the levels and the documents in one statement.
     classification_id bigint   REFERENCES classifications (id) DEFERRABLE INITIALLY DEFERRED,
+    -- The default and the lowest classification of the documents in a
+    -- folder. NULL means the value of the parent folder or of the space.
+    -- A folder can only make the limits of its parents stricter.
+    default_classification_id bigint REFERENCES classifications (id) DEFERRABLE INITIALLY DEFERRED,
+    min_classification_id     bigint REFERENCES classifications (id) DEFERRABLE INITIALLY DEFERRED,
     created_by     bigint      REFERENCES users (id) ON DELETE SET NULL,
     updated_by     bigint      REFERENCES users (id) ON DELETE SET NULL,
     created_at     timestamptz NOT NULL DEFAULT now(),
@@ -222,7 +233,8 @@ CREATE TABLE nodes (
         FOREIGN KEY (space_id, parent_id) REFERENCES nodes (space_id, id) ON DELETE CASCADE,
     CHECK (parent_id <> id),
     CHECK ((deleted_at IS NULL) = (trash_id IS NULL)),
-    CHECK ((kind = 'document') = (classification_id IS NOT NULL))
+    CHECK ((kind = 'document') = (classification_id IS NOT NULL)),
+    CHECK (kind = 'folder' OR (default_classification_id IS NULL AND min_classification_id IS NULL))
 );
 CREATE INDEX nodes_search_idx ON nodes USING gin (search_tokens);
 CREATE INDEX nodes_parent_idx ON nodes (space_id, parent_id);
@@ -231,6 +243,8 @@ CREATE INDEX nodes_space_updated_idx ON nodes (space_id, updated_at DESC);
 CREATE INDEX nodes_access_path_idx ON nodes (access_path_id);
 CREATE INDEX nodes_default_role_idx ON nodes (space_id) WHERE default_role IS NOT NULL;
 CREATE INDEX nodes_classification_idx ON nodes (classification_id);
+CREATE INDEX nodes_default_classification_idx ON nodes (default_classification_id) WHERE default_classification_id IS NOT NULL;
+CREATE INDEX nodes_min_classification_idx ON nodes (min_classification_id) WHERE min_classification_id IS NOT NULL;
 CREATE INDEX nodes_trash_idx ON nodes (trash_id) WHERE trash_id IS NOT NULL;
 -- The items in the trash: the nodes that the users deleted.
 CREATE INDEX nodes_trash_root_idx ON nodes (space_id, deleted_at) WHERE trash_id = id;

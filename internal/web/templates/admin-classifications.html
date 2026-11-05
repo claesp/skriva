@@ -9,7 +9,7 @@
     <td class="num">{{.Position}}</td>
     <td>{{.Name}}{{if .IsDefault}} <span class="tag">default</span>{{end}}</td>
     <td class="optional">{{.Description}}</td>
-    <td class="num">{{.Documents}}{{with .Trashed}}<br><small>and {{.}} in the trash</small>{{end}}</td>
+    <td class="num">{{.Documents}}{{with .Trashed}}<br><small>and {{.}} in the trash</small>{{end}}{{with .Settings}}<br><small>{{.}} limits of spaces or folders</small>{{end}}</td>
     <td class="actions">
       {{template "tool" (tool (print $.TenantPath "/admin/classifications/" .ID "/edit") "edit" "Change")}}
       {{template "tool" (when (and (not .IsDefault) (not .InUse)) (tool (print $.TenantPath "/admin/classifications/" .ID "/delete") "delete" "Delete"))}}

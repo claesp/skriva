@@ -143,7 +143,8 @@ Each document has an information classification, for example
 "Restricted". The administrators of the tenant define the levels. All
 spaces of the tenant use the same levels. The default levels are
 Unclassified, Public, Restricted, Secret and Top Secret. A new document
-gets the default level (Unclassified).
+gets the default level of its place (see below). Without limits, this is
+the default level of the tenant (Unclassified).
 
 Below the toolbar, each page of a document shows the bar "This document
 is classified as RESTRICTED". The bar stays visible when you scroll. The page of an old version shows the
@@ -155,6 +156,35 @@ select the level in **Classification**, at the right side of the
 changes when you select a level. Click **Save**. The history keeps the
 classification of each version, and the audit log records the change.
 Folders do not have a classification.
+
+### Classification limits
+
+A space and a folder can have classification limits. Use them for a
+space or a folder that is only for documents of a high level.
+
+- **Lowest classification**: the documents must have this level or a
+  higher level. The editor shows only the permitted levels.
+- **Default classification**: the level of a new document.
+
+A user with the permission `space.manage` sets the limits:
+
+- For a space: **Administration**, **Spaces**, the space, then
+  **Change the settings** (pencil).
+- For a folder: open the folder and click **Classification limits** in
+  the toolbar. The button is disabled for a document.
+
+- The limits of a folder apply to all items in it, also in subfolders.
+- A folder can only make the limits stricter. Its lowest level must be
+  the same as the lowest level of the space and of the parent folders,
+  or higher. Its default must not be lower than the lowest level.
+- If the default of a parent is lower than the lowest level of a
+  folder, a new document in the folder gets the lowest level.
+- You cannot set a lowest level while documents in the space or the
+  folder have a lower level. Give these documents a higher level first.
+  The message tells how many documents have a lower level.
+- You cannot move a document or a folder to a place where a document in
+  it has a level that is too low. The same is true for a restore from
+  the trash.
 
 ## Edit a document
 

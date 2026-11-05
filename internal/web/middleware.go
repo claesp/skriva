@@ -358,6 +358,8 @@ func (s *Server) storeResult(w http.ResponseWriter, r *http.Request, err error) 
 		return true
 	case errors.Is(err, store.ErrNotFound):
 		s.notFound(w, r)
+	case errors.Is(err, store.ErrClassification):
+		s.renderError(w, r, http.StatusConflict, classificationMessage(err))
 	case errors.Is(err, store.ErrConflict):
 		s.renderError(w, r, http.StatusConflict, "The name is in use already.")
 	case errors.Is(err, store.ErrInvalid):
@@ -366,4 +368,21 @@ func (s *Server) storeResult(w http.ResponseWriter, r *http.Request, err error) 
 		s.serverError(w, r, err)
 	}
 	return false
+}
+
+// classificationMessage is the text for a *store.ClassificationError.
+func classificationMessage(err error) string {
+	var ce *store.ClassificationError
+	if !errors.As(err, &ce) {
+		return "The classification is lower than the lowest permitted level."
+	}
+	if ce.Documents == 1 {
+		return "1 document has a classification lower than " + ce.Min + ". " +
+			"Give it the classification " + ce.Min + " or higher first."
+	}
+	if ce.Documents > 1 {
+		return strconv.Itoa(ce.Documents) + " documents have a classification lower than " + ce.Min + ". " +
+			"Give them the classification " + ce.Min + " or higher first."
+	}
+	return "The classification must be " + ce.Min + " or higher here. The space or a parent folder sets this limit."
 }

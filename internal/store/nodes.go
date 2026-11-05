@@ -52,8 +52,13 @@ type Node struct {
 	// classification of a document. A folder has none.
 	ClassificationID int64
 	Classification   string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// DefaultClassificationID and MinClassificationID are the
+	// classification setting of a folder. 0 means the same as the
+	// parent. See SetFolderClassification.
+	DefaultClassificationID int64
+	MinClassificationID     int64
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 	// UpdatedBy is the name of the last author. It is empty if the user
 	// does not exist now.
 	UpdatedBy string
@@ -271,13 +276,14 @@ func (s *Store) Node(ctx context.Context, spaceID int64, publicID string) (*Node
 		SELECT n.id, n.public_id, n.space_id, n.parent_id, n.kind, n.title, n.body,
 		       n.version, n.default_role, n.access_path_id, n.created_at, n.updated_at,
 		       COALESCE(NULLIF(u.display_name, ''), u.username, ''),
-		       COALESCE(c.id, 0), COALESCE(c.name, '')
+		       COALESCE(c.id, 0), COALESCE(c.name, ''),
+		       COALESCE(n.default_classification_id, 0), COALESCE(n.min_classification_id, 0)
 		FROM nodes n LEFT JOIN users u ON u.id = n.updated_by
 		LEFT JOIN classifications c ON c.id = n.classification_id
 		WHERE n.space_id = $1 AND n.public_id = $2 AND n.deleted_at IS NULL`, spaceID, publicID,
 	).Scan(&n.ID, &n.PublicID, &n.SpaceID, &n.ParentID, &n.Kind, &title, &body,
 		&n.Version, &n.DefaultRole, &n.AccessPathID, &n.CreatedAt, &n.UpdatedAt, &n.UpdatedBy,
-		&n.ClassificationID, &n.Classification)
+		&n.ClassificationID, &n.Classification, &n.DefaultClassificationID, &n.MinClassificationID)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -501,11 +507,11 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 		var classID *int64
 		var className string
 		if nn.Kind == KindDocument {
-			cid, name, err := classificationFor(ctx, tx, spaceID, nn.ClassificationID)
+			c, err := permittedClass(ctx, tx, spaceID, parentID, nn.ClassificationID)
 			if err != nil {
 				return err
 			}
-			classID, className = &cid, name
+			classID, className = &c.ID, c.Name
 		}
 		now := s.now()
 		var id int64
@@ -549,23 +555,29 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 		u.Content = Content{Body: emptyBody}
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		var newClass *int64
-		if u.ClassificationID != 0 {
-			cid, _, err := classificationFor(ctx, tx, spaceID, u.ClassificationID)
-			if err != nil {
-				return err
-			}
-			newClass = &cid
+		// The shared lock makes sure that the classification limits do
+		// not change during the update. Other updates do not wait.
+		if _, err := tx.Exec(ctx, "SELECT id FROM spaces WHERE id = $1 FOR SHARE", spaceID); err != nil {
+			return err
 		}
 		// The old classification, for the audit log. A folder has no
 		// content.
 		var oldClass string
 		var folder bool
+		var parentID *int64
 		if err := tx.QueryRow(ctx, `
-			SELECT COALESCE(c.name, ''), n.kind = 'folder'
+			SELECT COALESCE(c.name, ''), n.kind = 'folder', n.parent_id
 			FROM nodes n LEFT JOIN classifications c ON c.id = n.classification_id
-			WHERE n.space_id = $1 AND n.public_id = $2`, spaceID, publicID).Scan(&oldClass, &folder); err != nil {
+			WHERE n.space_id = $1 AND n.public_id = $2`, spaceID, publicID).Scan(&oldClass, &folder, &parentID); err != nil {
 			return notFound(err)
+		}
+		var newClass *int64
+		if u.ClassificationID != 0 && !folder {
+			c, err := permittedClass(ctx, tx, spaceID, parentID, u.ClassificationID)
+			if err != nil {
+				return err
+			}
+			newClass = &c.ID
 		}
 		if folder {
 			u.Content = Content{Body: emptyBody}
@@ -677,6 +689,14 @@ func (s *Store) MoveNode(ctx context.Context, spaceID int64, publicID, newParent
 			if inSubtree {
 				return ErrInvalid
 			}
+		}
+		// The documents must be permitted at the new place.
+		limits, _, err := classLimits(ctx, tx, spaceID, parentID)
+		if err != nil {
+			return err
+		}
+		if err := checkSubtree(ctx, tx, spaceID, &id, false, limits.Min); err != nil {
+			return err
 		}
 		if _, err := tx.Exec(ctx, "UPDATE nodes SET parent_id = $2, updated_at = $3 WHERE id = $1",
 			id, parentID, s.now()); err != nil {

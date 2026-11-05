@@ -171,7 +171,13 @@ classification](user-guide.md#information-classification).
 - **Delete** (waste bin) deletes a level. The button is disabled for
   the default level and for a level that documents use, also if the
   documents are in the trash. Restore these documents and change
-  their level, or delete them permanently.
+  their level, or delete them permanently. The button is also disabled
+  for a level that the classification limits of a space or a folder
+  use. The **Documents** column shows the number of these limits.
+- The limits compare the levels by their order. If you change the
+  order, documents can have a level lower than the lowest level of
+  their space or folder. The server does not change these documents. A
+  user must select a permitted level at the next change.
 
 A new tenant gets the levels Unclassified (the default), Public,
 Restricted, Secret and Top Secret. The audit log records the changes.
@@ -228,5 +234,10 @@ Users with the permission `space.manage` manage the spaces:
     one search (10 to 1000). The default is 50. The search counts only
     the items that the user can read. Thus the limit is the same for all
     users, also if a user cannot read many items of the space.
+  - **Default classification** and **Lowest classification**: the
+    classification limits of the space. See [User guide: classification
+    limits](user-guide.md#classification-limits). A lowest level is not
+    possible while documents in the space have a lower level. The
+    documents in the trash are not included. A restore checks them.
 - Delete a space. Type the space code to confirm. This deletes all
   folders and documents in the space.

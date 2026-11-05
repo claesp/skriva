@@ -12,6 +12,18 @@
   <p id="quota-help" class="help"><small>The largest total size of all uploaded files in the space, from 1 to 1048576 MiB. A new limit does not delete files. If the files use more than the limit, users cannot upload more files.</small></p>
   <label>Search results <input name="search_results" type="number" value="{{.SearchResults}}" required min="10" max="1000" aria-describedby="results-help"></label>
   <p id="results-help" class="help"><small>The largest number of results from this space in one search, from 10 to 1000. The search counts only the documents and folders that the user can read.</small></p>
+  <label>Default classification
+    <select name="default_classification" aria-describedby="defclass-help">
+      <option value="0"{{if eq .DefaultClassificationID 0}} selected{{end}}>The default of the tenant</option>
+      {{range $.Data.Classifications}}<option value="{{.ID}}"{{if eq .ID $.Data.Space.DefaultClassificationID}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select></label>
+  <p id="defclass-help" class="help"><small>The classification of a new document in the space. A folder can set a different default.</small></p>
+  <label>Lowest classification
+    <select name="min_classification" aria-describedby="minclass-help">
+      <option value="0"{{if eq .MinClassificationID 0}} selected{{end}}>No limit</option>
+      {{range $.Data.Classifications}}<option value="{{.ID}}"{{if eq .ID $.Data.Space.MinClassificationID}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select></label>
+  <p id="minclass-help" class="help"><small>The documents in the space must have this classification or a higher one. A folder can only set a higher limit. Before you set a limit, give the documents with a lower classification a higher one.</small></p>
   {{template "savebutton"}}
 </form>
 {{end}}

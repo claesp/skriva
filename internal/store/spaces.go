@@ -26,7 +26,15 @@ type Space struct {
 	// SearchResults is the largest number of search results from the
 	// space. The search counts only the items that the user can read.
 	SearchResults int
-	CreatedAt     time.Time
+	// DefaultClassificationID is the default level of new documents, or
+	// 0 for the default level of the tenant. MinClassificationID is the
+	// lowest level of the documents, or 0 for no limit. The names are
+	// empty for 0.
+	DefaultClassificationID int64
+	DefaultClassification   string
+	MinClassificationID     int64
+	MinClassification       string
+	CreatedAt               time.Time
 	// Nodes is the number of folders and documents. LastChanged is the
 	// time of the last change of a node, or nil for an empty space. Only
 	// Spaces sets these fields.
@@ -53,15 +61,27 @@ type SpaceSettings struct {
 	Description   string
 	UploadQuotaMB int
 	SearchResults int
+	// DefaultClassificationID and MinClassificationID are the
+	// classification limits. 0 means the default level of the tenant and
+	// no lowest level.
+	DefaultClassificationID int64
+	MinClassificationID     int64
 }
 
 // spaceCols are the columns for scanSpace.
 const spaceCols = `sp.id, sp.tenant_id, sp.slug, sp.name, sp.description, sp.default_role,
-	sp.upload_quota_mb, sp.search_results, sp.created_at`
+	sp.upload_quota_mb, sp.search_results,
+	COALESCE(sp.default_classification_id, 0),
+	COALESCE((SELECT c.name FROM classifications c WHERE c.id = sp.default_classification_id), ''),
+	COALESCE(sp.min_classification_id, 0),
+	COALESCE((SELECT c.name FROM classifications c WHERE c.id = sp.min_classification_id), ''),
+	sp.created_at`
 
 func spaceDest(sp *Space) []any {
 	return []any{&sp.ID, &sp.TenantID, &sp.Slug, &sp.Name, &sp.Description, &sp.DefaultRole,
-		&sp.UploadQuotaMB, &sp.SearchResults, &sp.CreatedAt}
+		&sp.UploadQuotaMB, &sp.SearchResults,
+		&sp.DefaultClassificationID, &sp.DefaultClassification, &sp.MinClassificationID, &sp.MinClassification,
+		&sp.CreatedAt}
 }
 
 // SpaceFileBytes returns the total size of the uploaded files of a space.
@@ -131,7 +151,10 @@ func (s *Store) CreateSpace(ctx context.Context, tenantID int64, slug, name, des
 // UpdateSpace changes the settings of a space. The slug is part of the
 // URLs, thus a new slug changes all URLs of the space. It returns
 // ErrConflict if a different space of the tenant has the new slug, and
-// ErrInvalid if a limit is out of range.
+// ErrInvalid if a limit is out of range or a level is not a level of the
+// tenant. It returns a *ClassificationError if the default level is lower
+// than the lowest level, or if documents in the space have a level lower
+// than the lowest level.
 func (s *Store) UpdateSpace(ctx context.Context, tenantID int64, slug string, set SpaceSettings) error {
 	if set.UploadQuotaMB < MinUploadQuotaMB || set.UploadQuotaMB > MaxUploadQuotaMB ||
 		set.SearchResults < MinSearchResults || set.SearchResults > MaxSearchResults {
@@ -140,16 +163,54 @@ func (s *Store) UpdateSpace(ctx context.Context, tenantID int64, slug string, se
 	err := s.tx(ctx, func(tx pgx.Tx) error {
 		var id int64
 		var oldQuota, oldResults int
+		var oldDef, oldMin *int64
 		err := tx.QueryRow(ctx, `
-			SELECT id, upload_quota_mb, search_results FROM spaces WHERE tenant_id = $1 AND slug = $2 FOR UPDATE`,
-			tenantID, slug).Scan(&id, &oldQuota, &oldResults)
+			SELECT id, upload_quota_mb, search_results, default_classification_id, min_classification_id
+			FROM spaces WHERE tenant_id = $1 AND slug = $2 FOR UPDATE`,
+			tenantID, slug).Scan(&id, &oldQuota, &oldResults, &oldDef, &oldMin)
 		if err != nil {
 			return notFound(err)
 		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE spaces SET slug = $2, name = $3, description = $4, upload_quota_mb = $5, search_results = $6
-			WHERE id = $1`, id, set.Slug, set.Name, set.Description, set.UploadQuotaMB, set.SearchResults); err != nil {
+		_, levels, err := classLimits(ctx, tx, id, nil)
+		if err != nil {
 			return err
+		}
+		lookup := func(id int64) (*int64, ClassLevel, error) {
+			if id == 0 {
+				return nil, ClassLevel{}, nil
+			}
+			c, ok := levels[id]
+			if !ok {
+				return nil, c, ErrInvalid
+			}
+			return &id, c, nil
+		}
+		defID, def, err := lookup(set.DefaultClassificationID)
+		if err != nil {
+			return err
+		}
+		minID, min, err := lookup(set.MinClassificationID)
+		if err != nil {
+			return err
+		}
+		if minID != nil && defID != nil && def.Position < min.Position {
+			return &ClassificationError{Min: min.Name}
+		}
+		if err := checkSubtree(ctx, tx, id, nil, false, min); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE spaces SET slug = $2, name = $3, description = $4, upload_quota_mb = $5, search_results = $6,
+			                  default_classification_id = $7, min_classification_id = $8
+			WHERE id = $1`, id, set.Slug, set.Name, set.Description, set.UploadQuotaMB, set.SearchResults,
+			defID, minID); err != nil {
+			return err
+		}
+		if !sameID(oldDef, defID) || !sameID(oldMin, minID) {
+			if err := s.audit(ctx, tx, auditEntry{TenantID: &tenantID, SpaceID: id, Action: AuditSpaceClassLimits,
+				Target: set.Name, Details: classLimitsText(defID, def, minID, min, "tenant")}); err != nil {
+				return err
+			}
 		}
 		var details []string
 		if set.Slug != slug {
@@ -212,3 +273,6 @@ func (s *Store) DeleteSpace(ctx context.Context, tenantID int64, slug string) er
 		return err
 	})
 }
+
+// sameID reports whether two optional IDs are equal.
+func sameID(a, b *int64) bool { return (a == nil && b == nil) || (a != nil && b != nil && *a == *b) }

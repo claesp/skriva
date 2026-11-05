@@ -1,0 +1,31 @@
+{{define "content"}}
+{{template "nodehead" .}}
+{{with .Data}}
+<div class="pagehead"><h1>Classification limits</h1></div>
+<p>These limits apply to the documents in this folder and in all folders in it. The space and the parent folders can also set limits. This folder can only make them stricter.</p>
+<table class="settings">
+  <tbody>
+    <tr><th scope="row">Lowest classification now</th><td>{{or .Current.Min.Name "No limit"}}</td></tr>
+    <tr><th scope="row">Default for new documents now</th><td>{{.Current.Default.Name}}</td></tr>
+  </tbody>
+</table>
+{{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+<form method="post" action="{{$.SpacePath}}/classification/{{.Node.PublicID}}" class="stack">
+  {{template "csrf" $.CSRF}}
+  <label>Lowest classification
+    <select name="min_classification" aria-describedby="minclass-help">
+      <option value="0"{{if eq .MinID 0}} selected{{end}}>Same as the parent ({{or .Inherited.Min.Name "no limit"}})</option>
+      {{range .Levels}}<option value="{{.ID}}"{{if eq .ID $.Data.MinID}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select></label>
+  <p id="minclass-help" class="help"><small>The documents in this folder must have this classification or a higher one. Before you set a limit, give the documents with a lower classification a higher one.</small></p>
+  <label>Default classification
+    <select name="default_classification" aria-describedby="defclass-help">
+      <option value="0"{{if eq .DefaultID 0}} selected{{end}}>Same as the parent ({{.Inherited.Default.Name}})</option>
+      {{range .Levels}}<option value="{{.ID}}"{{if eq .ID $.Data.DefaultID}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select></label>
+  <p id="defclass-help" class="help"><small>The classification of a new document in this folder. It must not be lower than the lowest classification. If the default of the parent is lower than the lowest classification, new documents get the lowest classification.</small></p>
+  <div class="buttons"><button type="submit">Save</button></div>
+</form>
+{{end}}
+{{template "nodefoot"}}
+{{end}}

@@ -21,17 +21,23 @@ type Classification struct {
 	// trash. Only Classifications sets them.
 	Documents int
 	Trashed   int
+	// Settings is the number of spaces and folders that use the level as
+	// their default or lowest level. Only Classifications sets it.
+	Settings int
 }
 
-// InUse reports whether documents use the level, also in the trash.
-func (c *Classification) InUse() bool { return c.Documents > 0 || c.Trashed > 0 }
+// InUse reports whether documents use the level, also in the trash, or
+// whether a space or a folder uses it in its classification limits.
+func (c *Classification) InUse() bool { return c.Documents > 0 || c.Trashed > 0 || c.Settings > 0 }
 
 // Classifications returns the levels of a tenant in their order.
 func (s *Store) Classifications(ctx context.Context, tenantID int64) ([]Classification, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT c.id, c.name, c.description, c.position, c.is_default,
 		       (SELECT count(*) FROM nodes n WHERE n.classification_id = c.id AND n.deleted_at IS NULL),
-		       (SELECT count(*) FROM nodes n WHERE n.classification_id = c.id AND n.deleted_at IS NOT NULL)
+		       (SELECT count(*) FROM nodes n WHERE n.classification_id = c.id AND n.deleted_at IS NOT NULL),
+		       (SELECT count(*) FROM spaces sp WHERE c.id IN (sp.default_classification_id, sp.min_classification_id)) +
+		       (SELECT count(*) FROM nodes n WHERE c.id IN (n.default_classification_id, n.min_classification_id))
 		FROM classifications c WHERE c.tenant_id = $1
 		ORDER BY c.position, lower(c.name), c.id`, tenantID)
 	if err != nil {
@@ -39,7 +45,7 @@ func (s *Store) Classifications(ctx context.Context, tenantID int64) ([]Classifi
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Classification, error) {
 		var c Classification
-		err := row.Scan(&c.ID, &c.Name, &c.Description, &c.Position, &c.IsDefault, &c.Documents, &c.Trashed)
+		err := row.Scan(&c.ID, &c.Name, &c.Description, &c.Position, &c.IsDefault, &c.Documents, &c.Trashed, &c.Settings)
 		return c, err
 	})
 }
@@ -106,7 +112,8 @@ func (s *Store) SaveClassification(ctx context.Context, tenantID int64, c Classi
 }
 
 // DeleteClassification removes a level of a tenant. It returns ErrInvalid
-// for the default level, and ErrConflict if documents use the level.
+// for the default level, and ErrConflict if documents use the level or a
+// space or a folder uses it in its classification limits.
 func (s *Store) DeleteClassification(ctx context.Context, tenantID, id int64) error {
 	err := s.tx(ctx, func(tx pgx.Tx) error {
 		var name string
@@ -128,23 +135,4 @@ func (s *Store) DeleteClassification(ctx context.Context, tenantID, id int64) er
 		return ErrConflict
 	}
 	return err
-}
-
-// classificationFor returns the level for a document in a space: the
-// level with the given ID, or the default level of the tenant if id is
-// 0. It returns ErrInvalid if the level does not belong to the tenant of
-// the space. Thus a document cannot have a level of a different tenant.
-func classificationFor(ctx context.Context, q querier, spaceID, id int64) (int64, string, error) {
-	var out int64
-	var name string
-	err := q.QueryRow(ctx, `
-		SELECT c.id, c.name FROM classifications c JOIN spaces sp ON sp.tenant_id = c.tenant_id
-		WHERE sp.id = $1 AND (c.id = $2 OR ($2 = 0 AND c.is_default))`, spaceID, id).Scan(&out, &name)
-	if err != nil {
-		if notFound(err) == ErrNotFound {
-			return 0, "", ErrInvalid
-		}
-		return 0, "", err
-	}
-	return out, name, nil
 }

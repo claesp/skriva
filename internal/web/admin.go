@@ -802,6 +802,9 @@ type spaceHead struct {
 	// FileBytes is the size of the uploaded files. Only the space page
 	// sets it.
 	FileBytes int64
+	// Classifications are the levels of the tenant. Only the settings
+	// form sets them.
+	Classifications []store.Classification
 }
 
 // loadSpace loads the space from the {slug} path value.
@@ -832,6 +835,11 @@ func (s *Server) handleAdminSpaceEdit(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	var err error
+	if h.Classifications, err = s.store.Classifications(r.Context(), tenantOf(r).ID); err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-edit", "Settings of "+h.Space.Name, h)
 }
 
@@ -860,9 +868,18 @@ func (s *Server) handleAdminSpaceUpdate(w http.ResponseWriter, r *http.Request) 
 			store.MinSearchResults, store.MaxSearchResults))
 		return
 	}
+	// 0 is the default level of the tenant and no lowest level. The store
+	// checks that the levels belong to the tenant.
+	defClass, err1 := strconv.ParseInt(r.PostFormValue("default_classification"), 10, 64)
+	minClass, err2 := strconv.ParseInt(r.PostFormValue("min_classification"), 10, 64)
+	if err1 != nil || err2 != nil {
+		s.badRequest(w, r, "The classification is not valid.")
+		return
+	}
 	slug := r.PathValue("slug")
 	if !s.storeResult(w, r, s.store.UpdateSpace(r.Context(), tenantOf(r).ID, slug, store.SpaceSettings{
 		Slug: newSlug, Name: name, Description: desc, UploadQuotaMB: quota, SearchResults: results,
+		DefaultClassificationID: defClass, MinClassificationID: minClass,
 	})) {
 		return
 	}
