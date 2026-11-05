@@ -112,6 +112,8 @@ for example `/acme/handbook/`.
 | Default role | The role of all signed-in users of the tenant. "(None)" means that a user needs a role binding. |
 | Session life | The maximum life of a session, from `1m` to `720h`, for example `12h`. |
 | Maximum document size | The maximum size of the text of one document, from 1 to 1024 KiB. |
+| Language | The language of the pages for the users of the tenant. "The default of the system" uses `SKRIVA_LANGUAGE`. See [Languages](#languages). |
+| Content language | The language of the documents, for the search. "None" means no stemmer. See [Languages](#languages). |
 
 ### Delete a tenant
 
@@ -122,6 +124,59 @@ for example `/acme/handbook/`.
 
 This deletes all users, groups, roles, spaces and documents of the
 tenant. You cannot undo this. You cannot delete the default tenant.
+
+## Languages
+
+The pages are available in English (`en`) and Swedish (`sv`). The
+server selects the language of a page in this order:
+
+1. The language in the profile of the user.
+2. The language of the tenant (tenant setting **Language**).
+3. The default language of the system (`SKRIVA_LANGUAGE`, default `en`).
+
+A page without a session (for example the page after the sign-out)
+uses the language of the tenant, else of the system. The sign-in page
+of the identity provider gets the language in the OIDC parameter
+`ui_locales`. Keycloak uses it if the realm has internationalization
+on and has that language.
+
+Only the texts of the application have translations. These texts stay
+as they are:
+
+- The content of the documents, and the names of spaces, folders,
+  groups, roles and classifications.
+- The details in the audit log. The server writes them in English when
+  the event occurs.
+- The documentation in `docs/`.
+
+### Content language
+
+The **Content language** of a tenant selects the stemmer of the
+search. A stemmer finds other forms of a word: in English,
+"describing" finds "describe". The content languages are English,
+Spanish, French, Hungarian, Norwegian (bokmål), Russian and Swedish
+(the Snowball stemmers). "None" turns off the stemmer. The search for
+whole words and for the start of words works in all languages.
+
+A new tenant gets `SKRIVA_LANGUAGE` as its content language. After a
+change of the content language, the cleanup task makes the search index
+of the tenant again, in batches of 100 documents, every 10 minutes and
+at start. Until then, the search does not find other forms of the
+words in the old documents.
+
+### Add a language
+
+1. Add the language to the list `ui` in `internal/i18n/i18n.go`.
+2. Make the folder `internal/i18n/locales/<code>/` with a JSON file for
+   each part of the application. A file has the English texts as keys
+   and the translations as values. Use the files of `sv` as the model.
+3. Run `go test ./internal/web ./internal/i18n`. The tests find the
+   texts without a translation, the translations that the code does not
+   use, and the translations with different format verbs (`%s`, `%d`).
+
+The rule for plurals (`%d day` and `%d days`) is correct for English and
+Swedish. A language with more plural forms needs a change in
+`i18n.Printer.N`.
 
 ## Tenant administration
 

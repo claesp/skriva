@@ -1,18 +1,18 @@
 {{define "content"}}
-{{template "listhead" (head "Classifications" (tool (print .TenantPath "/admin/classifications/new") "new" "New classification"))}}
-<p>The levels of information classification of the documents, from the lowest to the highest. All spaces of the tenant use these levels. A new document gets the default level.</p>
+{{template "listhead" (head (t "Classifications") (tool (print .TenantPath "/admin/classifications/new") "new" (t "New classification")))}}
+<p>{{t "The levels of information classification of the documents, from the lowest to the highest. All spaces of the tenant use these levels. A new document gets the default level."}}</p>
 <table>
-  <thead><tr><th class="num">Order</th><th>Name</th><th class="optional">Description</th><th class="num">Documents</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th class="num">{{t "Order"}}</th><th>{{t "Name"}}</th><th class="optional">{{t "Description"}}</th><th class="num">{{t "Documents"}}</th><th class="actions"><span class="vh">{{t "Actions"}}</span></th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr>
     <td class="num">{{.Position}}</td>
-    <td>{{.Name}}{{if .IsDefault}} <span class="tag">default</span>{{end}}</td>
+    <td>{{.Name}}{{if .IsDefault}} <span class="tag">{{t "default"}}</span>{{end}}</td>
     <td class="optional">{{.Description}}</td>
-    <td class="num">{{.Documents}}{{with .Trashed}}<br><small>and {{.}} in the trash</small>{{end}}{{with .Settings}}<br><small>{{.}} limits of spaces or folders</small>{{end}}</td>
+    <td class="num">{{.Documents}}{{with .Trashed}}<br><small>{{t "and %d in the trash" .}}</small>{{end}}{{with .Settings}}<br><small>{{t "%d limits of spaces or folders" .}}</small>{{end}}</td>
     <td class="actions">
-      {{template "tool" (tool (print $.TenantPath "/admin/classifications/" .ID "/edit") "edit" "Change")}}
-      {{template "tool" (when (and (not .IsDefault) (not .InUse)) (tool (print $.TenantPath "/admin/classifications/" .ID "/delete") "delete" "Delete"))}}
+      {{template "tool" (tool (print $.TenantPath "/admin/classifications/" .ID "/edit") "edit" (t "Change"))}}
+      {{template "tool" (when (and (not .IsDefault) (not .InUse)) (tool (print $.TenantPath "/admin/classifications/" .ID "/delete") "delete" (t "Delete")))}}
     </td>
   </tr>
   {{end}}

@@ -30,7 +30,7 @@ func (s *Server) handleAdminClassifications(w http.ResponseWriter, r *http.Reque
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "classifications", "admin-classifications", "Classifications", list)
+	s.renderAdmin(w, r, http.StatusOK, "classifications", "admin-classifications", s.tr(r).T("Classifications"), list)
 }
 
 func (s *Server) handleAdminClassificationNew(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +44,7 @@ func (s *Server) handleAdminClassificationNew(w http.ResponseWriter, r *http.Req
 	if len(list) > 0 {
 		pos = list[len(list)-1].Position + 1
 	}
-	s.renderAdmin(w, r, http.StatusOK, "classifications", "admin-classification-form", "New classification",
+	s.renderAdmin(w, r, http.StatusOK, "classifications", "admin-classification-form", s.tr(r).T("New classification"),
 		classificationForm{IsNew: true, Action: adminPath(r) + "/classifications",
 			Classification: store.Classification{Position: pos}})
 }
@@ -59,7 +59,7 @@ func (s *Server) handleAdminClassificationEdit(w http.ResponseWriter, r *http.Re
 	if !s.storeResult(w, r, err) {
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "classifications", "admin-classification-form", "Change "+c.Name,
+	s.renderAdmin(w, r, http.StatusOK, "classifications", "admin-classification-form", s.tr(r).T("Change %s", c.Name),
 		classificationForm{Action: adminPath(r) + "/classifications/" + strconv.FormatInt(id, 10), Classification: *c})
 }
 
@@ -82,22 +82,23 @@ func (s *Server) handleAdminClassificationSave(w http.ResponseWriter, r *http.Re
 	f.IsDefault = r.PostFormValue("default") == "on"
 	pos, err := strconv.Atoi(r.PostFormValue("position"))
 	f.Position = pos
+	p := s.tr(r)
 	switch {
 	case f.Name == "" || utf8.RuneCountInString(f.Name) > maxClassificationName || !utf8.ValidString(f.Name):
-		f.Error = "The name is necessary. The maximum is 60 characters."
+		f.Error = p.T("The name is necessary. The maximum is 60 characters.")
 	case utf8.RuneCountInString(f.Description) > maxClassificationDesc || !utf8.ValidString(f.Description):
-		f.Error = "The description is too long."
+		f.Error = p.T("The description is too long.")
 	case err != nil || pos < 0 || pos > 1000:
-		f.Error = "The order must be a number from 0 to 1000."
+		f.Error = p.T("The order must be a number from 0 to 1000.")
 	}
-	title := "New classification"
+	title := p.T("New classification")
 	if !f.IsNew {
-		title = "Change " + f.Name
+		title = p.T("Change %s", f.Name)
 	}
 	if f.Error == "" {
 		_, err = s.store.SaveClassification(r.Context(), tenantOf(r).ID, f.Classification)
 		if errors.Is(err, store.ErrConflict) {
-			f.Error = "A classification with this name exists already."
+			f.Error = p.T("A classification with this name exists already.")
 		} else if !s.storeResult(w, r, err) {
 			return
 		}
@@ -120,14 +121,15 @@ func (s *Server) handleAdminClassificationDeleteForm(w http.ResponseWriter, r *h
 		return
 	}
 	if c.IsDefault {
-		s.badRequest(w, r, "You cannot delete the default classification. Make a different classification the default first.")
+		s.badRequest(w, r, s.tr(r).T("You cannot delete the default classification. Make a different classification the default first."))
 		return
 	}
 	cp := adminPath(r) + "/classifications"
-	s.renderAdmin(w, r, http.StatusOK, "classifications", "confirm-delete", "Delete classification", confirmDelete{
-		Heading: "Delete classification " + c.Name,
-		Message: "Do you want to delete the classification? You can delete only a classification that no document uses.",
-		Action:  cp + "/" + strconv.FormatInt(id, 10) + "/delete", Cancel: cp, Parent: "Classifications", CSRF: csrfOf(r),
+	p := s.tr(r)
+	s.renderAdmin(w, r, http.StatusOK, "classifications", "confirm-delete", p.T("Delete classification"), confirmDelete{
+		Heading: p.T("Delete classification %s", c.Name),
+		Message: p.T("Do you want to delete the classification? You can delete only a classification that no document uses."),
+		Action:  cp + "/" + strconv.FormatInt(id, 10) + "/delete", Cancel: cp, Parent: p.T("Classifications"), CSRF: csrfOf(r),
 	})
 }
 
@@ -140,13 +142,13 @@ func (s *Server) handleAdminClassificationDelete(w http.ResponseWriter, r *http.
 	err := s.store.DeleteClassification(r.Context(), tenantOf(r).ID, id)
 	switch {
 	case errors.Is(err, store.ErrConflict):
-		s.renderError(w, r, http.StatusConflict,
+		s.renderError(w, r, http.StatusConflict, s.tr(r).T(
 			"Documents, spaces or folders use this classification. Give the documents a different "+
 				"classification first. This includes the documents in the trash: restore them, or delete them "+
-				"permanently. Remove the classification from the limits of the spaces and folders.")
+				"permanently. Remove the classification from the limits of the spaces and folders."))
 		return
 	case errors.Is(err, store.ErrInvalid):
-		s.badRequest(w, r, "You cannot delete the default classification.")
+		s.badRequest(w, r, s.tr(r).T("You cannot delete the default classification."))
 		return
 	}
 	if !s.storeResult(w, r, err) {

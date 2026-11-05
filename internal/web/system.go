@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/claesp/skriva/internal/i18n"
 	"github.com/claesp/skriva/internal/store"
 )
 
@@ -27,6 +28,8 @@ func (s *Server) systemRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /admin/logout", s.requireSystem(s.handleLogout))
 	mux.Handle("GET /admin/{$}", s.requireSystem(s.handleTenants))
 	mux.Handle("GET /admin/audit", s.requireSystem(s.handleAudit))
+	mux.Handle("GET /admin/profile", s.requireSystem(s.handleProfile))
+	mux.Handle("POST /admin/profile", s.requireSystem(s.handleProfileUpdate))
 	mux.Handle("GET /admin/tenants/new", s.requireSystem(s.handleTenantNewForm))
 	mux.Handle("POST /admin/tenants", s.requireSystem(s.handleTenantCreate))
 	mux.Handle("GET /admin/tenants/{code}", s.requireSystem(s.handleTenant))
@@ -46,7 +49,7 @@ func (s *Server) handleTenants(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-tenants", "Tenants", tenants)
+	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-tenants", s.tr(r).T("Tenants"), tenants)
 }
 
 // tenantForm is the data for the tenant settings form.
@@ -65,7 +68,13 @@ type tenantForm struct {
 	RedirectURI string
 	LogoutURI   string
 	Roles       []store.Role
-	Error       string
+	// UILanguages and ContentLanguages are the choices of the language
+	// fields. SystemLanguage is the name of the default language of the
+	// system.
+	UILanguages      []i18n.Language
+	ContentLanguages []i18n.Language
+	SystemLanguage   string
+	Error            string
 	// Keys is the state of the data keys of the tenant. Only the page
 	// of the tenant shows it.
 	Keys *store.KeyInfo
@@ -82,6 +91,11 @@ func (s *Server) newTenantForm(r *http.Request, t *store.Tenant) (*tenantForm, e
 			OIDCScopes: []string{"openid", "profile", "email"}, OIDCGroupsClaim: "groups",
 			DefaultRole: "viewer", SessionTTL: 12 * time.Hour, MaxDocBytes: 1 << 20,
 		}
+		// The content language of a new tenant is the default language
+		// of the system, if it has a stemmer.
+		if i18n.IsContent(s.opts.Language) {
+			f.ContentLanguage = s.opts.Language
+		}
 	} else {
 		tenantID = t.ID
 		f.IsDefault = t.IsDefault
@@ -92,6 +106,8 @@ func (s *Server) newTenantForm(r *http.Request, t *store.Tenant) (*tenantForm, e
 	f.Scopes = strings.Join(f.OIDCScopes, " ")
 	f.SessionTTL = f.TenantSettings.SessionTTL.String()
 	f.MaxDocKiB = f.MaxDocBytes / 1024
+	f.UILanguages, f.ContentLanguages = i18n.UILanguages(), i18n.ContentLanguages()
+	f.SystemLanguage = i18n.Name(s.opts.Language)
 	roles, err := s.store.Roles(r.Context(), tenantID)
 	if err != nil {
 		return nil, err
@@ -109,8 +125,8 @@ func (f *tenantForm) setURIs(s *Server) {
 }
 
 // readTenantForm reads and checks the settings in the form. It returns an
-// error text, or "".
-func readTenantForm(r *http.Request, f *tenantForm) string {
+// error text in the language of p, or "".
+func readTenantForm(r *http.Request, p *i18n.Printer, f *tenantForm) string {
 	get := func(k string) string { return strings.TrimSpace(r.PostFormValue(k)) }
 	f.Name = get("name")
 	f.Disabled = r.PostFormValue("disabled") == "on"
@@ -122,36 +138,42 @@ func readTenantForm(r *http.Request, f *tenantForm) string {
 	f.AdminGroup = get("admin_group")
 	f.DefaultRole = get("default_role")
 	f.SessionTTL = get("session_ttl")
+	f.Language = get("language")
+	f.ContentLanguage = get("content_language")
 
 	switch {
 	case f.Name == "" || utf8.RuneCountInString(f.Name) > 200:
-		return "The name is necessary and must have 200 characters or less."
+		return p.T("The name is necessary and must have 200 characters or less.")
 	case !validIssuer(f.OIDCIssuer):
-		return "The issuer must be an https URL. An http URL is permitted only for localhost."
+		return p.T("The issuer must be an https URL. An http URL is permitted only for localhost.")
 	case len(f.OIDCClientID) > 200 || len(f.OIDCGroupsClaim) > 100 || utf8.RuneCountInString(f.AdminGroup) > 200:
-		return "A value is too long."
+		return p.T("A value is too long.")
 	case len(r.PostFormValue("oidc_client_secret")) > 500:
-		return "The client secret is too long."
+		return p.T("The client secret is too long.")
 	case len(f.OIDCScopes) > 20 || len(f.Scopes) > 500:
-		return "There are too many scopes."
+		return p.T("There are too many scopes.")
 	case f.DefaultRole != "" && !roleNameRE.MatchString(f.DefaultRole):
-		return "The default role is not valid."
+		return p.T("The default role is not valid.")
+	case f.Language != "" && !i18n.IsUI(f.Language):
+		return p.T("The language is not valid.")
+	case !i18n.IsContent(f.ContentLanguage):
+		return p.T("The content language is not valid.")
 	}
 	for _, sc := range f.OIDCScopes {
 		for _, c := range sc {
 			if c < 0x21 || c > 0x7e || c == '"' || c == '\\' {
-				return "A scope contains a character that is not permitted."
+				return p.T("A scope contains a character that is not permitted.")
 			}
 		}
 	}
 	ttl, err := time.ParseDuration(f.SessionTTL)
 	if err != nil || ttl < minSessionTTL || ttl > maxSessionTTL {
-		return "The session life must be a duration from 1m to 720h, for example 12h."
+		return p.T("The session life must be a duration from 1m to 720h, for example 12h.")
 	}
 	f.TenantSettings.SessionTTL = ttl
 	kib, err := strconv.Atoi(get("max_doc_kib"))
 	if err != nil || kib < 1 || kib > maxDocKiB {
-		return "The maximum document size must be from 1 to 1024 KiB."
+		return p.T("The maximum document size must be from 1 to 1024 KiB.")
 	}
 	f.MaxDocKiB = kib
 	f.MaxDocBytes = kib * 1024
@@ -179,9 +201,10 @@ func validIssuer(u string) bool {
 }
 
 func (s *Server) renderTenantForm(w http.ResponseWriter, r *http.Request, status int, f *tenantForm) {
-	title := "New tenant"
+	p := s.tr(r)
+	title := p.T("New tenant")
 	if !f.IsNew {
-		title = "Tenant " + f.Path
+		title = p.T("Tenant %s", f.Path)
 	}
 	s.renderAdmin(w, r, status, "tenants", "system-tenant", title, f)
 }
@@ -201,10 +224,11 @@ func (s *Server) handleTenantCreate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	p := s.tr(r)
 	f.Code = strings.TrimSpace(r.PostFormValue("code"))
-	f.Error = readTenantForm(r, f)
+	f.Error = readTenantForm(r, p, f)
 	if f.Error == "" && !s.validTenantCode(f.Code) {
-		f.Error = tenantCodeError
+		f.Error = p.T(tenantCodeError)
 	}
 	if f.Error != "" {
 		s.renderTenantForm(w, r, http.StatusUnprocessableEntity, f)
@@ -213,9 +237,9 @@ func (s *Server) handleTenantCreate(w http.ResponseWriter, r *http.Request) {
 	t, err := s.store.CreateTenant(r.Context(), f.Code, f.TenantSettings, r.PostFormValue("oidc_client_secret"))
 	switch {
 	case errors.Is(err, store.ErrConflict):
-		f.Error = "A tenant with this code exists already."
+		f.Error = p.T("A tenant with this code exists already.")
 	case errors.Is(err, store.ErrInvalid):
-		f.Error = "The default role does not exist."
+		f.Error = p.T("The default role does not exist.")
 	case err != nil:
 		s.serverError(w, r, err)
 		return
@@ -258,7 +282,7 @@ func (s *Server) handleTenant(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-tenant-view", "Tenant "+t.Code, f)
+	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-tenant-view", s.tr(r).T("Tenant %s", t.Code), f)
 }
 
 // handleTenantRotateKey makes a new data key for the tenant. The cleanup
@@ -300,10 +324,11 @@ func (s *Server) handleTenantUpdate(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	p := s.tr(r)
 	f.Code = strings.TrimSpace(r.PostFormValue("code"))
-	f.Error = readTenantForm(r, f)
+	f.Error = readTenantForm(r, p, f)
 	if f.Error == "" && !s.validTenantCode(f.Code) {
-		f.Error = tenantCodeError
+		f.Error = p.T(tenantCodeError)
 	}
 	if f.Error != "" {
 		s.renderTenantForm(w, r, http.StatusUnprocessableEntity, f)
@@ -320,9 +345,9 @@ func (s *Server) handleTenantUpdate(w http.ResponseWriter, r *http.Request) {
 	nt, err := s.store.UpdateTenant(r.Context(), t.ID, f.Code, f.TenantSettings, newSecret)
 	switch {
 	case errors.Is(err, store.ErrInvalid):
-		f.Error = "The default role does not exist."
+		f.Error = p.T("The default role does not exist.")
 	case errors.Is(err, store.ErrConflict):
-		f.Error = "A tenant with this code exists already."
+		f.Error = p.T("A tenant with this code exists already.")
 	}
 	if f.Error != "" {
 		s.renderTenantForm(w, r, http.StatusUnprocessableEntity, f)
@@ -342,15 +367,16 @@ func (s *Server) handleTenantDeleteForm(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if t.IsDefault {
-		s.badRequest(w, r, "You cannot delete the default tenant.")
+		s.badRequest(w, r, s.tr(r).T("You cannot delete the default tenant."))
 		return
 	}
+	tr := s.tr(r)
 	p := "/admin/tenants/" + t.Code
-	s.renderAdmin(w, r, http.StatusOK, "tenants", "confirm-delete", "Delete tenant", confirmDelete{
-		Heading: "Delete tenant " + t.Name,
-		Message: "Do you want to delete the tenant? This deletes all users, groups, roles, spaces and documents of the tenant.",
+	s.renderAdmin(w, r, http.StatusOK, "tenants", "confirm-delete", tr.T("Delete tenant"), confirmDelete{
+		Heading: tr.T("Delete tenant %s", t.Name),
+		Message: tr.T("Do you want to delete the tenant? This deletes all users, groups, roles, spaces and documents of the tenant."),
 		Action:  p + "/delete", Code: t.Code, Cancel: p, Parent: t.Code, CSRF: csrfOf(r),
-		RootURL: "/admin/", RootLabel: "Tenants",
+		RootURL: "/admin/", RootLabel: tr.T("Tenants"),
 	})
 }
 
@@ -362,12 +388,12 @@ func (s *Server) handleTenantDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.PostFormValue("confirm") != t.Code {
-		s.badRequest(w, r, "Type the tenant code to confirm the deletion.")
+		s.badRequest(w, r, s.tr(r).T("Type the tenant code to confirm the deletion."))
 		return
 	}
 	err := s.store.DeleteTenant(r.Context(), t.ID)
 	if errors.Is(err, store.ErrInvalid) {
-		s.badRequest(w, r, "You cannot delete the default tenant.")
+		s.badRequest(w, r, s.tr(r).T("You cannot delete the default tenant."))
 		return
 	}
 	if !s.storeResult(w, r, err) {
@@ -387,13 +413,14 @@ func (s *Server) handleTenantSpaces(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-tenant-spaces", "Spaces of "+t.Code, struct {
+	p := s.tr(r)
+	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-tenant-spaces", p.T("Spaces of %s", t.Code), struct {
 		Code      string
 		IsDefault bool
 		Tab       string
 		Crumb     string
 		Spaces    []store.Space
-	}{t.Code, t.IsDefault, "spaces", "Spaces", spaces})
+	}{t.Code, t.IsDefault, "spaces", p.T("Spaces"), spaces})
 }
 
 func (s *Server) handleTenantSpaceNew(w http.ResponseWriter, r *http.Request) {
@@ -401,7 +428,7 @@ func (s *Server) handleTenantSpaceNew(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-space-new", "New space", t.Code)
+	s.renderAdmin(w, r, http.StatusOK, "tenants", "system-space-new", s.tr(r).T("New space"), t.Code)
 }
 
 func (s *Server) handleTenantSpaceCreate(w http.ResponseWriter, r *http.Request) {

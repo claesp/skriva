@@ -3,6 +3,8 @@ package web
 import (
 	"testing"
 	"time"
+
+	"github.com/claesp/skriva/internal/i18n"
 )
 
 func TestRelativeTime(t *testing.T) {
@@ -28,7 +30,7 @@ func TestRelativeTime(t *testing.T) {
 		{400 * 24 * time.Hour, "2025-09-26"},
 	}
 	for _, tt := range tests {
-		if got := relativeTime(now.Add(-tt.ago), now); got != tt.want {
+		if got := relativeTime(i18n.For("en"), now.Add(-tt.ago), now); got != tt.want {
 			t.Errorf("relativeTime(now - %v) = %q, want %q", tt.ago, got, tt.want)
 		}
 	}
@@ -37,7 +39,7 @@ func TestRelativeTime(t *testing.T) {
 func TestTimeElement(t *testing.T) {
 	now := time.Date(2026, 10, 31, 14, 30, 0, 0, time.UTC)
 	cet := time.FixedZone("CET", 3600)
-	got := string(timeElement(time.Date(2026, 10, 31, 15, 6, 7, 0, cet), now))
+	got := string(timeElement(i18n.For("en"), time.Date(2026, 10, 31, 15, 6, 7, 0, cet), now))
 	want := `<time datetime="2026-10-31T14:06:07Z" title="2026-10-31T14:06:07+00:00">23 minutes ago</time>`
 	if got != want {
 		t.Fatalf("timeElement = %s, want %s", got, want)

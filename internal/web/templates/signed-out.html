@@ -1,7 +1,7 @@
 {{define "content"}}
-{{template "plainhead" "Signed out"}}
-<div class="pagehead"><h1>You signed out</h1></div>
-<p>Your session ended. To continue, sign in again.</p>
-<div class="buttons"><a class="button" href="{{.Data}}/login">Sign in</a></div>
+{{template "plainhead" (t "Signed out")}}
+<div class="pagehead"><h1>{{t "You signed out"}}</h1></div>
+<p>{{t "Your session ended. To continue, sign in again."}}</p>
+<div class="buttons"><a class="button" href="{{.Data}}/login">{{t "Sign in"}}</a></div>
 {{template "nodefoot"}}
 {{end}}

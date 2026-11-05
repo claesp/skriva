@@ -1,8 +1,8 @@
 {{define "content"}}
-{{template "listhead" (head "Recent changes")}}
-<p>The documents that changed last, in all spaces.</p>
+{{template "listhead" (head (t "Recent changes"))}}
+<p>{{t "The documents that changed last, in all spaces."}}</p>
 <table>
-  <thead><tr><th>Document</th><th>Space</th><th class="date">Changed</th></tr></thead>
+  <thead><tr><th>{{t "Document"}}</th><th>{{t "Space"}}</th><th class="date">{{t "Changed"}}</th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr>
@@ -11,7 +11,7 @@
     <td class="date">{{date .UpdatedAt}}</td>
   </tr>
   {{else}}
-  <tr><td colspan="3">There are no documents.</td></tr>
+  <tr><td colspan="3">{{t "There are no documents."}}</td></tr>
   {{end}}
   </tbody>
 </table>

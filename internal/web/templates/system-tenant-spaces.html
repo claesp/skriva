@@ -1,14 +1,14 @@
 {{define "content"}}
 {{template "tenanthead" .}}
-{{template "pagehead" (head "Spaces" (tool (print "/admin/tenants/" .Data.Code "/spaces/new") "new" "New space"))}}
+{{template "pagehead" (head (t "Spaces") (tool (print "/admin/tenants/" .Data.Code "/spaces/new") "new" (t "New space")))}}
 <table>
-  <thead><tr><th>Name</th><th>Code</th><th class="num">Items</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>{{t "Name"}}</th><th>{{t "Code"}}</th><th class="num">{{t "Items"}}</th><th class="actions"><span class="vh">{{t "Actions"}}</span></th></tr></thead>
   <tbody>
   {{range .Data.Spaces}}
   <tr><td>{{.Name}}</td><td><code>{{.Slug}}</code></td><td class="num">{{.Nodes}}</td>
-    <td class="actions">{{template "tool" (tool (print "/" $.Data.Code "/" .Slug "/") "open" "Open the space")}}</td></tr>
+    <td class="actions">{{template "tool" (tool (print "/" $.Data.Code "/" .Slug "/") "open" (t "Open the space"))}}</td></tr>
   {{else}}
-  <tr><td colspan="4">There are no spaces.</td></tr>
+  <tr><td colspan="4">{{t "There are no spaces."}}</td></tr>
   {{end}}
   </tbody>
 </table>

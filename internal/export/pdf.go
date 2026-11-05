@@ -2,6 +2,7 @@ package export
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	_ "embed" // For the template.
 	"encoding/json"
@@ -102,12 +103,16 @@ type pdfRunner struct {
 
 // pdfData is the content of doc.json. See pdf.typ.
 type pdfData struct {
-	Title          string    `json:"title"`
-	Classification string    `json:"classification"`
-	Version        int       `json:"version"`
-	Updated        string    `json:"updated"`
-	URL            string    `json:"url"`
-	Body           *doc.Node `json:"body"`
+	Title          string `json:"title"`
+	Classification string `json:"classification"`
+	// Label is the word for the classification in the metadata.
+	Label string `json:"label"`
+	// Lang is the language for the hyphenation, or "" for none.
+	Lang    string    `json:"lang"`
+	Version int       `json:"version"`
+	Updated string    `json:"updated"`
+	URL     string    `json:"url"`
+	Body    *doc.Node `json:"body"`
 }
 
 // write makes the PDF file. If Typst cannot read an image, it fails. Then
@@ -144,6 +149,7 @@ func (r *pdfRunner) write(ctx context.Context, w io.Writer, d *Document) error {
 	}
 	data := pdfData{
 		Title: d.Title, Classification: d.Classification, Version: d.Version,
+		Label: cmp.Or(d.ClassificationLabel, "Classification"), Lang: d.Lang,
 		Updated: d.UpdatedAt.UTC().Format(time.RFC3339), URL: d.URL, Body: body,
 	}
 	pdf, err := r.compile(ctx, dir, &data, d.UpdatedAt)

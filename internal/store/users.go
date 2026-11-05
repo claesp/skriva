@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/claesp/skriva/internal/i18n"
 )
 
 // User is a person who signed in at least one time. A user belongs to one
@@ -22,6 +24,14 @@ type User struct {
 	Disabled    bool
 	CreatedAt   time.Time
 	LastLoginAt *time.Time
+	Profile
+}
+
+// Profile are the settings that the user can change.
+type Profile struct {
+	// Language is the language of the user interface (see i18n.IsUI),
+	// or "" for the language of the tenant.
+	Language string
 }
 
 // Name returns the best name to show for the user.
@@ -32,14 +42,18 @@ func (u *User) Name() string {
 	return u.Username
 }
 
-const userColumns = "id, tenant_id, issuer, subject, username, email, display_name, disabled, created_at, last_login_at"
+const userColumns = "id, tenant_id, issuer, subject, username, email, display_name, disabled, created_at, last_login_at, language"
 
 func scanUser(row pgx.Row) (*User, error) {
 	var u User
+	var lang *string
 	err := row.Scan(&u.ID, &u.TenantID, &u.Issuer, &u.Subject, &u.Username, &u.Email,
-		&u.DisplayName, &u.Disabled, &u.CreatedAt, &u.LastLoginAt)
+		&u.DisplayName, &u.Disabled, &u.CreatedAt, &u.LastLoginAt, &lang)
 	if err != nil {
 		return nil, notFound(err)
+	}
+	if lang != nil {
+		u.Language = *lang
 	}
 	return &u, nil
 }
@@ -157,4 +171,21 @@ func (s *Store) SetUserDisabled(ctx context.Context, tenantID, id int64, disable
 		}
 		return s.audit(ctx, tx, auditEntry{TenantID: &tenantID, Action: action, Target: username})
 	})
+}
+
+// SetProfile changes the profile settings of a user. It returns
+// ErrInvalid if a setting is not valid, and ErrNotFound if the user does
+// not exist.
+func (s *Store) SetProfile(ctx context.Context, userID int64, p Profile) error {
+	if p.Language != "" && !i18n.IsUI(p.Language) {
+		return ErrInvalid
+	}
+	tag, err := s.pool.Exec(ctx, "UPDATE users SET language = $2 WHERE id = $1", userID, nullText(p.Language))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

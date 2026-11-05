@@ -421,7 +421,8 @@ for the methods that the project compared.
   document has approximately 5 to 10 times more prefix hashes than word
   hashes.
 - **Stems.** For the search for other forms of a word, the index also
-  contains keyed hashes of the English stems of the words
+  contains keyed hashes of the stems of the words in the content
+  language of the tenant
   (`nodes.stem_tokens`), with the domain "stem:". A database
   administrator can see which words of a document have the same stem.
   The prefixes tell most of this already.

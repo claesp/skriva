@@ -21,8 +21,16 @@ type Document struct {
 	// Classification is the name of the information classification, or
 	// "" if the document has none.
 	Classification string
-	Version        int
-	UpdatedAt      time.Time
+	// ClassificationLabel is the word for the classification in the
+	// language of the user, for the metadata of a PDF file. Empty gives
+	// "Classification".
+	ClassificationLabel string
+	// Lang is the content language of the document (a BCP 47 code), for
+	// the hyphenation of a PDF file and the lang attribute of an HTML
+	// file. Empty means unknown.
+	Lang      string
+	Version   int
+	UpdatedAt time.Time
 	// URL is the absolute URL of the document in Skriva.
 	URL string
 	// Body is the text. It must be the result of doc.Parse. A format can

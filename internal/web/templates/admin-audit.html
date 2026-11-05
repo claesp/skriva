@@ -1,24 +1,24 @@
 {{define "content"}}
-{{template "listhead" (head "Audit log")}}
-<p>{{if .System}}The changes to the tenants, and the sign-ins of the system administrators.{{else}}The changes to the access rights, to the spaces, to the trash and to the place of the items, the restored versions and the sign-ins.{{end}}
-The log keeps each event for {{.Data.Days}} days. The changes to the text of a document are in the history of the document.</p>
-<div class="tablescroll" role="region" aria-label="Events" tabindex="0">
+{{template "listhead" (head (t "Audit log"))}}
+<p>{{if .System}}{{t "The changes to the tenants, and the sign-ins of the system administrators."}}{{else}}{{t "The changes to the access rights, to the spaces, to the trash and to the place of the items, the restored versions and the sign-ins."}}{{end}}
+{{t "The log keeps each event for %d days. The changes to the text of a document are in the history of the document." .Data.Days}}</p>
+<div class="tablescroll" role="region" aria-label="{{t "Events"}}" tabindex="0">
 <table class="audit">
-  <thead><tr><th>User</th><th>Action</th><th>Item</th><th>Details</th><th class="date">Time</th></tr></thead>
+  <thead><tr><th>{{t "User"}}</th><th>{{t "Action"}}</th><th>{{t "Item"}}</th><th>{{t "Details"}}</th><th class="date">{{t "Time"}}</th></tr></thead>
   <tbody>
   {{range .Data.Rows}}
   <tr>
     <td>{{.Actor}}</td>
     <td>{{.ActionText}}</td>
-    <td>{{.Target}}{{with .TargetID}} <small><code>{{.}}</code></small>{{end}}{{with .Space}}<br><small>Space <code>{{.}}</code></small>{{end}}</td>
+    <td>{{.Target}}{{with .TargetID}} <small><code>{{.}}</code></small>{{end}}{{with .Space}}<br><small>{{thtml "Space <code>%s</code>" .}}</small>{{end}}</td>
     <td>{{.Details}}</td>
     <td class="date">{{date .CreatedAt}}</td>
   </tr>
   {{else}}
-  <tr><td colspan="5">There are no events.</td></tr>
+  <tr><td colspan="5">{{t "There are no events."}}</td></tr>
   {{end}}
   </tbody>
 </table>
 </div>
-{{with .Data.Older}}<div class="buttons"><a class="button secondary" href="{{.}}">Older events</a></div>{{end}}
+{{with .Data.Older}}<div class="buttons"><a class="button secondary" href="{{.}}">{{t "Older events"}}</a></div>{{end}}
 {{end}}

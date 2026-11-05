@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/claesp/skriva/internal/diff"
@@ -188,7 +187,7 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request, n *store.
 	if v := q.Get("to"); v != "" {
 		var ok bool
 		if to, ok = parseVersion(v); !ok || to < 1 {
-			s.badRequest(w, r, "The version is not valid.")
+			s.badRequest(w, r, s.tr(r).T("The version is not valid."))
 			return
 		}
 	}
@@ -196,12 +195,12 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request, n *store.
 	if v := q.Get("from"); v != "" {
 		var ok bool
 		if from, ok = parseVersion(v); !ok || from < 1 {
-			s.badRequest(w, r, "The version is not valid.")
+			s.badRequest(w, r, s.tr(r).T("The version is not valid."))
 			return
 		}
 	}
 	if from < 1 || from == to {
-		s.badRequest(w, r, "Select two different versions.")
+		s.badRequest(w, r, s.tr(r).T("Select two different versions."))
 		return
 	}
 	revs := make([]*store.Revision, 2)
@@ -227,7 +226,7 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request, n *store.
 		s.serverError(w, r, err)
 		return
 	}
-	page, err := s.loadNodePage(r, n, "history", "Compare")
+	page, err := s.loadNodePage(r, n, "history", s.tr(r).T("Compare"))
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -243,7 +242,7 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request, n *store.
 		oldTitle, newTitle, _ = compareWords(revs[0].Title, revs[1].Title, maxWordBudget)
 	}
 	s.render(w, r, http.StatusOK, "compare",
-		"Compare versions "+strconv.Itoa(from)+" and "+strconv.Itoa(to)+" of "+n.Title, struct {
+		s.tr(r).T("Compare versions %d and %d of %s", from, to, n.Title), struct {
 			nodePage
 			From, To           *store.Revision
 			Lines              []diffLine

@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/claesp/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/i18n"
 	"github.com/claesp/skriva/internal/rbac"
 	"github.com/claesp/skriva/internal/slug"
 	"github.com/claesp/skriva/internal/store"
@@ -398,7 +399,15 @@ func (s *Server) handleNewForm(w http.ResponseWriter, r *http.Request) {
 	if !s.checkParent(w, r, &f) {
 		return
 	}
-	s.renderNodeForm(w, r, http.StatusOK, "New "+f.Kind, &f)
+	s.renderNodeForm(w, r, http.StatusOK, newTitle(s.tr(r), f.Kind), &f)
+}
+
+// newTitle returns the title of the form of a new item of the kind.
+func newTitle(p *i18n.Printer, kind string) string {
+	if kind == store.KindFolder {
+		return p.T("New folder")
+	}
+	return p.T("New document")
 }
 
 // checkParent makes sure that the parent in the form exists, that the user
@@ -409,7 +418,7 @@ func (s *Server) checkParent(w http.ResponseWriter, r *http.Request, f *nodeForm
 	perms := ri.Access.Root()
 	if f.ParentID != "" {
 		if !store.ValidPublicID(f.ParentID) {
-			s.badRequest(w, r, "The parent is not valid.")
+			s.badRequest(w, r, s.tr(r).T("The parent is not valid."))
 			return false
 		}
 		p, err := s.store.Node(r.Context(), ri.Space.ID, f.ParentID)
@@ -418,11 +427,11 @@ func (s *Server) checkParent(w http.ResponseWriter, r *http.Request, f *nodeForm
 			return false
 		}
 		if err != nil || !canRead(r, p.AccessPathID) {
-			s.badRequest(w, r, "The parent does not exist.")
+			s.badRequest(w, r, s.tr(r).T("The parent does not exist."))
 			return false
 		}
 		if f.Kind == store.KindFolder && !p.IsFolder() {
-			s.badRequest(w, r, "A folder can be only in a folder or at the top of the space.")
+			s.badRequest(w, r, s.tr(r).T("A folder can be only in a folder or at the top of the space."))
 			return false
 		}
 		f.ParentTitle = p.Title
@@ -454,21 +463,22 @@ func readNodeForm(r *http.Request, f *nodeForm) {
 // f.content.
 func (s *Server) validateForm(r *http.Request, f *nodeForm) string {
 	t := reqInfoFrom(r.Context()).Tenant
+	p := s.tr(r)
 	switch {
 	case !utf8.ValidString(f.Title) || !utf8.ValidString(f.Body) || !utf8.ValidString(f.Comment):
-		return "The text contains characters that are not valid."
+		return p.T("The text contains characters that are not valid.")
 	case len(f.Body) > t.MaxDocBytes:
-		return "The text is too long. The maximum is " + strconv.Itoa(t.MaxDocBytes/1024) + " KiB."
+		return p.T("The text is too long. The maximum is %d KiB.", t.MaxDocBytes/1024)
 	}
 	if !f.IsFolder() {
 		d, err := s.parseEditorBody(r, f.Body)
 		if err != nil {
-			return "The text is not in the correct format."
+			return p.T("The text is not in the correct format.")
 		}
 		docLinks, wikiLinks := d.Links()
 		files, err := s.usableFiles(r, d.Files())
 		if err != nil {
-			return "The images cannot be checked now. Try again."
+			return p.T("The images cannot be checked now. Try again.")
 		}
 		f.content = store.Content{
 			Body: string(d.JSON()), PlainText: d.PlainText(), Files: files,
@@ -479,11 +489,11 @@ func (s *Server) validateForm(r *http.Request, f *nodeForm) string {
 	}
 	switch {
 	case f.Title == "":
-		return "The title is necessary."
+		return p.T("The title is necessary.")
 	case utf8.RuneCountInString(f.Title) > maxTitleLen:
-		return "The title is too long."
+		return p.T("The title is too long.")
 	case utf8.RuneCountInString(f.Comment) > maxCommentLen:
-		return "The comment is too long."
+		return p.T("The comment is too long.")
 	}
 	return ""
 }
@@ -496,7 +506,7 @@ func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
 		ParentID: r.PostFormValue("parent"),
 	}
 	if f.Kind != store.KindFolder && f.Kind != store.KindDocument {
-		s.badRequest(w, r, "The form is not valid.")
+		s.badRequest(w, r, s.tr(r).T("The form is not valid."))
 		return
 	}
 	readNodeForm(r, &f)
@@ -505,7 +515,7 @@ func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
 	}
 	if msg := s.validateForm(r, &f); msg != "" {
 		f.Error = msg
-		s.renderNodeForm(w, r, http.StatusUnprocessableEntity, "New "+f.Kind, &f)
+		s.renderNodeForm(w, r, http.StatusUnprocessableEntity, newTitle(s.tr(r), f.Kind), &f)
 		return
 	}
 	ri := reqInfoFrom(r.Context())
@@ -516,8 +526,8 @@ func (s *Server) handleNew(w http.ResponseWriter, r *http.Request) {
 		ClassificationID: f.ClassificationID,
 	})
 	if errors.Is(err, store.ErrClassification) {
-		f.Error = classificationMessage(err)
-		s.renderNodeForm(w, r, http.StatusConflict, "New "+f.Kind, &f)
+		f.Error = classificationMessage(s.tr(r), err)
+		s.renderNodeForm(w, r, http.StatusConflict, newTitle(s.tr(r), f.Kind), &f)
 		return
 	}
 	if !s.storeResult(w, r, err) {
@@ -554,7 +564,7 @@ func (s *Server) renderNodeForm(w http.ResponseWriter, r *http.Request, status i
 		return
 	}
 	if f.IsNew {
-		f.Crumb = "New " + f.Kind
+		f.Crumb = newTitle(s.tr(r), f.Kind)
 		f.NewKind = f.Kind
 	}
 	editor := !f.IsFolder()
@@ -639,7 +649,7 @@ func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request, n *store
 			return
 		}
 		f.Title, body = rev.Title, rev.Body
-		f.Comment = "Restore version " + strconv.Itoa(from)
+		f.Comment = s.tr(r).T("Restore version %d", from)
 		f.RestoredFrom = from
 	}
 	if !n.IsFolder() {
@@ -649,20 +659,20 @@ func (s *Server) handleEditForm(w http.ResponseWriter, r *http.Request, n *store
 			return
 		}
 	}
-	s.renderNodeForm(w, r, http.StatusOK, "Edit "+n.Title, &f)
+	s.renderNodeForm(w, r, http.StatusOK, s.tr(r).T("Edit %s", n.Title), &f)
 }
 
 func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Node) {
 	version, ok := parseVersion(r.PostFormValue("version"))
 	if !ok || version < 1 {
-		s.badRequest(w, r, "The form is not valid.")
+		s.badRequest(w, r, s.tr(r).T("The form is not valid."))
 		return
 	}
 	f := nodeForm{Action: base(r) + "/edit/" + n.PublicID, Kind: n.Kind, nodePage: nodePage{Node: n}, Version: version}
 	if v := r.PostFormValue("restored_from"); v != "" {
 		from, ok := parseVersion(v)
 		if !ok || from < 1 || from >= version+1 {
-			s.badRequest(w, r, "The form is not valid.")
+			s.badRequest(w, r, s.tr(r).T("The form is not valid."))
 			return
 		}
 		f.RestoredFrom = from
@@ -670,7 +680,7 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Nod
 	readNodeForm(r, &f)
 	if msg := s.validateForm(r, &f); msg != "" {
 		f.Error = msg
-		s.renderNodeForm(w, r, http.StatusUnprocessableEntity, "Edit "+f.Title, &f)
+		s.renderNodeForm(w, r, http.StatusUnprocessableEntity, s.tr(r).T("Edit %s", f.Title), &f)
 		return
 	}
 	ri := reqInfoFrom(r.Context())
@@ -681,14 +691,14 @@ func (s *Server) handleEdit(w http.ResponseWriter, r *http.Request, n *store.Nod
 		ClassificationID: f.ClassificationID,
 	})
 	if errors.Is(err, store.ErrClassification) {
-		f.Error = classificationMessage(err)
-		s.renderNodeForm(w, r, http.StatusConflict, "Edit "+f.Title, &f)
+		f.Error = classificationMessage(s.tr(r), err)
+		s.renderNodeForm(w, r, http.StatusConflict, s.tr(r).T("Edit %s", f.Title), &f)
 		return
 	}
 	if errors.Is(err, store.ErrConflict) {
-		f.Error = "A different user changed this item after you started to edit it. " +
-			"Copy your text, open the item again and add your changes."
-		s.renderNodeForm(w, r, http.StatusConflict, "Edit "+f.Title, &f)
+		f.Error = s.tr(r).T("A different user changed this item after you started to edit it. " +
+			"Copy your text, open the item again and add your changes.")
+		s.renderNodeForm(w, r, http.StatusConflict, s.tr(r).T("Edit %s", f.Title), &f)
 		return
 	}
 	if !s.storeResult(w, r, err) {
@@ -710,13 +720,13 @@ func (s *Server) handleMoveForm(w http.ResponseWriter, r *http.Request, n *store
 		s.serverError(w, r, err)
 		return
 	}
-	page, err := s.loadNodePage(r, n, "move", "Move")
+	page, err := s.loadNodePage(r, n, "move", s.tr(r).T("Move"))
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
 	acc := reqInfoFrom(r.Context()).Access
-	s.render(w, r, http.StatusOK, "move", "Move "+n.Title, struct {
+	s.render(w, r, http.StatusOK, "move", s.tr(r).T("Move %s", n.Title), struct {
 		nodePage
 		Targets  []moveTarget
 		AtRoot   bool
@@ -789,7 +799,7 @@ func (s *Server) handleMove(w http.ResponseWriter, r *http.Request, n *store.Nod
 	target := ri.Access.Root()
 	if parent != "" {
 		if !store.ValidPublicID(parent) {
-			s.badRequest(w, r, "The new place is not valid.")
+			s.badRequest(w, r, s.tr(r).T("The new place is not valid."))
 			return
 		}
 		p, err := s.store.Node(r.Context(), n.SpaceID, parent)
@@ -798,7 +808,7 @@ func (s *Server) handleMove(w http.ResponseWriter, r *http.Request, n *store.Nod
 			return
 		}
 		if err != nil || !canRead(r, p.AccessPathID) {
-			s.badRequest(w, r, "The new place does not exist.")
+			s.badRequest(w, r, s.tr(r).T("The new place does not exist."))
 			return
 		}
 		target = ri.Access.For(p.AccessPathID)
@@ -809,8 +819,8 @@ func (s *Server) handleMove(w http.ResponseWriter, r *http.Request, n *store.Nod
 	}
 	err := s.store.MoveNode(r.Context(), n.SpaceID, n.PublicID, parent)
 	if errors.Is(err, store.ErrInvalid) {
-		s.badRequest(w, r, "You cannot move the item to that place. "+
-			"A folder can be only in a folder, and no item can be in its own subtree.")
+		s.badRequest(w, r, s.tr(r).T("You cannot move the item to that place. "+
+			"A folder can be only in a folder, and no item can be in its own subtree."))
 		return
 	}
 	if !s.storeResult(w, r, err) {
@@ -848,12 +858,12 @@ func (s *Server) handleDeleteForm(w http.ResponseWriter, r *http.Request, n *sto
 		s.serverError(w, r, err)
 		return
 	}
-	page, err := s.loadNodePage(r, n, "delete", "Delete")
+	page, err := s.loadNodePage(r, n, "delete", s.tr(r).T("Delete"))
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "delete", "Delete "+n.Title, struct {
+	s.render(w, r, http.StatusOK, "delete", s.tr(r).T("Delete %s", n.Title), struct {
 		nodePage
 		Descendants int
 		Permitted   bool
@@ -869,7 +879,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, n *store.N
 	}
 	if !permitted {
 		s.renderError(w, r, http.StatusForbidden,
-			"You cannot delete this item. It contains items that you do not have permission to delete.")
+			s.tr(r).T("You cannot delete this item. It contains items that you do not have permission to delete."))
 		return
 	}
 	ancestors, err := s.store.Ancestors(r.Context(), n.ID)
@@ -897,12 +907,12 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, n *store.
 		s.serverError(w, r, err)
 		return
 	}
-	page, err := s.loadNodePage(r, n, "history", "History")
+	page, err := s.loadNodePage(r, n, "history", s.tr(r).T("History"))
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "history", "History of "+n.Title, struct {
+	s.render(w, r, http.StatusOK, "history", s.tr(r).T("History of %s", n.Title), struct {
 		nodePage
 		Revisions []store.Revision
 		Compare   compareForm
@@ -931,7 +941,7 @@ func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store
 		s.serverError(w, r, err)
 		return
 	}
-	page, err := s.loadNodePage(r, n, "history", "Version "+strconv.Itoa(version))
+	page, err := s.loadNodePage(r, n, "history", s.tr(r).T("Version %d", version))
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -941,7 +951,7 @@ func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store
 	if rev.Classification != "" {
 		page.Classification = rev.Classification
 	}
-	s.render(w, r, http.StatusOK, "revision", rev.Title+" (version "+strconv.Itoa(version)+")", struct {
+	s.render(w, r, http.StatusOK, "revision", s.tr(r).T("%s (version %d)", rev.Title, version), struct {
 		nodePage
 		Revision *store.Revision
 		HTML     template.HTML
@@ -972,7 +982,7 @@ func (s *Server) handleWikiLink(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusNotFound
 	}
 	title := strings.ReplaceAll(sl, "-", " ")
-	s.render(w, r, status, "wikilink", "Link: "+title, struct {
+	s.render(w, r, status, "wikilink", s.tr(r).T("Link: %s", title), struct {
 		Title     string
 		CreateURL string
 		Nodes     []store.NodeSummary
@@ -987,16 +997,16 @@ func (s *Server) handleNodeAccess(w http.ResponseWriter, r *http.Request, n *sto
 		s.serverError(w, r, err)
 		return
 	}
-	page, err := s.loadNodePage(r, n, "access", "Access")
+	page, err := s.loadNodePage(r, n, "access", s.tr(r).T("Access"))
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "node-access", "Access to "+n.Title, struct {
+	s.render(w, r, http.StatusOK, "node-access", s.tr(r).T("Access to %s", n.Title), struct {
 		nodePage
 		DefaultRoleText string
 		Table           bindingTable
-	}{page, defaultRoleText(n.DefaultRole, "parent"), table})
+	}{page, defaultRoleText(s.tr(r), n.DefaultRole), table})
 }
 
 func (s *Server) handleNodeDefaultRoleForm(w http.ResponseWriter, r *http.Request, n *store.Node) {
@@ -1010,13 +1020,13 @@ func (s *Server) handleNodeDefaultRoleForm(w http.ResponseWriter, r *http.Reques
 	if n.DefaultRole != nil {
 		defaultRole = *n.DefaultRole
 	}
-	page, err := s.loadNodePage(r, n, "access", "Default role")
+	page, err := s.loadNodePage(r, n, "access", s.tr(r).T("Default role"))
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
 	page.CloseURL = base(r) + "/access/" + n.PublicID
-	s.render(w, r, http.StatusOK, "node-default-role", "Default role", struct {
+	s.render(w, r, http.StatusOK, "node-default-role", s.tr(r).T("Default role"), struct {
 		nodePage
 		DefaultRole string
 		Roles       []store.Role
@@ -1029,7 +1039,7 @@ func (s *Server) handleNodeDefaultRole(w http.ResponseWriter, r *http.Request, n
 	ri := reqInfoFrom(r.Context())
 	role, ok := defaultRoleValue(r)
 	if !ok {
-		s.badRequest(w, r, "The role is not valid.")
+		s.badRequest(w, r, s.tr(r).T("The role is not valid."))
 		return
 	}
 	if !s.storeResult(w, r, s.store.SetNodeDefaultRole(r.Context(), ri.Tenant.ID, ri.Space.ID, n.PublicID, role)) {
@@ -1058,7 +1068,7 @@ type folderClassPage struct {
 // loadFolderClassPage reads the data of the classification page.
 func (s *Server) loadFolderClassPage(r *http.Request, n *store.Node, p *folderClassPage) error {
 	var err error
-	if p.nodePage, err = s.loadNodePage(r, n, "classification", "Classification limits"); err != nil {
+	if p.nodePage, err = s.loadNodePage(r, n, "classification", s.tr(r).T("Classification limits")); err != nil {
 		return err
 	}
 	ri := reqInfoFrom(r.Context())
@@ -1092,7 +1102,7 @@ func (s *Server) handleFolderClassificationForm(w http.ResponseWriter, r *http.R
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "node-classification", "Classification limits of "+n.Title, p)
+	s.render(w, r, http.StatusOK, "node-classification", s.tr(r).T("Classification limits of %s", n.Title), p)
 }
 
 // handleFolderClassification saves the classification setting of a
@@ -1105,19 +1115,19 @@ func (s *Server) handleFolderClassification(w http.ResponseWriter, r *http.Reque
 	def, err1 := strconv.ParseInt(r.PostFormValue("default_classification"), 10, 64)
 	min, err2 := strconv.ParseInt(r.PostFormValue("min_classification"), 10, 64)
 	if err1 != nil || err2 != nil {
-		s.badRequest(w, r, "The classification is not valid.")
+		s.badRequest(w, r, s.tr(r).T("The classification is not valid."))
 		return
 	}
 	ri := reqInfoFrom(r.Context())
 	err := s.store.SetFolderClassification(r.Context(), ri.Space.ID, n.PublicID,
 		store.FolderClassification{DefaultID: def, MinID: min})
 	if errors.Is(err, store.ErrClassification) {
-		p := folderClassPage{DefaultID: def, MinID: min, Error: classificationMessage(err)}
+		p := folderClassPage{DefaultID: def, MinID: min, Error: classificationMessage(s.tr(r), err)}
 		if err := s.loadFolderClassPage(r, n, &p); err != nil {
 			s.serverError(w, r, err)
 			return
 		}
-		s.render(w, r, http.StatusConflict, "node-classification", "Classification limits of "+n.Title, p)
+		s.render(w, r, http.StatusConflict, "node-classification", s.tr(r).T("Classification limits of %s", n.Title), p)
 		return
 	}
 	if !s.storeResult(w, r, err) {

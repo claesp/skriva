@@ -28,7 +28,7 @@ func TestPrefixTokens(t *testing.T) {
 
 func TestQueryTokens(t *testing.T) {
 	key := []byte("key")
-	q := makeQueryTokens(key, []string{"go", "describe", "internationalizations"}, nil)
+	q := makeQueryTokens(key, "en", []string{"go", "describe", "internationalizations"}, nil)
 	if len(q.exact) != 3 || len(q.exclude) != 0 || q.exclude == nil {
 		t.Fatalf("exact %d, exclude %v", len(q.exact), q.exclude)
 	}
@@ -46,19 +46,19 @@ func TestQueryTokens(t *testing.T) {
 	if len(q.stems) != 3 || q.stems[0] != stemToken(key, "go") {
 		t.Errorf("stems = %v", q.stems)
 	}
-	if q := makeQueryTokens(key, []string{"plan"}, nil); q.short == nil {
+	if q := makeQueryTokens(key, "en", []string{"plan"}, nil); q.short == nil {
 		t.Error("short is nil")
 	}
 }
 
 func TestStems(t *testing.T) {
 	for _, w := range []string{"describe", "describes", "described", "describing"} {
-		if got := wordStem(w); got != "describ" {
+		if got := wordStem("en", w); got != "describ" {
 			t.Errorf("wordStem(%q) = %q", w, got)
 		}
 	}
 	key := []byte("key")
-	got := stemTokens(key, searchWords("Running runs ran", maxSearchTokens))
+	got := stemTokens(key, "en", searchWords("Running runs ran", maxSearchTokens))
 	// "running" and "runs" have the stem "run". "ran" is a different stem.
 	if len(got) != 2 || !slices.Contains(got, stemToken(key, "run")) {
 		t.Fatalf("stem tokens = %v", got)
@@ -66,18 +66,18 @@ func TestStems(t *testing.T) {
 	if slices.Contains(got, prefixToken(key, "run")) || slices.Contains(got, searchToken(key, "run")) {
 		t.Error("a stem token is the same as a prefix or a word token")
 	}
-	if got := stemTokens(key, nil); got == nil {
+	if got := stemTokens(key, "en", nil); got == nil {
 		t.Error("stem tokens are nil")
 	}
 }
 
 func TestSnippetPartial(t *testing.T) {
-	got := fmt.Sprint(snippet("It describes the design. De facto.", []string{"describe", "de"}))
+	got := fmt.Sprint(snippet("It describes the design. De facto.", []string{"describe", "de"}, "en"))
 	if got != "[{It  false} {describes true} { the design.  false} {De true} { facto. false}]" {
 		t.Errorf("snippet = %s", got)
 	}
 	// A word with the same stem also has a mark.
-	got = fmt.Sprint(snippet("We described it.", []string{"describing"}))
+	got = fmt.Sprint(snippet("We described it.", []string{"describing"}, "en"))
 	if got != "[{We  false} {described true} { it. false}]" {
 		t.Errorf("snippet = %s", got)
 	}

@@ -3,17 +3,17 @@
 {{with .Data.Space}}
 {{$s := print $.TenantPath "/admin/spaces/" .Slug}}
 <div class="pagehead"><h1>{{.Name}}</h1></div>
-{{template "sectionhead" (section "Settings" "" (when ($.Can "space.manage") (tool (print $s "/edit") "edit" "Change the settings")))}}
+{{template "sectionhead" (section (t "Settings") "" (when ($.Can "space.manage") (tool (print $s "/edit") "edit" (t "Change the settings"))))}}
 <table class="settings">
   <tbody>
-    <tr><th scope="row">Name</th><td>{{.Name}}</td></tr>
-    <tr><th scope="row">Code</th><td><code>{{.Slug}}</code></td></tr>
-    <tr><th scope="row">Description</th><td>{{.Description}}</td></tr>
-    <tr><th scope="row">Upload limit</th><td>{{.UploadQuotaMB}} MiB for all files. The files use {{mib $.Data.FileBytes}} now.</td></tr>
-    <tr><th scope="row">Search results</th><td>{{.SearchResults}} at most</td></tr>
-    <tr><th scope="row">Default classification</th><td>{{or .DefaultClassification "The default of the tenant"}}</td></tr>
-    <tr><th scope="row">Lowest classification</th><td>{{or .MinClassification "No limit"}}</td></tr>
-    <tr><th scope="row">Made</th><td>{{date .CreatedAt}}</td></tr>
+    <tr><th scope="row">{{t "Name"}}</th><td>{{.Name}}</td></tr>
+    <tr><th scope="row">{{t "Code"}}</th><td><code>{{.Slug}}</code></td></tr>
+    <tr><th scope="row">{{t "Description"}}</th><td>{{.Description}}</td></tr>
+    <tr><th scope="row">{{t "Upload limit"}}</th><td>{{t "%d MiB for all files. The files use %s now." .UploadQuotaMB (mib $.Data.FileBytes)}}</td></tr>
+    <tr><th scope="row">{{t "Search results"}}</th><td>{{t "%d at most" .SearchResults}}</td></tr>
+    <tr><th scope="row">{{t "Default classification"}}</th><td>{{or .DefaultClassification (t "The default of the tenant")}}</td></tr>
+    <tr><th scope="row">{{t "Lowest classification"}}</th><td>{{or .MinClassification (t "No limit")}}</td></tr>
+    <tr><th scope="row">{{t "Made"}}</th><td>{{date .CreatedAt}}</td></tr>
   </tbody>
 </table>
 {{end}}

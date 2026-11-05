@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/claesp/skriva/internal/i18n"
 	"github.com/jackc/pgx/v5"
-	"github.com/kljensen/snowball/english"
 )
 
 // Limits of the search index.
@@ -42,12 +42,14 @@ type searchIndex struct {
 	// prefixTokens are the hashes of the prefixes of the words of the
 	// title and the text.
 	// stemTokens are the hashes of the stems of the words of the title
-	// and the text.
+	// and the text, in the content language lang.
 	tokens, titleTokens, prefixTokens, stemTokens []int64
+	lang                                          string
 }
 
 // makeSearchIndex makes the search index of a title and a plain text.
-func makeSearchIndex(key []byte, title, plainText string) searchIndex {
+// lang is the content language of the tenant.
+func makeSearchIndex(key []byte, lang, title, plainText string) searchIndex {
 	words := searchWords(title+"\n"+plainText, maxSearchTokens)
 	tokens := tokensOf(key, words)
 	slices.Sort(tokens)
@@ -55,26 +57,28 @@ func makeSearchIndex(key []byte, title, plainText string) searchIndex {
 		tokens:       tokens,
 		titleTokens:  searchTokens(key, title),
 		prefixTokens: prefixTokens(key, words),
-		stemTokens:   stemTokens(key, words),
+		stemTokens:   stemTokens(key, lang, words),
+		lang:         lang,
 	}
 }
 
-// wordStem returns the stem of a word with the English Snowball
-// (Porter2) stemmer. Different forms of a word have the same stem:
-// "describe", "describes" and "describing" give "describ". Words with
-// fewer than 3 letters and English stop words do not change.
-func wordStem(word string) string {
-	return english.Stem(word, false)
+// wordStem returns the stem of a word with the Snowball stemmer of the
+// content language lang. Different forms of a word have the same stem:
+// in English, "describe", "describes" and "describing" give "describ".
+// Words with fewer than 3 letters and stop words do not change. Without
+// a content language (i18n.NoStemming), the stem is the word.
+func wordStem(lang, word string) string {
+	return i18n.Stem(lang, word)
 }
 
 // stemTokens returns the hashes of the different stems of the words,
 // sorted.
-func stemTokens(key []byte, words []string) []int64 {
+func stemTokens(key []byte, lang string, words []string) []int64 {
 	seen := map[string]bool{}
 	// Not nil: the column is NOT NULL, and pgx sends nil as NULL.
 	out := []int64{}
 	for _, w := range words {
-		if st := wordStem(w); !seen[st] {
+		if st := wordStem(lang, w); !seen[st] {
 			seen[st] = true
 			out = append(out, stemToken(key, st))
 		}
@@ -144,13 +148,13 @@ type longWord struct {
 	prefix, stem int64
 }
 
-func makeQueryTokens(key []byte, include, exclude []string) queryTokens {
+func makeQueryTokens(key []byte, lang string, include, exclude []string) queryTokens {
 	// The arrays must not be nil: pgx sends nil as NULL, and "@> NULL"
 	// finds nothing.
 	q := queryTokens{exact: tokensOf(key, include), exclude: tokensOf(key, exclude),
 		stems: []int64{}, short: []int64{}}
 	for _, w := range include {
-		st := stemToken(key, wordStem(w))
+		st := stemToken(key, wordStem(lang, w))
 		q.stems = append(q.stems, st)
 		if n := len([]rune(w)); n >= minPrefixRunes {
 			q.long = append(q.long, longWord{prefix: prefixToken(key, wordPrefix(w, min(n, maxPrefixRunes))), stem: st})
@@ -236,13 +240,14 @@ type SnippetPart struct {
 
 // snippet returns a part of text around the first word of words. Each
 // word of text that matches one of words is a part with Mark. "…" shows
-// that the snippet starts or ends in the text.
-func snippet(text string, words []string) []SnippetPart {
+// that the snippet starts or ends in the text. lang is the content
+// language for the stems.
+func snippet(text string, words []string, lang string) []SnippetPart {
 	fields := strings.Fields(text)
 	stems := map[string]bool{}
 	for _, q := range words {
 		if len([]rune(q)) >= minPrefixRunes {
-			stems[wordStem(q)] = true
+			stems[wordStem(lang, q)] = true
 		}
 	}
 	// A word of the text matches if it is a search word. It also matches
@@ -255,7 +260,7 @@ func snippet(text string, words []string) []SnippetPart {
 					return true
 				}
 			}
-			if len(stems) > 0 && stems[wordStem(w)] {
+			if len(stems) > 0 && stems[wordStem(lang, w)] {
 				return true
 			}
 		}
@@ -304,14 +309,16 @@ func snippet(text string, words []string) []SnippetPart {
 const reindexBatchSize = 100
 
 // ReindexBatch makes the search index again for up to reindexBatchSize
-// nodes with an index of an older format (search_version). It returns
-// the number of changed nodes. A node that a user saves during the
-// batch keeps the index of the save.
+// nodes with an index of an older format (search_version), or with stems
+// of a different language than the content language of the tenant. It
+// returns the number of changed nodes. A node that a user saves during
+// the batch keeps the index of the save.
 func (s *Store) ReindexBatch(ctx context.Context) (int, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT sp.tenant_id, n.id, n.space_id, n.public_id, n.version, n.title, n.plain_text
-		FROM nodes n JOIN spaces sp ON sp.id = n.space_id
-		WHERE n.search_version < $1 LIMIT $2`, searchIndexVersion, reindexBatchSize)
+		SELECT sp.tenant_id, n.id, n.space_id, n.public_id, n.version, n.title, n.plain_text, t.content_language
+		FROM nodes n JOIN spaces sp ON sp.id = n.space_id JOIN tenants t ON t.id = sp.tenant_id
+		WHERE n.search_version < $1 OR n.stem_language <> t.content_language
+		LIMIT $2`, searchIndexVersion, reindexBatchSize)
 	if err != nil {
 		return 0, err
 	}
@@ -320,10 +327,11 @@ func (s *Store) ReindexBatch(ctx context.Context) (int, error) {
 		publicID              string
 		version               int
 		title, plainText      []byte
+		lang                  string
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (item, error) {
 		var it item
-		err := row.Scan(&it.tenantID, &it.id, &it.spaceID, &it.publicID, &it.version, &it.title, &it.plainText)
+		err := row.Scan(&it.tenantID, &it.id, &it.spaceID, &it.publicID, &it.version, &it.title, &it.plainText, &it.lang)
 		return it, err
 	})
 	if err != nil {
@@ -340,12 +348,13 @@ func (s *Store) ReindexBatch(ctx context.Context) (int, error) {
 		if err == nil {
 			var plain []byte
 			if plain, err = s.open(ctx, it.tenantID, plainTextPlace(it.spaceID, it.publicID), it.plainText); err == nil {
-				idx := makeSearchIndex(tk.search, string(title), string(plain))
+				idx := makeSearchIndex(tk.search, it.lang, string(title), string(plain))
 				_, err = s.pool.Exec(ctx, `
 					UPDATE nodes SET search_tokens = $3, title_tokens = $4, prefix_tokens = $5, stem_tokens = $6,
-					                 search_version = $7
-					WHERE id = $1 AND version = $2 AND search_version < $7`,
-					it.id, it.version, idx.tokens, idx.titleTokens, idx.prefixTokens, idx.stemTokens, searchIndexVersion)
+					                 search_version = $7, stem_language = $8
+					WHERE id = $1 AND version = $2 AND (search_version < $7 OR stem_language <> $8)`,
+					it.id, it.version, idx.tokens, idx.titleTokens, idx.prefixTokens, idx.stemTokens,
+					searchIndexVersion, idx.lang)
 			}
 		}
 		if errors.Is(err, ErrKey) {

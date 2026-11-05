@@ -31,6 +31,7 @@ import (
 
 	"github.com/claesp/skriva/internal/diagram"
 	"github.com/claesp/skriva/internal/export"
+	"github.com/claesp/skriva/internal/i18n"
 	"github.com/claesp/skriva/internal/rbac"
 	"github.com/claesp/skriva/internal/store"
 )
@@ -88,7 +89,7 @@ func (s *Server) validSpaceSlug(slug string) bool {
 	return store.ValidCode(slug) && !s.tenantNames[slug]
 }
 
-// Texts for an invalid code.
+// Texts for an invalid code. The callers translate them with Printer.T.
 const (
 	tenantCodeError = "The code must have 2 to 16 characters from a-z, 0-9 and \"-\". " +
 		"It cannot start or end with \"-\". Some words (for example \"admin\" and \"static\") are not permitted."
@@ -98,7 +99,9 @@ const (
 
 // Authenticator is the interface to an identity provider.
 type Authenticator interface {
-	AuthCodeURL(ctx context.Context, state, nonce, verifier string) (string, error)
+	// AuthCodeURL returns the URL of the login page. uiLocales is the
+	// language of the page (the OIDC parameter ui_locales).
+	AuthCodeURL(ctx context.Context, state, nonce, verifier, uiLocales string) (string, error)
 	Exchange(ctx context.Context, code, verifier, nonce string) (store.Identity, error)
 	LogoutURL(ctx context.Context, idTokenHint, postLogoutRedirect string) string
 }
@@ -130,6 +133,9 @@ type Options struct {
 	// Diagrams makes the images of Mermaid diagrams. If it is nil, a
 	// diagram is a code block.
 	Diagrams *diagram.Renderer
+	// Language is the default language of the user interface. Empty
+	// gives English.
+	Language string
 }
 
 // Server is the HTTP handler for the application.
@@ -166,6 +172,9 @@ func New(st *store.Store, opts Options, log *slog.Logger) (*Server, error) {
 	if opts.Formats == nil {
 		opts.Formats = export.NewFormats(nil)
 	}
+	if !i18n.IsUI(opts.Language) {
+		opts.Language = i18n.Default
+	}
 	tmpl, err := loadTemplates()
 	if err != nil {
 		return nil, err
@@ -190,6 +199,25 @@ func New(st *store.Store, opts Options, log *slog.Logger) (*Server, error) {
 	s.spaceRoutes(s.spaceMux)
 	s.handler = s.routes()
 	return s, nil
+}
+
+// lang returns the language of the user interface for a request: the
+// language of the user, else the language of the tenant, else the
+// default language of the system.
+func (s *Server) lang(r *http.Request) string {
+	ri := reqInfoFrom(r.Context())
+	if ri.Session != nil && ri.Session.User != nil && ri.Session.User.Language != "" {
+		return ri.Session.User.Language
+	}
+	if ri.Tenant != nil && ri.Tenant.Language != "" {
+		return ri.Tenant.Language
+	}
+	return s.opts.Language
+}
+
+// tr returns the Printer of the language of a request.
+func (s *Server) tr(r *http.Request) *i18n.Printer {
+	return i18n.For(s.lang(r))
 }
 
 // ServeHTTP implements http.Handler.
@@ -252,7 +280,7 @@ func (s *Server) dispatchTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t.Disabled {
-		s.renderError(w, r, http.StatusForbidden, "This tenant is disabled.")
+		s.renderError(w, r, http.StatusForbidden, s.tr(r).T("This tenant is disabled."))
 		return
 	}
 	ri.Tenant = t

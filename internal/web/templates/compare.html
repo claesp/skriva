@@ -1,29 +1,29 @@
 {{define "content"}}
 {{template "nodehead" .}}
 {{with .Data}}
-<div class="pagehead"><h1>Compare versions {{.From.Version}} and {{.To.Version}}</h1></div>
+<div class="pagehead"><h1>{{t "Compare versions %d and %d" .From.Version .To.Version}}</h1></div>
 {{template "compareform" .Compare}}
 <dl class="versions">
-  <div class="old"><dt>Old: version {{.From.Version}}</dt><dd>{{date .From.CreatedAt}}{{with .From.Author}} by {{.}}{{end}}{{with .From.Comment}} · {{.}}{{end}}</dd></div>
-  <div class="new"><dt>New: version {{.To.Version}}</dt><dd>{{date .To.CreatedAt}}{{with .To.Author}} by {{.}}{{end}}{{with .To.Comment}} · {{.}}{{end}}</dd></div>
+  <div class="old"><dt>{{t "Old: version %d" .From.Version}}</dt><dd>{{with .From.Author}}{{thtml "%s by %s" (date $.Data.From.CreatedAt) .}}{{else}}{{date .From.CreatedAt}}{{end}}{{with .From.Comment}} · {{.}}{{end}}</dd></div>
+  <div class="new"><dt>{{t "New: version %d" .To.Version}}</dt><dd>{{with .To.Author}}{{thtml "%s by %s" (date $.Data.To.CreatedAt) .}}{{else}}{{date .To.CreatedAt}}{{end}}{{with .To.Comment}} · {{.}}{{end}}</dd></div>
 </dl>
 {{if .OldTitle}}
-<div class="diff" role="group" aria-label="Title">
-  <div class="line delete"><span class="sign" aria-hidden="true">−</span><span class="vh">Removed: </span><span class="text">Title: {{template "diffparts" .OldTitle}}</span></div>
-  <div class="line insert"><span class="sign" aria-hidden="true">+</span><span class="vh">Added: </span><span class="text">Title: {{template "diffparts" .NewTitle}}</span></div>
+<div class="diff" role="group" aria-label="{{t "Title"}}">
+  <div class="line delete"><span class="sign" aria-hidden="true">−</span><span class="vh">{{t "Removed:"}} </span><span class="text">{{t "Title:"}} {{template "diffparts" .OldTitle}}</span></div>
+  <div class="line insert"><span class="sign" aria-hidden="true">+</span><span class="vh">{{t "Added:"}} </span><span class="text">{{t "Title:"}} {{template "diffparts" .NewTitle}}</span></div>
 </div>
 {{end}}
 {{if .Changed}}
-<div class="diff" role="group" aria-label="Text in Markdown">
+<div class="diff" role="group" aria-label="{{t "Text in Markdown"}}">
 {{range .Lines}}
-  {{if eq .Kind "skip"}}<div class="line gap">{{.Skipped}} unchanged lines</div>
-  {{else if eq .Kind "delete"}}<div class="line delete"><span class="num">{{.Old}}</span><span class="sign" aria-hidden="true">−</span><span class="vh">Removed: </span><span class="text">{{template "diffparts" .Parts}}</span></div>
-  {{else if eq .Kind "insert"}}<div class="line insert"><span class="num">{{.New}}</span><span class="sign" aria-hidden="true">+</span><span class="vh">Added: </span><span class="text">{{template "diffparts" .Parts}}</span></div>
+  {{if eq .Kind "skip"}}<div class="line gap">{{tn .Skipped "%d unchanged line" "%d unchanged lines"}}</div>
+  {{else if eq .Kind "delete"}}<div class="line delete"><span class="num">{{.Old}}</span><span class="sign" aria-hidden="true">−</span><span class="vh">{{t "Removed:"}} </span><span class="text">{{template "diffparts" .Parts}}</span></div>
+  {{else if eq .Kind "insert"}}<div class="line insert"><span class="num">{{.New}}</span><span class="sign" aria-hidden="true">+</span><span class="vh">{{t "Added:"}} </span><span class="text">{{template "diffparts" .Parts}}</span></div>
   {{else}}<div class="line"><span class="num">{{.New}}</span><span class="sign" aria-hidden="true"> </span><span class="text">{{template "diffparts" .Parts}}</span></div>{{end}}
 {{end}}
 </div>
 {{else}}
-<p>The text did not change.</p>
+<p>{{t "The text did not change."}}</p>
 {{end}}
 {{end}}
 {{template "nodefoot"}}

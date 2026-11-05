@@ -1,47 +1,63 @@
 {{define "content"}}
 {{with .Data}}
-{{if .IsNew}}{{template "formhead" (crumb "/admin/" "Tenants" "New tenant" "new")}}{{else}}{{template "formhead" (crumb3 "/admin/" "Tenants" (print "/admin/tenants/" .Path) .Path "Settings" "edit")}}{{end}}
+{{if .IsNew}}{{template "formhead" (crumb "/admin/" (t "Tenants") (t "New tenant") "new")}}{{else}}{{template "formhead" (crumb3 "/admin/" (t "Tenants") (print "/admin/tenants/" .Path) .Path (t "Settings") "edit")}}{{end}}
 {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
 <form method="post" action="/admin/tenants{{if not .IsNew}}/{{.Path}}{{end}}" class="stack">
   {{template "csrf" $.CSRF}}
   <span id="general"></span>
-  <label>Code <input name="code" value="{{.Code}}" required minlength="2" maxlength="16" pattern="[a-z0-9][a-z0-9\-]{0,14}[a-z0-9]" aria-describedby="code-help"{{if .IsNew}} autofocus{{end}}></label>
-  <p id="code-help" class="help"><small>2 to 16 characters: a-z, 0-9 and "-". The code is part of the URLs.{{if not .IsNew}} A new code changes all URLs of the tenant and the redirect URIs below. Change the redirect URIs at the identity provider first.{{end}}</small></p>
-  <label>Name <input name="name" value="{{.Name}}" required maxlength="200"></label>
-  <label class="check"><input type="checkbox" name="disabled"{{if .Disabled}} checked{{end}}> Disabled. Nobody can use a disabled tenant.</label>
+  <label>{{t "Code"}} <input name="code" value="{{.Code}}" required minlength="2" maxlength="16" pattern="[a-z0-9][a-z0-9\-]{0,14}[a-z0-9]" aria-describedby="code-help"{{if .IsNew}} autofocus{{end}}></label>
+  <p id="code-help" class="help"><small>{{t `2 to 16 characters: a-z, 0-9 and "-". The code is part of the URLs.`}}{{if not .IsNew}} {{t "A new code changes all URLs of the tenant and the redirect URIs below. Change the redirect URIs at the identity provider first."}}{{end}}</small></p>
+  <label>{{t "Name"}} <input name="name" value="{{.Name}}" required maxlength="200"></label>
+  <label class="check"><input type="checkbox" name="disabled"{{if .Disabled}} checked{{end}}> {{t "Disabled. Nobody can use a disabled tenant."}}</label>
 
   <fieldset id="idp">
-    <legend>Identity provider (OpenID Connect)</legend>
+    <legend>{{t "Identity provider (OpenID Connect)"}}</legend>
     {{with .RedirectURI}}
-    <p><small>Redirect URI: <code>{{.}}</code><br>Post-logout redirect URI: <code>{{$.Data.LogoutURI}}</code></small></p>
+    <p><small>{{thtml "Redirect URI: <code>%s</code><br>Post-logout redirect URI: <code>%s</code>" . $.Data.LogoutURI}}</small></p>
     {{else}}
-    <p><small>The redirect URI is <code>&lt;base URL&gt;/&lt;code&gt;/auth/callback</code>.</small></p>
+    <p><small>{{thtml "The redirect URI is <code>&lt;base URL&gt;/&lt;code&gt;/auth/callback</code>."}}</small></p>
     {{end}}
-    <label>Issuer URL <input name="oidc_issuer" value="{{.OIDCIssuer}}" type="url" maxlength="500" placeholder="https://sso.example.com/realms/example"></label>
-    <label>Client ID <input name="oidc_client_id" value="{{.OIDCClientID}}" maxlength="200"></label>
-    <label>Client secret{{if .HasSecret}} (a secret is set; leave empty to keep it){{end}}
+    <label>{{t "Issuer URL"}} <input name="oidc_issuer" value="{{.OIDCIssuer}}" type="url" maxlength="500" placeholder="{{"https://sso.example.com/realms/example"}}"></label>
+    <label>{{t "Client ID"}} <input name="oidc_client_id" value="{{.OIDCClientID}}" maxlength="200"></label>
+    <label>{{t "Client secret"}}{{if .HasSecret}} {{t "(a secret is set; leave empty to keep it)"}}{{end}}
       <input name="oidc_client_secret" type="password" autocomplete="new-password" maxlength="500"></label>
-    {{if .HasSecret}}<label class="check"><input type="checkbox" name="remove_secret"> Remove the client secret</label>{{end}}
-    <label>Scopes <input name="oidc_scopes" value="{{.Scopes}}" maxlength="500"></label>
-    <label>Groups claim <input name="oidc_groups_claim" value="{{.OIDCGroupsClaim}}" maxlength="100"></label>
+    {{if .HasSecret}}<label class="check"><input type="checkbox" name="remove_secret"> {{t "Remove the client secret"}}</label>{{end}}
+    <label>{{t "Scopes"}} <input name="oidc_scopes" value="{{.Scopes}}" maxlength="500"></label>
+    <label>{{t "Groups claim"}} <input name="oidc_groups_claim" value="{{.OIDCGroupsClaim}}" maxlength="100"></label>
   </fieldset>
 
   <fieldset id="access">
-    <legend>Access</legend>
-    <label>Admin group. Members of this OIDC group always have the admin role.
+    <legend>{{t "Access"}}</legend>
+    <label>{{t "Admin group. Members of this OIDC group always have the admin role."}}
       <input name="admin_group" value="{{.AdminGroup}}" maxlength="200"></label>
-    <label>Default role of all signed-in users
+    <label>{{t "Default role of all signed-in users"}}
       <select name="default_role">
-        <option value=""{{if not .DefaultRole}} selected{{end}}>(None)</option>
+        <option value=""{{if not .DefaultRole}} selected{{end}}>{{t "(None)"}}</option>
         {{range .Roles}}<option{{if eq .Name $.Data.DefaultRole}} selected{{end}}>{{.Name}}</option>{{end}}
       </select>
     </label>
   </fieldset>
 
+  <fieldset id="languages">
+    <legend>{{t "Languages"}}</legend>
+    <label>{{t "Language"}}
+      <select name="language" aria-describedby="language-help">
+        <option value=""{{if eq .Language ""}} selected{{end}}>{{t "The default of the system (%s)" .SystemLanguage}}</option>
+        {{range .UILanguages}}<option value="{{.Code}}"{{if eq .Code $.Data.Language}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select></label>
+    <p id="language-help" class="help"><small>{{t "The language of the pages for the users of the tenant. Each user can select a different language in the profile."}}</small></p>
+    <label>{{t "Content language"}}
+      <select name="content_language" aria-describedby="content-language-help">
+        <option value=""{{if eq .ContentLanguage ""}} selected{{end}}>{{t "None"}}</option>
+        {{range .ContentLanguages}}<option value="{{.Code}}"{{if eq .Code $.Data.ContentLanguage}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select></label>
+    <p id="content-language-help" class="help"><small>{{t `The language of the documents. The search uses it to find other forms of a word, for example "describing" for "describe". After a change, the server makes the search index again in the background.`}}</small></p>
+  </fieldset>
+
   <fieldset id="limits">
-    <legend>Limits</legend>
-    <label>Session life (for example 12h) <input name="session_ttl" value="{{.SessionTTL}}" required maxlength="20"></label>
-    <label>Maximum document size in KiB (1 to 1024) <input name="max_doc_kib" value="{{.MaxDocKiB}}" type="number" min="1" max="1024" required></label>
+    <legend>{{t "Limits"}}</legend>
+    <label>{{t "Session life (for example 12h)"}} <input name="session_ttl" value="{{.SessionTTL}}" required maxlength="20"></label>
+    <label>{{t "Maximum document size in KiB (1 to 1024)"}} <input name="max_doc_kib" value="{{.MaxDocKiB}}" type="number" min="1" max="1024" required></label>
   </fieldset>
 
   {{template "savebutton"}}

@@ -2,10 +2,10 @@
 {{with .Data}}
 <div class="with-sidebar">
 <div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path">
-    {{if $.Space}}<a href="{{$.SpacePath}}/">{{$.Space.Name}}</a>{{else}}<a href="{{$.TenantPath}}/">Spaces</a>{{end}} / Search</nav>
+  <nav class="breadcrumbs" aria-label="{{t "Path"}}">
+    {{if $.Space}}<a href="{{$.SpacePath}}/">{{$.Space.Name}}</a>{{else}}<a href="{{$.TenantPath}}/">{{t "Spaces"}}</a>{{end}} / {{t "Search"}}</nav>
 </div>
-<aside class="sidebar" aria-label="{{if $.Space}}Contents{{else}}Spaces{{end}}">
+<aside class="sidebar" aria-label="{{if $.Space}}{{t "Contents"}}{{else}}{{t "Spaces"}}{{end}}">
   {{if $.Space}}
   {{template "tree" (tree $.SpacePath .Tree)}}
   {{else}}
@@ -15,27 +15,27 @@
   {{end}}
 </aside>
 <div class="main reading">
-<div class="pagehead"><h1>Search</h1></div>
+<div class="pagehead"><h1>{{t "Search"}}</h1></div>
 <form action="" method="get" class="stack" role="search">
-  <label>{{if $.Space}}Search in {{$.Space.Name}}{{else}}Search in all spaces{{end}}
+  <label>{{if $.Space}}{{t "Search in %s" $.Space.Name}}{{else}}{{t "Search in all spaces"}}{{end}}
     <input type="search" name="q" value="{{.Query}}" maxlength="200" autofocus aria-describedby="search-help"></label>
-  <p id="search-help" class="help"><small>The search finds words in the titles and the text. A word of 3 letters or more also finds the words that start with it, and other forms of the English word. Type <code>-word</code> to exclude a word.</small></p>
-  <div class="buttons"><button type="submit">Search</button></div>
+  <p id="search-help" class="help"><small>{{thtml "The search finds words in the titles and the text. A word of 3 letters or more also finds the words that start with it, and other forms of the word. Type <code>-word</code> to exclude a word."}}</small></p>
+  <div class="buttons"><button type="submit">{{t "Search"}}</button></div>
 </form>
 {{if .Query}}
-{{if $.Space}}{{template "sectionhead" (section "Results" "" (tool (print $.TenantPath "/search?q=" (urlquery .Query)) "space" "Search in all spaces"))}}{{else}}<h2>Results</h2>{{end}}
+{{if $.Space}}{{template "sectionhead" (section (t "Results") "" (tool (print $.TenantPath "/search?q=" (urlquery .Query)) "space" (t "Search in all spaces")))}}{{else}}<h2>{{t "Results"}}</h2>{{end}}
 {{with .Results}}
 <ol class="results">
   {{range .}}
   <li>
     <a href="{{docpath (print $.TenantPath "/" .SpaceSlug) .PublicID .Slug}}">{{.Title}}</a>
-    <span class="meta-line">{{if not $.Space}}{{.SpaceName}} · {{end}}Changed {{date .UpdatedAt}}</span>
+    <span class="meta-line">{{if not $.Space}}{{.SpaceName}} · {{end}}{{thtml "Changed %s" (date .UpdatedAt)}}</span>
     <p>{{range .Snippet}}{{if .Mark}}<mark>{{.Text}}</mark>{{else}}{{.Text}}{{end}}{{end}}</p>
   </li>
   {{end}}
 </ol>
 {{else}}
-<p>No documents match "{{$.Data.Query}}".</p>
+<p>{{thtml "No documents match \"%s\"." $.Data.Query}}</p>
 {{end}}
 {{end}}
 </div>

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/claesp/skriva/internal/i18n"
 	"github.com/claesp/skriva/internal/secret"
 )
 
@@ -63,6 +64,11 @@ type Config struct {
 	// process of the program, in bytes.
 	TypstMemory uint64
 	MmdrMemory  uint64
+	// Language is the default language of the user interface. A tenant
+	// can set a different language, and a user can select a language.
+	// It is also the content language of a new tenant, if it has a
+	// stemmer.
+	Language string
 }
 
 // GroupRole is one item of SKRIVA_GROUP_ROLES.
@@ -193,6 +199,15 @@ func load(getenv func(string) string) (*Config, error) {
 
 	c.TypstMemory = megabytes(get, "SKRIVA_TYPST_MEMORY", 1024, &errs)
 	c.MmdrMemory = megabytes(get, "SKRIVA_MMDR_MEMORY", 256, &errs)
+
+	c.Language = get("SKRIVA_LANGUAGE", i18n.Default)
+	if !i18n.IsUI(c.Language) {
+		var codes []string
+		for _, l := range i18n.UILanguages() {
+			codes = append(codes, l.Code)
+		}
+		errs = append(errs, fmt.Errorf("SKRIVA_LANGUAGE: must be one of %s", strings.Join(codes, ", ")))
+	}
 
 	for key, val := range map[string]string{
 		"SKRIVA_DATABASE_URL":       c.DatabaseURL,

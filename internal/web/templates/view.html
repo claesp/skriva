@@ -5,12 +5,12 @@
   <h1>{{if .Node.IsFolder}}{{template "icon" "folder"}}{{end}}{{.Node.Title}}</h1>
 </div>
 {{if .Node.IsFolder}}
-  {{if .Items.Nodes}}{{template "itemtable" .Items}}{{else}}<p>This folder is empty.</p>{{end}}
+  {{if .Items.Nodes}}{{template "itemtable" .Items}}{{else}}<p>{{t "This folder is empty."}}</p>{{end}}
 {{else}}
 <article class="prose">{{.HTML}}</article>
 {{with .Children}}
-<section class="children" aria-label="Sub-documents">
-  <h2>Sub-documents</h2>
+<section class="children" aria-label="{{t "Sub-documents"}}">
+  <h2>{{t "Sub-documents"}}</h2>
   <ul class="pages">
     {{range .}}<li class="{{.Kind}}"><a href="{{docpath $.SpacePath .PublicID .Slug}}">{{template "icon" .Kind}}{{.Title}}</a></li>{{end}}
   </ul>
@@ -18,16 +18,16 @@
 {{end}}
 {{end}}
 {{with .Backlinks}}
-<section class="children backlinks" aria-label="Links to this page">
-  <h2>Links to this page</h2>
+<section class="children backlinks" aria-label="{{t "Links to this page"}}">
+  <h2>{{t "Links to this page"}}</h2>
   <ul class="pages">
     {{range .}}<li class="{{.Kind}}"><a href="{{docpath $.SpacePath .PublicID .Slug}}">{{template "icon" .Kind}}{{.Title}}</a></li>{{end}}
   </ul>
 </section>
 {{end}}
 <footer class="meta">
-  Version {{.Node.Version}} · Changed {{date .Node.UpdatedAt}}{{with .Node.UpdatedBy}} by {{.}}{{end}} ·
-  Short link: <a href="{{$.SpacePath}}/d/{{.Node.PublicID}}">{{$.SpacePath}}/d/{{.Node.PublicID}}</a>
+  {{t "Version %d" .Node.Version}} · {{with .Node.UpdatedBy}}{{thtml "Changed %s by %s" (date $.Data.Node.UpdatedAt) .}}{{else}}{{thtml "Changed %s" (date .Node.UpdatedAt)}}{{end}} ·
+  {{t "Short link:"}} <a href="{{$.SpacePath}}/d/{{.Node.PublicID}}">{{print $.SpacePath "/d/" .Node.PublicID}}</a>
 </footer>
 {{end}}
 {{template "nodefoot"}}

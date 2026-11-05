@@ -66,6 +66,7 @@ func (s *Store) Session(ctx context.Context, token string, tenantID *int64) (*Se
 	var sess Session
 	var u User
 	var perms []string
+	var lang *string
 	err := s.pool.QueryRow(ctx, `
 		SELECT `+prefixed("u.", userColumns)+`,
 		       s.tenant_id, s.csrf_token,
@@ -78,10 +79,13 @@ func (s *Store) Session(ctx context.Context, token string, tenantID *int64) (*Se
 		  AND ($3::bigint IS NULL OR EXISTS (SELECT 1 FROM tenants t WHERE t.id = $3 AND NOT t.disabled))`,
 		hashToken(token), s.now(), tenantID,
 	).Scan(&u.ID, &u.TenantID, &u.Issuer, &u.Subject, &u.Username, &u.Email, &u.DisplayName,
-		&u.Disabled, &u.CreatedAt, &u.LastLoginAt,
+		&u.Disabled, &u.CreatedAt, &u.LastLoginAt, &lang,
 		&sess.TenantID, &sess.CSRFToken, &perms)
 	if err != nil {
 		return nil, notFound(err)
+	}
+	if lang != nil {
+		u.Language = *lang
 	}
 	sess.User = &u
 	sess.Permissions = rbac.NewSet(perms...)

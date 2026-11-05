@@ -1,10 +1,10 @@
 {{define "content"}}
 {{template "nodehead" .}}
 {{with .Data}}
-<div class="pagehead"><h1>History of {{.Node.Title}}</h1></div>
+<div class="pagehead"><h1>{{t "History of %s" .Node.Title}}</h1></div>
 {{template "compareform" .Compare}}
 <table>
-  <thead><tr><th>Version</th><th class="optional">Author</th><th>Comment</th><th class="date">Changed</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>{{t "Version"}}</th><th class="optional">{{t "Author"}}</th><th>{{t "Comment"}}</th><th class="date">{{t "Changed"}}</th><th class="actions"><span class="vh">{{t "Actions"}}</span></th></tr></thead>
   <tbody>
   {{range .Revisions}}
   <tr>
@@ -13,8 +13,8 @@
     <td>{{.Comment}}</td>
     <td class="date">{{date .CreatedAt}}</td>
     <td class="actions">
-      {{template "tool" (when (gt .Version 1) (tool (print $.SpacePath "/compare/" $.Data.Node.PublicID "?from=" (sub .Version 1) "&to=" .Version) "compare" (print "Changes in version " .Version)))}}
-      {{template "tool" (when (and ($.Can "doc.edit") (ne .Version $.Data.Node.Version)) (tool (print $.SpacePath "/edit/" $.Data.Node.PublicID "?from=" .Version) "restore" "Restore"))}}
+      {{template "tool" (when (gt .Version 1) (tool (print $.SpacePath "/compare/" $.Data.Node.PublicID "?from=" (sub .Version 1) "&to=" .Version) "compare" (t "Changes in version %d" .Version)))}}
+      {{template "tool" (when (and ($.Can "doc.edit") (ne .Version $.Data.Node.Version)) (tool (print $.SpacePath "/edit/" $.Data.Node.PublicID "?from=" .Version) "restore" (t "Restore")))}}
     </td>
   </tr>
   {{end}}

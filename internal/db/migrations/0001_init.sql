@@ -18,6 +18,13 @@ CREATE TABLE tenants (
     default_role        text        NOT NULL DEFAULT 'viewer',
     session_ttl_seconds integer     NOT NULL DEFAULT 43200 CHECK (session_ttl_seconds BETWEEN 60 AND 2592000),
     max_doc_bytes       integer     NOT NULL DEFAULT 1048576 CHECK (max_doc_bytes BETWEEN 1024 AND 1048576),
+    -- The language of the user interface. NULL means the default
+    -- language of the system (SKRIVA_LANGUAGE). A user can select a
+    -- different language.
+    language            text        CHECK (language <> ''),
+    -- The language of the content, for the stemmer of the search. Empty
+    -- means no stemmer.
+    content_language    text        NOT NULL DEFAULT 'en',
     created_at          timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now()
 );
@@ -109,6 +116,9 @@ CREATE TABLE users (
     email         text        NOT NULL DEFAULT '',
     display_name  text        NOT NULL DEFAULT '',
     disabled      boolean     NOT NULL DEFAULT false,
+    -- The profile settings of the user. NULL language means the language
+    -- of the tenant.
+    language      text        CHECK (language <> ''),
     created_at    timestamptz NOT NULL DEFAULT now(),
     last_login_at timestamptz,
     CONSTRAINT users_identity_key UNIQUE NULLS NOT DISTINCT (tenant_id, issuer, subject),
@@ -209,6 +219,9 @@ CREATE TABLE nodes (
     -- different domain than the words. A search for a different form of a
     -- word ("describing" finds "describe") uses them.
     stem_tokens    bigint[]    NOT NULL DEFAULT '{}',
+    -- The content language of the stems. The cleanup task makes the
+    -- index again if the content language of the tenant is different.
+    stem_language  text        NOT NULL DEFAULT '',
     -- The version of the format of the search index. The cleanup task
     -- makes the index again for rows with an older version.
     search_version smallint    NOT NULL DEFAULT 0,

@@ -137,7 +137,7 @@ func (s *Server) handleDiagram(w http.ResponseWriter, r *http.Request, n *store.
 			s.notFound(w, r)
 			return
 		case err != nil:
-			http.Error(w, "The server cannot show the diagram now.", http.StatusServiceUnavailable)
+			http.Error(w, s.tr(r).T("The server cannot show the diagram now."), http.StatusServiceUnavailable)
 			return
 		}
 		h := w.Header()

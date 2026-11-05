@@ -113,12 +113,17 @@ func (a *OIDC) init(ctx context.Context) (*oidc.Provider, error) {
 }
 
 // AuthCodeURL returns the URL of the login page at the provider. The
-// request uses PKCE (S256) and a nonce.
-func (a *OIDC) AuthCodeURL(ctx context.Context, state, nonce, verifier string) (string, error) {
+// request uses PKCE (S256) and a nonce. uiLocales is the preferred
+// language of the login page (ui_locales), or "".
+func (a *OIDC) AuthCodeURL(ctx context.Context, state, nonce, verifier, uiLocales string) (string, error) {
 	if _, err := a.init(ctx); err != nil {
 		return "", err
 	}
-	return a.oauth.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)), nil
+	opts := []oauth2.AuthCodeOption{oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)}
+	if uiLocales != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("ui_locales", uiLocales))
+	}
+	return a.oauth.AuthCodeURL(state, opts...), nil
 }
 
 // Exchange changes the authorization code into tokens, verifies the ID

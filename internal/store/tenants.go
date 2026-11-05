@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/claesp/skriva/internal/i18n"
 	"github.com/claesp/skriva/internal/secret"
 )
 
@@ -49,11 +50,18 @@ type TenantSettings struct {
 	DefaultRole string
 	SessionTTL  time.Duration
 	MaxDocBytes int
+	// Language is the language of the user interface (see i18n.IsUI),
+	// or "" for the default language of the system.
+	Language string
+	// ContentLanguage is the language of the content, for the stemmer of
+	// the search (see i18n.IsContent). i18n.NoStemming ("") means no
+	// stemmer.
+	ContentLanguage string
 }
 
 const tenantColumns = `id, code, name, is_default, disabled, oidc_issuer, oidc_client_id,
 	oidc_client_secret IS NOT NULL, oidc_scopes, oidc_groups_claim, admin_group, default_role,
-	session_ttl_seconds, max_doc_bytes, created_at, updated_at`
+	session_ttl_seconds, max_doc_bytes, COALESCE(language, ''), content_language, created_at, updated_at`
 
 func scanTenant(row pgx.Row) (*Tenant, error) {
 	var t Tenant
@@ -61,13 +69,43 @@ func scanTenant(row pgx.Row) (*Tenant, error) {
 	var ttl int
 	err := row.Scan(&t.ID, &t.Code, &t.Name, &t.IsDefault, &t.Disabled, &t.OIDCIssuer, &t.OIDCClientID,
 		&t.HasClientSecret, &scopes, &t.OIDCGroupsClaim, &t.AdminGroup, &t.DefaultRole,
-		&ttl, &t.MaxDocBytes, &t.CreatedAt, &t.UpdatedAt)
+		&ttl, &t.MaxDocBytes, &t.Language, &t.ContentLanguage, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}
 	t.OIDCScopes = strings.Fields(scopes)
 	t.SessionTTL = time.Duration(ttl) * time.Second
 	return &t, nil
+}
+
+// contentLanguage returns the content language of a tenant: the language
+// of the stemmer of the search. A caller in a transaction gives the
+// transaction as q. Then it does not wait for a second connection.
+func contentLanguage(ctx context.Context, q querier, tenantID int64) (string, error) {
+	var lang string
+	err := q.QueryRow(ctx, "SELECT content_language FROM tenants WHERE id = $1", tenantID).Scan(&lang)
+	return lang, notFound(err)
+}
+
+// validLanguages reports whether the languages of ts are valid.
+func validLanguages(ts *TenantSettings) bool {
+	return (ts.Language == "" || i18n.IsUI(ts.Language)) && i18n.IsContent(ts.ContentLanguage)
+}
+
+// languageText gives a content language for the audit log.
+func languageText(code string) string {
+	if code == i18n.NoStemming {
+		return "none"
+	}
+	return code
+}
+
+// nullText returns nil for "". Columns with NULL for "not set" use it.
+func nullText(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // secretContext binds the client secret to the tenant. It uses the ID,
@@ -115,20 +153,23 @@ func (s *Store) Tenants(ctx context.Context) ([]*Tenant, error) {
 
 // CreateTenant makes a tenant. clientSecret can be empty. It returns
 // ErrConflict if the code is in use, and ErrInvalid if the default role
-// does not exist.
+// does not exist or a language is not valid.
 func (s *Store) CreateTenant(ctx context.Context, code string, ts TenantSettings, clientSecret string) (*Tenant, error) {
+	if !validLanguages(&ts) {
+		return nil, ErrInvalid
+	}
 	var t *Tenant
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var err error
 		t, err = scanTenant(tx.QueryRow(ctx, `
 			INSERT INTO tenants (code, name, disabled, oidc_issuer, oidc_client_id, oidc_client_secret,
 			                     oidc_scopes, oidc_groups_claim, admin_group, default_role,
-			                     session_ttl_seconds, max_doc_bytes)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			                     session_ttl_seconds, max_doc_bytes, language, content_language)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 			RETURNING `+tenantColumns,
 			code, ts.Name, ts.Disabled, ts.OIDCIssuer, ts.OIDCClientID, nil,
 			strings.Join(ts.OIDCScopes, " "), ts.OIDCGroupsClaim, ts.AdminGroup, ts.DefaultRole,
-			int(ts.SessionTTL/time.Second), ts.MaxDocBytes))
+			int(ts.SessionTTL/time.Second), ts.MaxDocBytes, nullText(ts.Language), ts.ContentLanguage))
 		if err != nil {
 			return err
 		}
@@ -169,6 +210,9 @@ func (s *Store) CreateTenant(ctx context.Context, code string, ts TenantSettings
 // a new code changes all URLs of the tenant. It returns ErrConflict if a
 // different tenant has the code.
 func (s *Store) UpdateTenant(ctx context.Context, id int64, code string, ts TenantSettings, newSecret *string) (*Tenant, error) {
+	if !validLanguages(&ts) {
+		return nil, ErrInvalid
+	}
 	// The transaction locks the row of the tenant. Then a new key of the
 	// tenant cannot be saved on a different connection (the foreign key
 	// waits for the lock). Thus the keys must exist before.
@@ -177,8 +221,9 @@ func (s *Store) UpdateTenant(ctx context.Context, id int64, code string, ts Tena
 	}
 	var t *Tenant
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		var oldCode string
-		if err := tx.QueryRow(ctx, "SELECT code FROM tenants WHERE id = $1 FOR UPDATE", id).Scan(&oldCode); err != nil {
+		var oldCode, oldContent string
+		if err := tx.QueryRow(ctx, "SELECT code, content_language FROM tenants WHERE id = $1 FOR UPDATE",
+			id).Scan(&oldCode, &oldContent); err != nil {
 			return notFound(err)
 		}
 		if err := checkRole(ctx, tx, id, ts.DefaultRole); err != nil {
@@ -188,12 +233,13 @@ func (s *Store) UpdateTenant(ctx context.Context, id int64, code string, ts Tena
 		t, err = scanTenant(tx.QueryRow(ctx, `
 			UPDATE tenants SET name = $2, disabled = $3, oidc_issuer = $4, oidc_client_id = $5,
 			       oidc_scopes = $6, oidc_groups_claim = $7, admin_group = $8, default_role = $9,
-			       session_ttl_seconds = $10, max_doc_bytes = $11, updated_at = $12, code = $13
+			       session_ttl_seconds = $10, max_doc_bytes = $11, updated_at = $12, code = $13,
+			       language = $14, content_language = $15
 			WHERE id = $1
 			RETURNING `+tenantColumns,
 			id, ts.Name, ts.Disabled, ts.OIDCIssuer, ts.OIDCClientID,
 			strings.Join(ts.OIDCScopes, " "), ts.OIDCGroupsClaim, ts.AdminGroup, ts.DefaultRole,
-			int(ts.SessionTTL/time.Second), ts.MaxDocBytes, s.now(), code))
+			int(ts.SessionTTL/time.Second), ts.MaxDocBytes, s.now(), code, nullText(ts.Language), ts.ContentLanguage))
 		if err != nil {
 			return err
 		}
@@ -222,6 +268,12 @@ func (s *Store) UpdateTenant(ctx context.Context, id int64, code string, ts Tena
 		}
 		if code != oldCode {
 			details += " The code changed from " + oldCode + " to " + code + "."
+		}
+		if ts.ContentLanguage != oldContent {
+			// The cleanup task makes the search index again (see
+			// ReindexBatch).
+			details += " The content language changed from " + languageText(oldContent) + " to " +
+				languageText(ts.ContentLanguage) + "."
 		}
 		if err := s.audit(ctx, tx, auditEntry{Action: AuditTenantUpdate, Target: t.Name, TargetID: code, Details: details}); err != nil {
 			return err

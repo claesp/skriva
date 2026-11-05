@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -47,6 +46,7 @@ func uploadError(w http.ResponseWriter, status int, msg string) {
 // the file.
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	ri := reqInfoFrom(r.Context())
+	p := s.tr(r)
 	perms, need := ri.Access.Root(), rbac.DocCreate
 	q := r.URL.Query()
 	id, edit := q.Get("node"), true
@@ -55,17 +55,17 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if id != "" {
 		if !store.ValidPublicID(id) {
-			uploadError(w, http.StatusBadRequest, "The document is not valid.")
+			uploadError(w, http.StatusBadRequest, p.T("The document is not valid."))
 			return
 		}
 		n, err := s.store.Node(r.Context(), ri.Space.ID, id)
 		if errors.Is(err, store.ErrNotFound) || (err == nil && !canRead(r, n.AccessPathID)) {
-			uploadError(w, http.StatusNotFound, "The document does not exist.")
+			uploadError(w, http.StatusNotFound, p.T("The document does not exist."))
 			return
 		}
 		if err != nil {
 			s.log.Error("upload", "error", err)
-			uploadError(w, http.StatusInternalServerError, "The server cannot save the file.")
+			uploadError(w, http.StatusInternalServerError, p.T("The server cannot save the file."))
 			return
 		}
 		perms = ri.Access.For(n.AccessPathID)
@@ -74,22 +74,22 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !perms.Has(need) {
-		uploadError(w, http.StatusForbidden, "You do not have permission to add images here.")
+		uploadError(w, http.StatusForbidden, p.T("You do not have permission to add images here."))
 		return
 	}
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		uploadError(w, http.StatusBadRequest, "The request contains no file.")
+		uploadError(w, http.StatusBadRequest, p.T("The request contains no file."))
 		return
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, maxUploadBytes+1))
 	if err != nil {
-		uploadError(w, http.StatusBadRequest, "The server cannot read the file.")
+		uploadError(w, http.StatusBadRequest, p.T("The server cannot read the file."))
 		return
 	}
 	if len(data) > maxUploadBytes {
-		uploadError(w, http.StatusRequestEntityTooLarge, "The file is too large. The maximum is 10 MiB.")
+		uploadError(w, http.StatusRequestEntityTooLarge, p.T("The file is too large. The maximum is 10 MiB."))
 		return
 	}
 	contentType := http.DetectContentType(data)
@@ -98,16 +98,16 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		case err == nil:
 			contentType = svgType
 		case errors.Is(err, errDrawioXML):
-			uploadError(w, http.StatusUnsupportedMediaType, "This draw.io file contains no image. "+
-				"In draw.io, use File > Export as > SVG (or PNG) and select \"Include a copy of my diagram\".")
+			uploadError(w, http.StatusUnsupportedMediaType, p.T("This draw.io file contains no image. "+
+				"In draw.io, use File > Export as > SVG (or PNG) and select \"Include a copy of my diagram\"."))
 			return
 		case errors.Is(err, errNotXML), errors.Is(err, errNotDrawio):
-			uploadError(w, http.StatusUnsupportedMediaType, "The file must be a PNG, JPEG, GIF or WebP image, "+
-				"or a draw.io diagram in SVG format (.drawio.svg).")
+			uploadError(w, http.StatusUnsupportedMediaType, p.T("The file must be a PNG, JPEG, GIF or WebP image, "+
+				"or a draw.io diagram in SVG format (.drawio.svg)."))
 			return
 		default:
-			uploadError(w, http.StatusUnsupportedMediaType, "The SVG file contains items that are not permitted, "+
-				"for example scripts.")
+			uploadError(w, http.StatusUnsupportedMediaType, p.T("The SVG file contains items that are not permitted, "+
+				"for example scripts."))
 			return
 		}
 	}
@@ -115,14 +115,14 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, store.ErrQuota) {
 		s.log.Info("upload quota full", "tenant", ri.Tenant.Code, "space", ri.Space.Slug,
 			"bytes", len(data), "user_id", ri.Session.User.ID)
-		uploadError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("The space has no room for this file. "+
+		uploadError(w, http.StatusRequestEntityTooLarge, p.T("The space has no room for this file. "+
 			"All files of the space together can use %d MiB. Ask an administrator of the space to increase the limit.",
 			ri.Space.UploadQuotaMB))
 		return
 	}
 	if err != nil {
 		s.log.Error("upload", "error", err)
-		uploadError(w, http.StatusInternalServerError, "The server cannot save the file.")
+		uploadError(w, http.StatusInternalServerError, p.T("The server cannot save the file."))
 		return
 	}
 	s.log.Info("file uploaded", "tenant", ri.Tenant.Code, "space", ri.Space.Slug, "file", fileID,

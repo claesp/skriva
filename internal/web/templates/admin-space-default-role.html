@@ -1,13 +1,13 @@
 {{define "content"}}
 {{with .Data}}
 {{$back := print $.TenantPath "/admin/spaces/" .Space.Slug "/access"}}
-{{template "formhead" (crumb3 (print $.TenantPath "/admin/spaces/" .Space.Slug) .Space.Name $back "Access" "Default role" "edit")}}
+{{template "formhead" (crumb3 (print $.TenantPath "/admin/spaces/" .Space.Slug) .Space.Name $back (t "Access") (t "Default role") "edit")}}
 <form method="post" action="{{$.TenantPath}}/admin/spaces/{{.Space.Slug}}/default-role" class="stack">
   {{template "csrf" $.CSRF}}
-  <label>Default role of all signed-in users in this space
+  <label>{{t "Default role of all signed-in users in this space"}}
     <select name="default_role" autofocus>
-      <option value="-"{{if eq .DefaultRole "-"}} selected{{end}}>Same as the tenant{{with $.Tenant.DefaultRole}} ({{.}}){{else}} (none){{end}}</option>
-      <option value=""{{if eq .DefaultRole ""}} selected{{end}}>None. Only users with a role binding have access.</option>
+      <option value="-"{{if eq .DefaultRole "-"}} selected{{end}}>{{with $.Tenant.DefaultRole}}{{t "Same as the tenant (%s)" .}}{{else}}{{t "Same as the tenant (none)"}}{{end}}</option>
+      <option value=""{{if eq .DefaultRole ""}} selected{{end}}>{{t "None. Only users with a role binding have access."}}</option>
       {{range .Roles}}<option value="{{.Name}}"{{if eq .Name $.Data.DefaultRole}} selected{{end}}>{{.Name}}</option>{{end}}
     </select>
   </label>

@@ -1,10 +1,10 @@
 {{define "content"}}
 {{with .Data}}
-{{template "formhead" (crumb .ReturnTo "Back" "New role binding" "new")}}
+{{template "formhead" (crumb .ReturnTo (t "Back") (t "New role binding") "new")}}
 <form method="post" action="{{$.TenantPath}}/admin/bindings" class="stack">
   {{template "csrf" $.CSRF}}
   <input type="hidden" name="return_to" value="{{.ReturnTo}}">
-  <label>Role <select name="role" required autofocus>{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
+  <label>{{t "Role"}} <select name="role" required autofocus>{{range .Roles}}<option>{{.Name}}</option>{{end}}</select></label>
   {{if .Subject}}
   <input type="hidden" name="subject" value="{{.Subject}}">
   {{else}}
@@ -19,11 +19,11 @@
   {{if or .Subject .Space}}
   <table class="settings">
     <tbody>
-      {{if .Subject}}<tr><th scope="row">Given to</th><td>{{.SubjectLabel}}</td></tr>{{end}}
-      {{if .Space}}<tr><th scope="row">Scope</th><td>{{with .Node}}{{if .IsFolder}}Folder{{else}}Document{{end}} "{{.Title}}" in space {{else}}Space {{end}}{{.Space.Name}}</td></tr>{{end}}
+      {{if .Subject}}<tr><th scope="row">{{t "Given to"}}</th><td>{{.SubjectLabel}}</td></tr>{{end}}
+      {{if .Space}}<tr><th scope="row">{{t "Scope"}}</th><td>{{with .Node}}{{if .IsFolder}}{{thtml "Folder \"%s\" in space %s" .Title $.Data.Space.Name}}{{else}}{{thtml "Document \"%s\" in space %s" .Title $.Data.Space.Name}}{{end}}{{else}}{{t "Space %s" .Space.Name}}{{end}}</td></tr>{{end}}
     </tbody>
   </table>
-  {{if .Space}}<p><small>The binding gives only the document permissions (<code>doc.*</code>) of the role.</small></p>{{end}}
+  {{if .Space}}<p><small>{{thtml "The binding gives only the document permissions (<code>doc.*</code>) of the role."}}</small></p>{{end}}
   {{end}}
   {{template "savebutton"}}
 </form>

@@ -41,7 +41,7 @@ func (s *Server) scope(w http.ResponseWriter, r *http.Request) (*authScope, bool
 	if err != nil {
 		s.log.Warn("no identity provider for tenant", "tenant", reqInfoFrom(r.Context()).Tenant.Code, "error", err)
 		s.renderError(w, r, http.StatusServiceUnavailable,
-			"Sign-in is not available for this tenant. Ask a system administrator to set the identity provider.")
+			s.tr(r).T("Sign-in is not available for this tenant. Ask a system administrator to set the identity provider."))
 		return nil, false
 	}
 	return sc, true
@@ -92,7 +92,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.loginLimit.Allow() {
 		s.log.Warn("login rate limit reached")
 		w.Header().Set("Retry-After", "10")
-		s.renderError(w, r, http.StatusTooManyRequests, "There are too many sign-in requests. Try again in a short time.")
+		s.renderError(w, r, http.StatusTooManyRequests, s.tr(r).T("There are too many sign-in requests. Try again in a short time."))
 		return
 	}
 
@@ -102,11 +102,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		CodeVerifier: oauth2.GenerateVerifier(),
 		ReturnTo:     returnTo,
 	}
-	authURL, err := sc.auth.AuthCodeURL(r.Context(), state, st.Nonce, st.CodeVerifier)
+	authURL, err := sc.auth.AuthCodeURL(r.Context(), state, st.Nonce, st.CodeVerifier, s.lang(r))
 	if err != nil {
 		s.log.Error("start login", "error", err)
 		s.renderError(w, r, http.StatusServiceUnavailable,
-			"The identity provider is not available. Try again later.")
+			s.tr(r).T("The identity provider is not available. Try again later."))
 		return
 	}
 	if err := s.store.SaveLoginState(r.Context(), sc.tenantID, state, st, loginTTL); err != nil {
@@ -127,21 +127,21 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	if e := q.Get("error"); e != "" {
 		s.log.Warn("identity provider returned an error", "error", e, "description", q.Get("error_description"))
-		s.renderError(w, r, http.StatusUnauthorized, "The sign-in was not successful.")
+		s.renderError(w, r, http.StatusUnauthorized, s.tr(r).T("The sign-in was not successful."))
 		return
 	}
 
 	state := q.Get("state")
 	c, err := r.Cookie(sc.stateCookie)
 	if err != nil || state == "" || subtle.ConstantTimeCompare([]byte(c.Value), []byte(state)) != 1 {
-		s.renderError(w, r, http.StatusBadRequest, "The sign-in request is not valid or is too old. Try again.")
+		s.renderError(w, r, http.StatusBadRequest, s.tr(r).T("The sign-in request is not valid or is too old. Try again."))
 		return
 	}
 	s.clearCookie(w, sc.stateCookie)
 
 	st, err := s.store.TakeLoginState(r.Context(), sc.tenantID, state)
 	if errors.Is(err, store.ErrNotFound) {
-		s.renderError(w, r, http.StatusBadRequest, "The sign-in request is not valid or is too old. Try again.")
+		s.renderError(w, r, http.StatusBadRequest, s.tr(r).T("The sign-in request is not valid or is too old. Try again."))
 		return
 	}
 	if err != nil {
@@ -152,12 +152,12 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	id, err := sc.auth.Exchange(r.Context(), q.Get("code"), st.CodeVerifier, st.Nonce)
 	if err != nil {
 		s.log.Warn("token exchange failed", "error", err)
-		s.renderError(w, r, http.StatusUnauthorized, "The sign-in was not successful.")
+		s.renderError(w, r, http.StatusUnauthorized, s.tr(r).T("The sign-in was not successful."))
 		return
 	}
 	if sc.allow != nil && !sc.allow(id) {
 		s.log.Warn("sign-in refused", "base", sc.base, "username", id.Username)
-		s.renderError(w, r, http.StatusForbidden, "Your account does not have access here.")
+		s.renderError(w, r, http.StatusForbidden, s.tr(r).T("Your account does not have access here."))
 		return
 	}
 	user, err := s.store.SyncLogin(r.Context(), sc.tenantID, id)
@@ -167,7 +167,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	if user.Disabled {
 		s.log.Warn("disabled user tried to sign in", "user_id", user.ID)
-		s.renderError(w, r, http.StatusForbidden, "Your account is disabled.")
+		s.renderError(w, r, http.StatusForbidden, s.tr(r).T("Your account is disabled."))
 		return
 	}
 
@@ -214,7 +214,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, signedOut, http.StatusSeeOther)
 		return
 	}
-	v := s.newView(r, "Signing out", target)
+	v := s.newView(r, s.tr(r).T("Signing out"), target)
 	v.Session, v.Space, v.New = nil, nil, nil // the session ended
 	v.Refresh = target
 	s.write(w, r, http.StatusOK, "signing-out", v)
@@ -225,7 +225,7 @@ func (s *Server) handleSignedOut(w http.ResponseWriter, r *http.Request) {
 	if t := reqInfoFrom(r.Context()).Tenant; t != nil {
 		base = tenantPath(t)
 	}
-	s.render(w, r, http.StatusOK, "signed-out", "Signed out", base)
+	s.render(w, r, http.StatusOK, "signed-out", s.tr(r).T("Signed out"), base)
 }
 
 // safeReturnTo returns p if it is a path on this site. Otherwise it

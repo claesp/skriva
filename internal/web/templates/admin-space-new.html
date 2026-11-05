@@ -1,11 +1,11 @@
 {{define "content"}}
-{{template "formhead" (crumb (print .TenantPath "/admin/spaces") "Spaces" "New space" "new")}}
+{{template "formhead" (crumb (print .TenantPath "/admin/spaces") (t "Spaces") (t "New space") "new")}}
 <form method="post" action="{{.TenantPath}}/admin/spaces" class="stack">
   {{template "csrf" .CSRF}}
-  <label>Name <input name="name" required maxlength="200" autofocus></label>
-  <label>Code <input name="slug" required minlength="2" maxlength="16" pattern="[a-z0-9][a-z0-9\-]{0,14}[a-z0-9]" aria-describedby="code-help"></label>
-  <p id="code-help" class="help"><small>2 to 16 characters: a-z, 0-9 and "-". The code is part of the URLs.</small></p>
-  <label>Description <input name="description" maxlength="500"></label>
+  <label>{{t "Name"}} <input name="name" required maxlength="200" autofocus></label>
+  <label>{{t "Code"}} <input name="slug" required minlength="2" maxlength="16" pattern="[a-z0-9][a-z0-9\-]{0,14}[a-z0-9]" aria-describedby="code-help"></label>
+  <p id="code-help" class="help"><small>{{thtml "2 to 16 characters: a-z, 0-9 and \"-\". The code is part of the URLs."}}</small></p>
+  <label>{{t "Description"}} <input name="description" maxlength="500"></label>
   {{template "savebutton"}}
 </form>
 {{end}}

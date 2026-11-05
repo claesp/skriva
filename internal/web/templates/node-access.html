@@ -2,17 +2,26 @@
 {{template "nodehead" .}}
 {{with .Data}}
 {{$back := print $.SpacePath "/access/" .Node.PublicID}}
-<div class="pagehead"><h1>Access</h1></div>
-<p>A user has these permissions for this {{.Node.Kind}} and for all items in it:</p>
+<div class="pagehead"><h1>{{t "Access"}}</h1></div>
+{{if .Node.IsFolder}}
+<p>{{t "A user has these permissions for this folder and for all items in it:"}}</p>
 <ul>
-  <li>The document permissions of the default role. If this {{.Node.Kind}} uses "Same as the parent", the nearest parent folder or document with its own setting gives the default role. If there is none, the space gives it.</li>
-  <li>The permissions of the role bindings for all spaces, for this space and for the parents.</li>
-  <li>The document permissions of the role bindings for this {{.Node.Kind}}.</li>
+  <li>{{thtml "The document permissions of the default role. If this folder uses \"Same as the parent\", the nearest parent folder or document with its own setting gives the default role. If there is none, the space gives it."}}</li>
+  <li>{{t "The permissions of the role bindings for all spaces, for this space and for the parents."}}</li>
+  <li>{{t "The document permissions of the role bindings for this folder."}}</li>
 </ul>
+{{else}}
+<p>{{t "A user has these permissions for this document and for all items in it:"}}</p>
+<ul>
+  <li>{{thtml "The document permissions of the default role. If this document uses \"Same as the parent\", the nearest parent folder or document with its own setting gives the default role. If there is none, the space gives it."}}</li>
+  <li>{{t "The permissions of the role bindings for all spaces, for this space and for the parents."}}</li>
+  <li>{{t "The document permissions of the role bindings for this document."}}</li>
+</ul>
+{{end}}
 {{template "defaultroletable" (defaultrole .DefaultRoleText (print $back "/default-role"))}}
-{{template "sectionhead" (section "Role bindings" "" (tool (print $.TenantPath "/admin/bindings/new?space=" $.Space.Slug "&node=" .Node.PublicID "&return_to=" $back) "new" "New role binding"))}}
+{{template "sectionhead" (section (t "Role bindings") "" (tool (print $.TenantPath "/admin/bindings/new?space=" $.Space.Slug "&node=" .Node.PublicID "&return_to=" $back) "new" (t "New role binding")))}}
 {{template "bindingtable" .Table}}
-<p><small>Bindings for this {{.Node.Kind}} give only document permissions (<code>doc.*</code>).</small></p>
+<p><small>{{if .Node.IsFolder}}{{thtml "Bindings for this folder give only document permissions (<code>doc.*</code>)."}}{{else}}{{thtml "Bindings for this document give only document permissions (<code>doc.*</code>)."}}{{end}}</small></p>
 {{end}}
 {{template "nodefoot"}}
 {{end}}

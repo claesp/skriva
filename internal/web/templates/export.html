@@ -1,18 +1,18 @@
 {{define "content"}}
 {{template "nodehead" .}}
 {{with .Data}}
-<div class="pagehead"><h1>Export "{{.Node.Title}}"</h1></div>
-<p>An export is a file with the current version of the document. The file contains the title and the classification of the document. Links refer to Skriva, thus a reader must sign in to open them.</p>
+<div class="pagehead"><h1>{{thtml "Export \"%s\"" .Node.Title}}</h1></div>
+<p>{{t "An export is a file with the current version of the document. The file contains the title and the classification of the document. Links refer to Skriva, thus a reader must sign in to open them."}}</p>
 <table>
-  <thead><tr><th>Format</th><th class="optional">Description</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>{{t "Format"}}</th><th class="optional">{{t "Description"}}</th><th class="actions"><span class="vh">{{t "Actions"}}</span></th></tr></thead>
   <tbody>
   {{range .Formats}}
   <tr>
     <td>{{.Label}}</td>
     <td class="optional">{{.Description}}{{if not .Available}} <em>{{.Unavailable}}</em>{{end}}</td>
     <td class="actions">
-      {{template "tool" (when (and .Available .Text) (tool (print $.SpacePath "/export/" $.Data.Node.PublicID "/" .Name "/text") "source" (print "Show " .Label " as text")))}}
-      {{template "tool" (when .Available (tool (print $.SpacePath "/export/" $.Data.Node.PublicID "/" .Name) "download" (print "Download " .Label)))}}
+      {{template "tool" (when (and .Available .Text) (tool (print $.SpacePath "/export/" $.Data.Node.PublicID "/" .Name "/text") "source" (t "Show %s as text" .Label)))}}
+      {{template "tool" (when .Available (tool (print $.SpacePath "/export/" $.Data.Node.PublicID "/" .Name) "download" (t "Download %s" .Label)))}}
     </td>
   </tr>
   {{end}}

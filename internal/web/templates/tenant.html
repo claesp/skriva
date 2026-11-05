@@ -1,36 +1,36 @@
 {{define "content"}}
 <div class="with-sidebar">
 <div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path">Spaces</nav>
-  <nav class="toolbar" aria-label="Tools"><span class="group">
-    {{template "tool" (when (.Can "space.manage") (tool (print .TenantPath "/admin/spaces") "settings" "Manage spaces"))}}
+  <nav class="breadcrumbs" aria-label="{{t "Path"}}">{{t "Spaces"}}</nav>
+  <nav class="toolbar" aria-label="{{t "Tools"}}"><span class="group">
+    {{template "tool" (when (.Can "space.manage") (tool (print .TenantPath "/admin/spaces") "settings" (t "Manage spaces")))}}
   </span></nav>
 </div>
-<aside class="sidebar" aria-label="Spaces">
+<aside class="sidebar" aria-label="{{t "Spaces"}}">
   <ul class="tree">
     {{range .Data}}<li><a href="{{$.TenantPath}}/{{.Slug}}/">{{template "icon" "space"}}{{.Name}}</a></li>{{end}}
   </ul>
 </aside>
 <div class="main reading">
 <div class="pagehead">
-  <h1>Spaces</h1>
+  <h1>{{t "Spaces"}}</h1>
 </div>
 {{with .Data}}
 <table class="items">
-  <thead><tr><th>Name</th><th>Description</th><th class="num">Items</th><th class="date">Changed</th></tr></thead>
+  <thead><tr><th>{{t "Name"}}</th><th>{{t "Description"}}</th><th class="num">{{t "Items"}}</th><th class="date">{{t "Changed"}}</th></tr></thead>
   <tbody>
   {{range .}}
   <tr>
     <td><a href="{{$.TenantPath}}/{{.Slug}}/">{{template "icon" "space"}}{{.Name}}</a></td>
     <td>{{.Description}}</td>
     <td class="num">{{.Nodes}}</td>
-    <td class="date">{{with .LastChanged}}{{date .}}{{else}}Never{{end}}</td>
+    <td class="date">{{with .LastChanged}}{{date .}}{{else}}{{t "Never"}}{{end}}</td>
   </tr>
   {{end}}
   </tbody>
 </table>
 {{else}}
-<p>This tenant has no spaces that you can read.</p>
+<p>{{t "This tenant has no spaces that you can read."}}</p>
 {{end}}
 </div>
 </div>

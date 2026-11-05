@@ -113,6 +113,7 @@ func run(log *slog.Logger) error {
 	handler, err := web.New(st, web.Options{
 		Formats:          export.NewFormats(pdf),
 		Diagrams:         diagrams,
+		Language:         cfg.Language,
 		BaseURL:          cfg.BaseURL,
 		SecureCookies:    cfg.SecureCookies(),
 		SystemAuth:       systemAuth,

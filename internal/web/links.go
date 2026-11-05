@@ -40,7 +40,7 @@ func (s *Server) handleLinkTargets(w http.ResponseWriter, r *http.Request) {
 	switch id := strings.ToLower(q.Get("id")); {
 	case id != "":
 		if !store.ValidPublicID(id) {
-			s.badRequest(w, r, "The ID is not valid.")
+			s.badRequest(w, r, s.tr(r).T("The ID is not valid."))
 			return
 		}
 		n, err := s.store.Node(r.Context(), ri.Space.ID, id)

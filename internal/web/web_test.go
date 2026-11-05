@@ -73,7 +73,7 @@ type fakeIdP struct {
 	groups map[string][]string
 }
 
-func (f *fakeIdP) AuthCodeURL(_ context.Context, state, nonce, verifier string) (string, error) {
+func (f *fakeIdP) AuthCodeURL(_ context.Context, state, nonce, verifier, _ string) (string, error) {
 	return "https://idp.example/auth?state=" + url.QueryEscape(state), nil
 }
 

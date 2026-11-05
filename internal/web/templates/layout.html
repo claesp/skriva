@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{.Lang}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,46 +8,46 @@
 <link rel="stylesheet" href="{{.StyleURL}}">
 </head>
 <body>
-<a class="skip" href="#main_content">Skip to the content</a>
+<a class="skip" href="#main_content">{{t "Skip to the content"}}</a>
 {{template "icons"}}
 <header class="site">
 {{if .System}}
-  <a class="brand" href="/admin/">System administration</a>
+  <a class="brand" href="/admin/">{{t "System administration"}}</a>
   {{if and .Session .Session.System}}
-  <nav aria-label="Main"><a href="/admin/">Tenants</a></nav>
+  <nav aria-label="{{t "Main"}}"><a href="/admin/">{{t "Tenants"}}</a></nav>
   <div class="user">
-    <span>{{.Session.User.Name}}</span>
-    {{template "post" (post "/admin/logout" "sign-out" "Sign out" .CSRF "")}}
+    <a href="/admin/profile" title="{{t "Profile"}}">{{.Session.User.Name}}</a>
+    {{template "post" (post "/admin/logout" "sign-out" (t "Sign out") .CSRF "")}}
   </div>
   {{end}}
 {{else if .Tenant}}
   <a class="brand" href="{{.TenantPath}}/">{{.Tenant.Name}}</a>
   {{if .Space}}<span class="crumb">›</span> <a class="brand space" href="{{.SpacePath}}/">{{.Space.Name}}</a>{{end}}
   {{if .Session}}
-  <nav aria-label="Main">
-    <a href="{{.TenantPath}}/">Spaces</a>
-    {{if or (.Can "tenant.manage") (.Can "space.manage")}}<a href="{{.TenantPath}}/admin/{{if not (.Can "tenant.manage")}}spaces{{end}}">Administration</a>{{end}}
+  <nav aria-label="{{t "Main"}}">
+    <a href="{{.TenantPath}}/">{{t "Spaces"}}</a>
+    {{if or (.Can "tenant.manage") (.Can "space.manage")}}<a href="{{.TenantPath}}/admin/{{if not (.Can "tenant.manage")}}spaces{{end}}">{{t "Administration"}}</a>{{end}}
   </nav>
   {{if and .New .Space (.Can "doc.create")}}
   {{/* A drop-down for new items. The details element opens and closes
      the list without JavaScript. */}}
   <details class="newmenu">
-    <summary>{{template "icon" "new"}}New{{template "icon" "chevron-down"}}</summary>
-    <ul aria-label="New">
-      <li><a href="{{.SpacePath}}/new{{.New.Query "document"}}">{{template "icon" "new-document"}}<span>Document<small>A page with text, images and tables</small></span></a></li>
-      {{if .New.Folder}}<li><a href="{{.SpacePath}}/new{{.New.Query "folder"}}">{{template "icon" "new-folder"}}<span>Folder<small>A group of documents and folders</small></span></a></li>{{end}}
+    <summary>{{template "icon" "new"}}{{t "New"}}{{template "icon" "chevron-down"}}</summary>
+    <ul aria-label="{{t "New"}}">
+      <li><a href="{{.SpacePath}}/new{{.New.Query "document"}}">{{template "icon" "new-document"}}<span>{{t "Document"}}<small>{{t "A page with text, images and tables"}}</small></span></a></li>
+      {{if .New.Folder}}<li><a href="{{.SpacePath}}/new{{.New.Query "folder"}}">{{template "icon" "new-folder"}}<span>{{t "Folder"}}<small>{{t "A group of documents and folders"}}</small></span></a></li>{{end}}
     </ul>
   </details>
   {{end}}
   <form class="search" action="{{if .Space}}{{.SpacePath}}{{else}}{{.TenantPath}}{{end}}/search" method="get" role="search">
-    <input type="search" name="q" placeholder="Search{{if .Space}} in {{.Space.Name}}{{end}}" aria-label="Search" maxlength="200">
+    <input type="search" name="q" placeholder="{{if .Space}}{{t "Search in %s" .Space.Name}}{{else}}{{t "Search"}}{{end}}" aria-label="{{t "Search"}}" maxlength="200">
   </form>
   <div class="user">
-    <span>{{.Session.User.Name}}</span>
-    {{template "post" (post (print .TenantPath "/logout") "sign-out" "Sign out" .CSRF "")}}
+    <a href="{{.TenantPath}}/profile" title="{{t "Profile"}}">{{.Session.User.Name}}</a>
+    {{template "post" (post (print .TenantPath "/logout") "sign-out" (t "Sign out") .CSRF "")}}
   </div>
   {{else}}
-  <div class="user"><a href="{{.TenantPath}}/login">Sign in</a></div>
+  <div class="user"><a href="{{.TenantPath}}/login">{{t "Sign in"}}</a></div>
   {{end}}
 {{else}}
   <a class="brand" href="/">Skriva</a>
@@ -59,7 +59,7 @@
 <div class="with-sidebar">
 {{template "content" .}}
 </div>
-<aside class="sidebar" aria-label="Administration">{{template "menu" .}}</aside>
+<aside class="sidebar" aria-label="{{t "Administration"}}">{{template "menu" .}}</aside>
 </div>
 {{else}}
 {{block "content" .}}{{end}}
@@ -67,11 +67,11 @@
 </main>
 </body>
 </html>
-{{define "scope"}}{{if .NodeID}}Item "{{.NodeTitle}}" in space {{.SpaceName}}{{else if .SpaceID}}Space {{.SpaceName}} <code>{{.SpaceSlug}}</code>{{else}}All spaces{{end}}{{end}}
-{{define "spaceselect"}}<label>Space
+{{define "scope"}}{{if .NodeID}}{{thtml "Item \"%s\" in space %s" .NodeTitle .SpaceName}}{{else if .SpaceID}}{{thtml "Space %s <code>%s</code>" .SpaceName .SpaceSlug}}{{else}}{{t "All spaces"}}{{end}}{{end}}
+{{define "spaceselect"}}<label>{{t "Space"}}
     <select name="space">
-      <option value="">All spaces</option>
-      {{range .}}<option value="{{.Slug}}">Space {{.Name}} ({{.Slug}})</option>{{end}}
+      <option value="">{{t "All spaces"}}</option>
+      {{range .}}<option value="{{.Slug}}">{{t "Space %s (%s)" .Name .Slug}}</option>{{end}}
     </select>
   </label>{{end}}
 {{define "csrf"}}<input type="hidden" name="csrf_token" value="{{.}}">{{end}}
@@ -144,7 +144,7 @@
 </svg>
 {{end}}
 {{define "icon"}}<svg class="i i-{{.}}" aria-hidden="true" focusable="false"><use href="#i_{{.}}"></use></svg>{{end}}
-{{define "tool"}}{{if .Disabled}}<span class="tool disabled" role="link" aria-disabled="true" title="{{.Label}} (not available)" aria-label="{{.Label}}">{{template "icon" .Icon}}</span>{{else}}<a class="tool{{if eq .Icon "delete"}} danger{{end}}{{if .Current}} current{{end}}" href="{{.Href}}" title="{{.Label}}" aria-label="{{.Label}}"{{if .Current}} aria-current="page"{{end}}>{{template "icon" .Icon}}</a>{{end}}{{end}}
+{{define "tool"}}{{if .Disabled}}<span class="tool disabled" role="link" aria-disabled="true" title="{{t "%s (not available)" .Label}}" aria-label="{{.Label}}">{{template "icon" .Icon}}</span>{{else}}<a class="tool{{if eq .Icon "delete"}} danger{{end}}{{if .Current}} current{{end}}" href="{{.Href}}" title="{{.Label}}" aria-label="{{.Label}}"{{if .Current}} aria-current="page"{{end}}>{{template "icon" .Icon}}</a>{{end}}{{end}}
 {{define "post"}}<form method="post" action="{{.Action}}" class="toolform">
   <input type="hidden" name="csrf_token" value="{{.CSRF}}">
   {{with .ReturnTo}}<input type="hidden" name="return_to" value="{{.}}">{{end}}
@@ -155,18 +155,18 @@
 <nav class="menu">
   <ul>
   {{if eq .Menu "system"}}
-    {{template "menuitem" (menuitem true "/admin/" "tenant" "Tenants" (eq .Section "tenants"))}}
-    {{template "menuitem" (menuitem true "/admin/audit" "audit" "Audit log" (eq .Section "audit"))}}
+    {{template "menuitem" (menuitem true "/admin/" "tenant" (t "Tenants") (eq .Section "tenants"))}}
+    {{template "menuitem" (menuitem true "/admin/audit" "audit" (t "Audit log") (eq .Section "audit"))}}
   {{else}}
     {{$t := .Can "tenant.manage"}}
-    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/users") "user" "Users" (eq .Section "users"))}}
-    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/groups") "group" "Groups" (eq .Section "groups"))}}
-    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/roles") "role" "Roles" (eq .Section "roles"))}}
-    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/bindings") "binding" "Role bindings" (eq .Section "bindings"))}}
-    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/classifications") "classification" "Classifications" (eq .Section "classifications"))}}
-    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/recent") "history" "Recent changes" (eq .Section "recent"))}}
-    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/audit") "audit" "Audit log" (eq .Section "audit"))}}
-    {{template "menuitem" (menuitem (.Can "space.manage") (print .TenantPath "/admin/spaces") "space" "Spaces" (eq .Section "spaces"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/users") "user" (t "Users") (eq .Section "users"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/groups") "group" (t "Groups") (eq .Section "groups"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/roles") "role" (t "Roles") (eq .Section "roles"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/bindings") "binding" (t "Role bindings") (eq .Section "bindings"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/classifications") "classification" (t "Classifications") (eq .Section "classifications"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/recent") "history" (t "Recent changes") (eq .Section "recent"))}}
+    {{template "menuitem" (menuitem $t (print .TenantPath "/admin/audit") "audit" (t "Audit log") (eq .Section "audit"))}}
+    {{template "menuitem" (menuitem (.Can "space.manage") (print .TenantPath "/admin/spaces") "space" (t "Spaces") (eq .Section "spaces"))}}
   {{end}}
   </ul>
 </nav>
@@ -174,7 +174,7 @@
 {{/* One item of the administration menu. The menu shows all items. An
    item for a page that the user does not have permission for is
    disabled: it has no link. The argument is a menuArgs. */}}
-{{define "menuitem"}}<li>{{if .Enabled}}<a href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{template "icon" .Icon}}{{.Label}}</a>{{else}}<span class="disabled" aria-disabled="true" title="{{.Label}} (not available)">{{template "icon" .Icon}}{{.Label}}</span>{{end}}</li>{{end}}
+{{define "menuitem"}}<li>{{if .Enabled}}<a href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{template "icon" .Icon}}{{.Label}}</a>{{else}}<span class="disabled" aria-disabled="true" title="{{t "%s (not available)" .Label}}">{{template "icon" .Icon}}{{.Label}}</span>{{end}}</li>{{end}}
 {{define "tree"}}
 <ul class="tree">
   {{range .Nodes}}

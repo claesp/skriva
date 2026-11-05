@@ -2,12 +2,12 @@
 
 {{/* The list of the users and the groups for a role binding. The argument
    has the fields Groups and Users. */}}
-{{define "subjectselect"}}<label>Give to
+{{define "subjectselect"}}<label>{{t "Give to"}}
     <select name="subject" required>
-      <optgroup label="Groups">
+      <optgroup label="{{t "Groups"}}">
         {{range .Groups}}<option value="group:{{.ID}}">{{.Name}} ({{source .Source}})</option>{{end}}
       </optgroup>
-      <optgroup label="Users">
+      <optgroup label="{{t "Users"}}">
         {{range .Users}}<option value="user:{{.ID}}">{{.Username}}</option>{{end}}
       </optgroup>
     </select>
@@ -17,17 +17,17 @@
    argument is a bindingTable. */}}
 {{define "bindingtable"}}
 <table>
-  <thead><tr><th>Role</th>{{if .ShowSubject}}<th>Given to</th>{{end}}{{if .ShowScope}}<th>Scope</th>{{end}}<th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>{{t "Role"}}</th>{{if .ShowSubject}}<th>{{t "Given to"}}</th>{{end}}{{if .ShowScope}}<th>{{t "Scope"}}</th>{{end}}<th class="actions"><span class="vh">{{t "Actions"}}</span></th></tr></thead>
   <tbody>
   {{range .Bindings}}
   <tr>
     <td>{{.RoleName}}</td>
-    {{if $.ShowSubject}}<td>{{if .GroupID}}Group <a href="{{$.Admin}}/groups/{{.GroupID}}">{{.GroupName}}</a> ({{source .GroupSource}}){{else}}User <a href="{{$.Admin}}/users/{{.UserID}}">{{.UserName}}</a>{{end}}</td>{{end}}
+    {{if $.ShowSubject}}<td>{{if .GroupID}}{{t "Group"}} <a href="{{$.Admin}}/groups/{{.GroupID}}">{{.GroupName}}</a> ({{source .GroupSource}}){{else}}{{t "User"}} <a href="{{$.Admin}}/users/{{.UserID}}">{{.UserName}}</a>{{end}}</td>{{end}}
     {{if $.ShowScope}}<td>{{template "scope" .}}</td>{{end}}
-    <td class="actions">{{template "post" (post (print $.Admin "/bindings/" .ID "/delete") "remove" "Remove" $.CSRF $.ReturnTo)}}</td>
+    <td class="actions">{{template "post" (post (print $.Admin "/bindings/" .ID "/delete") "remove" (t "Remove") $.CSRF $.ReturnTo)}}</td>
   </tr>
   {{else}}
-  <tr><td colspan="4">There are no role bindings.</td></tr>
+  <tr><td colspan="4">{{t "There are no role bindings."}}</td></tr>
   {{end}}
   </tbody>
 </table>
@@ -35,17 +35,17 @@
 
 {{/* The button at the bottom of a form. The current button in the
    toolbar goes back without a save. */}}
-{{define "savebutton"}}<div class="buttons"><button type="submit">Save</button></div>{{end}}
+{{define "savebutton"}}<div class="buttons"><button type="submit">{{t "Save"}}</button></div>{{end}}
 
 {{/* A toolbar above a table, for the actions of the table. The argument
    is a toolArgs. */}}
 {{/* The title of a page, with the buttons for the page at the right
    side. The argument is a headArgs. */}}
-{{define "pagehead"}}<div class="pagehead"><h1>{{.Title}}</h1>{{if .Tools}}<nav class="toolbar" aria-label="Actions"><span class="group">{{range .Tools}}{{template "tool" .}}{{end}}</span></nav>{{end}}</div>{{end}}
+{{define "pagehead"}}<div class="pagehead"><h1>{{.Title}}</h1>{{if .Tools}}<nav class="toolbar" aria-label="{{t "Actions"}}"><span class="group">{{range .Tools}}{{template "tool" .}}{{end}}</span></nav>{{end}}</div>{{end}}
 
 {{/* The title of a section, with the buttons for the section at the
    right side. The argument is a sectionArgs. */}}
-{{define "sectionhead"}}<div class="sectionhead"><h2{{with .ID}} id="{{.}}"{{end}}>{{.Title}}</h2>{{if .Tools}}<nav class="toolbar" aria-label="Actions: {{.Title}}"><span class="group">{{range .Tools}}{{template "tool" .}}{{end}}</span></nav>{{end}}</div>{{end}}
+{{define "sectionhead"}}<div class="sectionhead"><h2{{with .ID}} id="{{.}}"{{end}}>{{.Title}}</h2>{{if .Tools}}<nav class="toolbar" aria-label="{{t "Actions: %s" .Title}}"><span class="group">{{range .Tools}}{{template "tool" .}}{{end}}</span></nav>{{end}}</div>{{end}}
 
 {{/* The administration pages have the layout of the pages of a document:
    a bar with the path and the toolbar over the full width, the menu at
@@ -58,12 +58,12 @@
 {{define "userhead"}}
 {{$u := print .TenantPath "/admin/users/" .Data.User.ID}}
 <div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path"><a href="{{.TenantPath}}/admin/users">Users</a> /
+  <nav class="breadcrumbs" aria-label="{{t "Path"}}"><a href="{{.TenantPath}}/admin/users">{{t "Users"}}</a> /
     {{if .Data.Tab}}<a href="{{$u}}">{{.Data.User.Username}}</a> / {{.Data.Crumb}}{{else}}{{.Data.User.Username}}{{end}}</nav>
-  <nav class="toolbar" aria-label="Tools">
+  <nav class="toolbar" aria-label="{{t "Tools"}}">
     <span class="group">
-      {{template "tool" (ntool .Data.Tab "bindings" (print $u "/bindings") $u "binding" "Role bindings")}}
-      {{template "tool" (ntool .Data.Tab "permissions" (print $u "/permissions") $u "permissions" "Permissions")}}
+      {{template "tool" (ntool .Data.Tab "bindings" (print $u "/bindings") $u "binding" (t "Role bindings"))}}
+      {{template "tool" (ntool .Data.Tab "permissions" (print $u "/permissions") $u "permissions" (t "Permissions"))}}
     </span>
   </nav>
 </div>
@@ -75,14 +75,14 @@
 {{define "grouphead"}}
 {{$g := print .TenantPath "/admin/groups/" .Data.Group.ID}}
 <div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path"><a href="{{.TenantPath}}/admin/groups">Groups</a> /
+  <nav class="breadcrumbs" aria-label="{{t "Path"}}"><a href="{{.TenantPath}}/admin/groups">{{t "Groups"}}</a> /
     {{if .Data.Tab}}<a href="{{$g}}">{{.Data.Group.Name}}</a> / {{.Data.Crumb}}{{else}}{{.Data.Group.Name}}{{end}}</nav>
-  <nav class="toolbar" aria-label="Tools">
+  <nav class="toolbar" aria-label="{{t "Tools"}}">
     <span class="group">
-      {{template "tool" (ntool .Data.Tab "bindings" (print $g "/bindings") $g "binding" "Role bindings")}}
+      {{template "tool" (ntool .Data.Tab "bindings" (print $g "/bindings") $g "binding" (t "Role bindings"))}}
     </span>
     <span class="group">
-      {{template "tool" (when (eq .Data.Group.Source "local") (ntool .Data.Tab "delete" (print $g "/delete") $g "delete" "Delete"))}}
+      {{template "tool" (when (eq .Data.Group.Source "local") (ntool .Data.Tab "delete" (print $g "/delete") $g "delete" (t "Delete")))}}
     </span>
   </nav>
 </div>
@@ -94,16 +94,16 @@
 {{define "spacehead"}}
 {{$s := print .TenantPath "/admin/spaces/" .Data.Space.Slug}}
 <div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path"><a href="{{.TenantPath}}/admin/spaces">Spaces</a> /
+  <nav class="breadcrumbs" aria-label="{{t "Path"}}"><a href="{{.TenantPath}}/admin/spaces">{{t "Spaces"}}</a> /
     {{if .Data.Tab}}<a href="{{$s}}">{{.Data.Space.Name}}</a> / {{.Data.Crumb}}{{else}}{{.Data.Space.Name}}{{end}}</nav>
-  <nav class="toolbar" aria-label="Tools">
+  <nav class="toolbar" aria-label="{{t "Tools"}}">
     <span class="group">
-      {{template "tool" (when (.Can "tenant.manage") (ntool .Data.Tab "access" (print $s "/access") $s "access" "Access"))}}
-      {{template "tool" (tool (print .TenantPath "/" .Data.Space.Slug "/") "open" "Open the space")}}
-      {{template "tool" (tool (print .TenantPath "/" .Data.Space.Slug "/trash") "trash" "Trash")}}
+      {{template "tool" (when (.Can "tenant.manage") (ntool .Data.Tab "access" (print $s "/access") $s "access" (t "Access")))}}
+      {{template "tool" (tool (print .TenantPath "/" .Data.Space.Slug "/") "open" (t "Open the space"))}}
+      {{template "tool" (tool (print .TenantPath "/" .Data.Space.Slug "/trash") "trash" (t "Trash"))}}
     </span>
     <span class="group">
-      {{template "tool" (when (.Can "space.manage") (ntool .Data.Tab "delete" (print $s "/delete") $s "delete" "Delete"))}}
+      {{template "tool" (when (.Can "space.manage") (ntool .Data.Tab "delete" (print $s "/delete") $s "delete" (t "Delete")))}}
     </span>
   </nav>
 </div>
@@ -116,15 +116,15 @@
 {{define "tenanthead"}}
 {{$t := print "/admin/tenants/" .Data.Code}}
 <div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path"><a href="/admin/">Tenants</a> /
+  <nav class="breadcrumbs" aria-label="{{t "Path"}}"><a href="/admin/">{{t "Tenants"}}</a> /
     {{if .Data.Tab}}<a href="{{$t}}">{{.Data.Code}}</a> / {{.Data.Crumb}}{{else}}{{.Data.Code}}{{end}}</nav>
-  <nav class="toolbar" aria-label="Tools">
+  <nav class="toolbar" aria-label="{{t "Tools"}}">
     <span class="group">
-      {{template "tool" (ntool .Data.Tab "spaces" (print $t "/spaces") $t "space" "Spaces")}}
-      {{template "tool" (tool (print "/" .Data.Code "/") "open" "Open the tenant")}}
+      {{template "tool" (ntool .Data.Tab "spaces" (print $t "/spaces") $t "space" (t "Spaces"))}}
+      {{template "tool" (tool (print "/" .Data.Code "/") "open" (t "Open the tenant"))}}
     </span>
     <span class="group">
-      {{template "tool" (when (not .Data.IsDefault) (ntool .Data.Tab "delete" (print $t "/delete") $t "delete" "Delete"))}}
+      {{template "tool" (when (not .Data.IsDefault) (ntool .Data.Tab "delete" (print $t "/delete") $t "delete" (t "Delete")))}}
     </span>
   </nav>
 </div>
@@ -134,7 +134,7 @@
 {{/* The head of a list page. The argument is a headArgs. */}}
 {{define "listhead"}}
 <div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path">{{.Title}}</nav>
+  <nav class="breadcrumbs" aria-label="{{t "Path"}}">{{.Title}}</nav>
 </div>
 <div class="main reading">
 {{template "pagehead" .}}
@@ -146,10 +146,10 @@
    crumbArgs. */}}
 {{define "formhead"}}
 <div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path">
+  <nav class="breadcrumbs" aria-label="{{t "Path"}}">
     {{with .RootURL}}<a href="{{.}}">{{$.RootLabel}}</a> / {{end}}<a href="{{.ParentURL}}">{{.ParentLabel}}</a> / {{.Title}}</nav>
-  <nav class="toolbar" aria-label="Tools"><span class="group">
-    {{template "tool" (tab .ParentURL .Icon (print .Title " (close)") true)}}
+  <nav class="toolbar" aria-label="{{t "Tools"}}"><span class="group">
+    {{template "tool" (tab .ParentURL .Icon (t "%s (close)" .Title) true)}}
   </span></nav>
 </div>
 <div class="main reading">
@@ -159,12 +159,12 @@
 {{/* A page that asks the user to confirm a deletion. The argument is a
    confirmDelete. */}}
 {{define "confirmdelete"}}
-{{template "formhead" (crumb3 .RootURL .RootLabel .Cancel .Parent "Delete" "delete")}}
-<p>{{.Message}} You cannot undo this.</p>
+{{template "formhead" (crumb3 .RootURL .RootLabel .Cancel .Parent (t "Delete") "delete")}}
+<p>{{.Message}} {{t "You cannot undo this."}}</p>
 <form method="post" action="{{.Action}}" class="stack">
   <input type="hidden" name="csrf_token" value="{{.CSRF}}">
-  {{with .Code}}<label><span>Type <code>{{.}}</code> to confirm</span> <input name="confirm" required autocomplete="off"></label>{{end}}
-  <div class="buttons"><button type="submit" class="danger">Delete</button></div>
+  {{with .Code}}<label><span>{{thtml "Type <code>%s</code> to confirm" .}}</span> <input name="confirm" required autocomplete="off"></label>{{end}}
+  <div class="buttons"><button type="submit" class="danger">{{t "Delete"}}</button></div>
 </form>
 {{end}}
 
@@ -172,13 +172,13 @@
    folder has no classification, thus its cell is empty. */}}
 {{define "itemtable"}}
 <table class="items">
-  <thead><tr><th>Name</th><th class="optional">Type</th><th>Classification</th><th class="date">Changed</th><th class="optional">Changed by</th></tr></thead>
+  <thead><tr><th>{{t "Name"}}</th><th class="optional">{{t "Type"}}</th><th>{{t "Classification"}}</th><th class="date">{{t "Changed"}}</th><th class="optional">{{t "Changed by"}}</th></tr></thead>
   <tbody>
   {{range .Nodes}}
   {{$d := index $.Details .ID}}
   <tr>
     <td><a href="{{docpath $.Base .PublicID .Slug}}">{{template "icon" .Kind}}{{.Title}}</a></td>
-    <td class="optional">{{if .IsFolder}}Folder{{else}}Document{{end}}</td>
+    <td class="optional">{{if .IsFolder}}{{t "Folder"}}{{else}}{{t "Document"}}{{end}}</td>
     <td>{{$d.Classification}}</td>
     <td class="date">{{date .UpdatedAt}}</td>
     <td class="optional">{{$d.UpdatedBy}}</td>
@@ -194,20 +194,20 @@
 {{define "nodehead"}}
 <div class="with-sidebar">
 <div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path">
+  <nav class="breadcrumbs" aria-label="{{t "Path"}}">
     <a href="{{.SpacePath}}/">{{.Space.Name}}</a>
     {{range .Data.Ancestors}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{end}}
     {{if .Data.Tab}}{{with .Data.Node}} / <a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a>{{end}}{{end}}
     {{with .Data.Crumb}} / {{.}}{{end}}
   </nav>
-  <nav class="toolbar" aria-label="Tools">
+  <nav class="toolbar" aria-label="{{t "Tools"}}">
     {{if or .Data.Node .Data.NewKind}}{{template "nodetools" .}}{{end}}
   </nav>
 </div>
 {{/* The information classification of a document, below the toolbar.
    The bar covers the width of the main column. */}}
-{{with .Data.Classification}}<div class="classbar" role="note">This document is classified as <strong data-classbar-level>{{upper .}}</strong></div>{{end}}
-<aside class="sidebar" aria-label="Contents">
+{{with .Data.Classification}}<div class="classbar" role="note">{{thtml "This document is classified as <strong data-classbar-level>%s</strong>" (upper .)}}</div>{{end}}
+<aside class="sidebar" aria-label="{{t "Contents"}}">
   {{template "tree" (tree .SpacePath .Data.Tree)}}
 </aside>
 <div class="main reading">
@@ -220,18 +220,18 @@
 {{$v := .V}}
 <div class="with-sidebar">
 <div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path"><a href="{{$v.TenantPath}}/">Spaces</a> /
-    {{if .Tab}}<a href="{{$v.SpacePath}}/">{{$v.Space.Name}}</a> / Trash{{else}}{{$v.Space.Name}}{{end}}</nav>
-  <nav class="toolbar" aria-label="Tools">
+  <nav class="breadcrumbs" aria-label="{{t "Path"}}"><a href="{{$v.TenantPath}}/">{{t "Spaces"}}</a> /
+    {{if .Tab}}<a href="{{$v.SpacePath}}/">{{$v.Space.Name}}</a> / {{t "Trash"}}{{else}}{{$v.Space.Name}}{{end}}</nav>
+  <nav class="toolbar" aria-label="{{t "Tools"}}">
     <span class="group">
-      {{template "tool" (when $v.Data.Trash (ntool .Tab "trash" (print $v.SpacePath "/trash") (print $v.SpacePath "/") "trash" "Trash"))}}
+      {{template "tool" (when $v.Data.Trash (ntool .Tab "trash" (print $v.SpacePath "/trash") (print $v.SpacePath "/") "trash" (t "Trash")))}}
     </span>
     <span class="group">
-      {{template "tool" (when ($v.Can "tenant.manage") (tool (print $v.TenantPath "/admin/spaces/" $v.Space.Slug "/access") "access" "Access"))}}
+      {{template "tool" (when ($v.Can "tenant.manage") (tool (print $v.TenantPath "/admin/spaces/" $v.Space.Slug "/access") "access" (t "Access")))}}
     </span>
   </nav>
 </div>
-<aside class="sidebar" aria-label="Contents">
+<aside class="sidebar" aria-label="{{t "Contents"}}">
   {{template "tree" (tree $v.SpacePath $v.Data.Tree)}}
 </aside>
 <div class="main reading">
@@ -241,9 +241,9 @@
    compareForm. The form uses GET, thus it needs no script. */}}
 {{define "compareform"}}{{if gt (len .Versions) 1}}
 <form class="compareform" method="get" action="{{.Action}}">
-  <label>From version <select name="from">{{range .Versions}}<option value="{{.Version}}"{{if eq .Version $.From}} selected{{end}}>{{.Version}}</option>{{end}}</select></label>
-  <label>to version <select name="to">{{range .Versions}}<option value="{{.Version}}"{{if eq .Version $.To}} selected{{end}}>{{.Version}}</option>{{end}}</select></label>
-  <button type="submit" class="secondary">Compare</button>
+  <label>{{t "From version"}} <select name="from">{{range .Versions}}<option value="{{.Version}}"{{if eq .Version $.From}} selected{{end}}>{{.Version}}</option>{{end}}</select></label>
+  <label>{{t "to version"}} <select name="to">{{range .Versions}}<option value="{{.Version}}"{{if eq .Version $.To}} selected{{end}}>{{.Version}}</option>{{end}}</select></label>
+  <button type="submit" class="secondary">{{t "Compare"}}</button>
 </form>
 {{end}}{{end}}
 
@@ -255,9 +255,9 @@
 {{define "plainhead"}}
 <div class="with-sidebar">
 <div class="topbar wide">
-  <nav class="breadcrumbs" aria-label="Path">{{.}}</nav>
+  <nav class="breadcrumbs" aria-label="{{t "Path"}}">{{.}}</nav>
 </div>
-<aside class="sidebar" aria-label="Contents"></aside>
+<aside class="sidebar" aria-label="{{t "Contents"}}"></aside>
 <div class="main reading">
 {{end}}
 
@@ -265,7 +265,7 @@
    of the toolbar, in its own group. The current button of the form goes
    back without a save. The form attribute connects the button to the
    form. The argument is the ID of the form. */}}
-{{define "savebtn"}}<button type="submit" form="{{.}}" class="save">Save</button>{{end}}
+{{define "savebtn"}}<button type="submit" form="{{.}}" class="save">{{t "Save"}}</button>{{end}}
 
 {{define "nodefoot"}}
 </div>
@@ -288,24 +288,24 @@
 {{$s := .SpacePath}}
 {{$id := ""}}{{with $n}}{{$id = .PublicID}}{{end}}
 {{$folder := or (and $n $n.IsFolder) (eq .Data.NewKind "folder")}}
-{{$editLabel := or (and $folder "Rename") "Edit"}}
+{{$editLabel := or (and $folder (t "Rename")) (t "Edit")}}
 {{with .Data.SaveForm}}<span class="group">{{template "savebtn" .}}</span>{{end}}
 <span class="group">
-  {{if not $n}}{{template "tool" (tab $c "edit" (print .Data.Crumb " (close)") true)}}
+  {{if not $n}}{{template "tool" (tab $c "edit" (t "%s (close)" .Data.Crumb) true)}}
   {{else if .Can "doc.edit"}}{{template "tool" (ntool $t "edit" (print $s "/edit/" $id) $c "edit" $editLabel)}}
   {{else}}{{template "tool" (dtool "edit" $editLabel)}}{{end}}
 </span>
 <span class="group">
-  {{if and $n (not $folder)}}{{template "tool" (ntool $t "history" (print $s "/history/" $id) $c "history" "History")}}{{else}}{{template "tool" (dtool "history" "History")}}{{end}}
-  {{if and $n (not $folder)}}{{template "tool" (ntool $t "export" (print $s "/export/" $id) $c "export" "Export")}}{{else}}{{template "tool" (dtool "export" "Export")}}{{end}}
+  {{if and $n (not $folder)}}{{template "tool" (ntool $t "history" (print $s "/history/" $id) $c "history" (t "History"))}}{{else}}{{template "tool" (dtool "history" (t "History"))}}{{end}}
+  {{if and $n (not $folder)}}{{template "tool" (ntool $t "export" (print $s "/export/" $id) $c "export" (t "Export"))}}{{else}}{{template "tool" (dtool "export" (t "Export"))}}{{end}}
 </span>
 <span class="group">
-  {{if and $n (.Can "doc.edit")}}{{template "tool" (ntool $t "move" (print $s "/move/" $id) $c "move" "Move")}}{{else}}{{template "tool" (dtool "move" "Move")}}{{end}}
-  {{if and $n (.Can "doc.delete")}}{{template "tool" (ntool $t "delete" (print $s "/delete/" $id) $c "delete" "Delete")}}{{else}}{{template "tool" (dtool "delete" "Delete")}}{{end}}
+  {{if and $n (.Can "doc.edit")}}{{template "tool" (ntool $t "move" (print $s "/move/" $id) $c "move" (t "Move"))}}{{else}}{{template "tool" (dtool "move" (t "Move"))}}{{end}}
+  {{if and $n (.Can "doc.delete")}}{{template "tool" (ntool $t "delete" (print $s "/delete/" $id) $c "delete" (t "Delete"))}}{{else}}{{template "tool" (dtool "delete" (t "Delete"))}}{{end}}
 </span>
 <span class="group">
-  {{if and $n $folder (.Can "space.manage")}}{{template "tool" (ntool $t "classification" (print $s "/classification/" $id) $c "classification" "Classification limits")}}{{else}}{{template "tool" (dtool "classification" "Classification limits")}}{{end}}
-  {{if and $n (.Can "tenant.manage")}}{{template "tool" (ntool $t "access" (print $s "/access/" $id) $c "access" "Access")}}{{else}}{{template "tool" (dtool "access" "Access")}}{{end}}
+  {{if and $n $folder (.Can "space.manage")}}{{template "tool" (ntool $t "classification" (print $s "/classification/" $id) $c "classification" (t "Classification limits"))}}{{else}}{{template "tool" (dtool "classification" (t "Classification limits"))}}{{end}}
+  {{if and $n (.Can "tenant.manage")}}{{template "tool" (ntool $t "access" (print $s "/access/" $id) $c "access" (t "Access"))}}{{else}}{{template "tool" (dtool "access" (t "Access"))}}{{end}}
 </span>
 {{end}}
 
@@ -316,9 +316,9 @@
 <table class="settings">
   <tbody>
     <tr>
-      <th scope="row">Default role</th>
+      <th scope="row">{{t "Default role"}}</th>
       <td>{{.Text}}</td>
-      <td class="actions">{{template "tool" (tool .EditURL "edit" "Change the default role")}}</td>
+      <td class="actions">{{template "tool" (tool .EditURL "edit" (t "Change the default role"))}}</td>
     </tr>
   </tbody>
 </table>

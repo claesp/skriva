@@ -3,37 +3,37 @@
 {{with .Data}}
 {{if .Confirm}}
 {{with .Confirm}}
-<div class="pagehead"><h1>Delete {{.Kind}} "{{.Title}}" permanently</h1></div>
-<p>Do you want to delete the {{.Kind}} and all its history permanently?
-{{if .Descendants}}This also deletes the <strong>{{.Descendants}}</strong> items in it.{{end}}
-You cannot undo this.</p>
+<div class="pagehead"><h1>{{if .IsFolder}}{{thtml "Delete folder \"%s\" permanently" .Title}}{{else}}{{thtml "Delete document \"%s\" permanently" .Title}}{{end}}</h1></div>
+<p>{{if .IsFolder}}{{t "Do you want to delete the folder and all its history permanently?"}}{{else}}{{t "Do you want to delete the document and all its history permanently?"}}{{end}}
+{{if .Descendants}}{{thtml "This also deletes the <strong>%d</strong> items in it." .Descendants}}{{end}}
+{{t "You cannot undo this."}}</p>
 <form action="{{$.SpacePath}}/trash/{{.PublicID}}/delete" method="post">
   {{template "csrf" $.CSRF}}
-  <div class="buttons"><button type="submit" class="danger">Delete permanently</button> <a href="{{$.SpacePath}}/trash">Cancel</a></div>
+  <div class="buttons"><button type="submit" class="danger">{{t "Delete permanently"}}</button> <a href="{{$.SpacePath}}/trash">{{t "Cancel"}}</a></div>
 </form>
 {{end}}
 {{else}}
-<div class="pagehead"><h1>Trash</h1></div>
-<p>Deleted folders and documents stay in the trash for {{.Days}} days. Then the wiki deletes them permanently. A restored item goes back to its old place.</p>
+<div class="pagehead"><h1>{{t "Trash"}}</h1></div>
+<p>{{t "Deleted folders and documents stay in the trash for %d days. Then the wiki deletes them permanently. A restored item goes back to its old place." .Days}}</p>
 {{if .Items}}
 <table class="items">
-  <thead><tr><th>Name</th><th>Old place</th><th class="date">Deleted</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>{{t "Name"}}</th><th>{{t "Old place"}}</th><th class="date">{{t "Deleted"}}</th><th class="actions"><span class="vh">{{t "Actions"}}</span></th></tr></thead>
   <tbody>
   {{range .Items}}
   <tr>
-    <td>{{template "icon" .Kind}}{{.Title}}{{with .Descendants}} <small>and {{.}} {{if eq . 1}}item{{else}}items{{end}} in it</small>{{end}}</td>
-    <td>{{if .ParentInTrash}}In the trash: {{.ParentTitle}}{{else}}{{or .ParentTitle "Top level"}}{{end}}</td>
-    <td class="date">{{date .DeletedAt}}{{with .DeletedBy}}<br><small>by {{.}}</small>{{end}}</td>
+    <td>{{template "icon" .Kind}}{{.Title}}{{with .Descendants}} <small>{{tn . "and %d item in it" "and %d items in it"}}</small>{{end}}</td>
+    <td>{{if .ParentInTrash}}{{t "In the trash: %s" .ParentTitle}}{{else}}{{or .ParentTitle (t "Top level")}}{{end}}</td>
+    <td class="date">{{date .DeletedAt}}{{with .DeletedBy}}<br><small>{{t "by %s" .}}</small>{{end}}</td>
     <td class="actions">
-      {{if .ParentInTrash}}{{template "tool" (dtool "restore" "Restore (restore the folder first)")}}{{else}}{{template "post" (post (print $.SpacePath "/trash/" .PublicID "/restore") "restore" "Restore" $.CSRF "")}}{{end}}
-      {{template "tool" (when .CanPurge (tool (print $.SpacePath "/trash/" .PublicID "/delete") "delete" "Delete permanently"))}}
+      {{if .ParentInTrash}}{{template "tool" (dtool "restore" (t "Restore (restore the folder first)"))}}{{else}}{{template "post" (post (print $.SpacePath "/trash/" .PublicID "/restore") "restore" (t "Restore") $.CSRF "")}}{{end}}
+      {{template "tool" (when .CanPurge (tool (print $.SpacePath "/trash/" .PublicID "/delete") "delete" (t "Delete permanently")))}}
     </td>
   </tr>
   {{end}}
   </tbody>
 </table>
 {{else}}
-<p>The trash is empty.</p>
+<p>{{t "The trash is empty."}}</p>
 {{end}}
 {{end}}
 {{end}}

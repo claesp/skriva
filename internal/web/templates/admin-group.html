@@ -6,22 +6,22 @@
 <div class="pagehead"><h1>{{.Group.Name}}</h1></div>
 <table class="settings">
   <tbody>
-    <tr><th scope="row">Source</th><td>{{source .Group.Source}}.{{if not $local}} The identity provider controls the members.{{end}}</td></tr>
-    <tr><th scope="row">Description</th><td>{{.Group.Description}}</td></tr>
+    <tr><th scope="row">{{t "Source"}}</th><td>{{source .Group.Source}}.{{if not $local}} {{t "The identity provider controls the members."}}{{end}}</td></tr>
+    <tr><th scope="row">{{t "Description"}}</th><td>{{.Group.Description}}</td></tr>
   </tbody>
 </table>
-{{template "sectionhead" (section "Members" "" (when $local (tool (print $g "/members/new") "new-user" "New member")))}}
+{{template "sectionhead" (section (t "Members") "" (when $local (tool (print $g "/members/new") "new-user" (t "New member"))))}}
 <table>
-  <thead><tr><th>User name</th><th>Name</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>{{t "User name"}}</th><th>{{t "Name"}}</th><th class="actions"><span class="vh">{{t "Actions"}}</span></th></tr></thead>
   <tbody>
   {{range .Members}}
   <tr>
     <td><a href="{{$.TenantPath}}/admin/users/{{.ID}}">{{.Username}}</a></td>
     <td>{{.DisplayName}}</td>
-    <td class="actions">{{if $local}}{{template "post" (post (print $g "/members/" .ID "/remove") "remove" "Remove" $.CSRF "")}}{{else}}{{template "tool" (dtool "remove" "Remove")}}{{end}}</td>
+    <td class="actions">{{if $local}}{{template "post" (post (print $g "/members/" .ID "/remove") "remove" (t "Remove") $.CSRF "")}}{{else}}{{template "tool" (dtool "remove" (t "Remove"))}}{{end}}</td>
   </tr>
   {{else}}
-  <tr><td colspan="3">The group has no members.</td></tr>
+  <tr><td colspan="3">{{t "The group has no members."}}</td></tr>
   {{end}}
   </tbody>
 </table>

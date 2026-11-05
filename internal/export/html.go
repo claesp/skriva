@@ -37,7 +37,7 @@ var embeddedTypes = map[string]bool{
 // permits no scripts and no external styles. Images can be data URIs or
 // come from other sites.
 var htmlPage = template.Must(template.New("page").Parse(`<!doctype html>
-<html lang="en">
+<html{{with .Lang}} lang="{{.}}"{{end}}>
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https: http:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
@@ -75,6 +75,7 @@ func writeHTML(_ context.Context, w io.Writer, d *Document) error {
 		}
 	}
 	return htmlPage.Execute(w, struct {
+		Lang           string
 		Title          string
 		Classification string
 		Version        int
@@ -83,7 +84,7 @@ func writeHTML(_ context.Context, w io.Writer, d *Document) error {
 		Style          template.CSS
 		Body           template.HTML
 	}{
-		d.Title, d.Classification, d.Version,
+		d.Lang, d.Title, d.Classification, d.Version,
 		d.UpdatedAt.UTC().Format(time.RFC3339), d.URL, template.CSS(htmlStyle),
 		body.HTMLWith(d.Links, doc.HTMLOptions{DataImages: true, Diagram: embedDiagrams(d.Diagram)}),
 	})

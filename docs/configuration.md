@@ -34,6 +34,7 @@ missing or not valid.
 | `SKRIVA_MMDR`                    | `/mmdr` in the image    | The path of the [mmdr](https://github.com/1jehuang/mermaid-rs-renderer) program for Mermaid diagrams. If it is set, the program must exist, or the server does not start. If it is not set, the server finds `mmdr` in the `PATH`. Without the program, a diagram is a code block. |
 | `SKRIVA_TYPST_MEMORY`            | `1024`                  | The largest data memory of one Typst process, in MiB (16 to 65536). |
 | `SKRIVA_MMDR_MEMORY`             | `256`                   | The largest data memory of one mmdr process, in MiB (16 to 65536). |
+| `SKRIVA_LANGUAGE`                | `en`                    | The default language of the user interface: `en` (English) or `sv` (Swedish). A tenant can set a different language, and each user can select a language in the profile. A new tenant also gets this language as its content language. See [Languages](administration.md#languages). |
 
 ## The system identity provider
 

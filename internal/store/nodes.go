@@ -361,8 +361,9 @@ type sealedContent struct {
 }
 
 // sealContent encrypts the title and the content of version v of a node
-// and makes the search index from the title and the plain text.
-func (s *Store) sealContent(ctx context.Context, spaceID int64, publicID string, v int, title string, c Content) (*sealedContent, error) {
+// and makes the search index from the title and the plain text. q is the
+// transaction of the caller, or the pool.
+func (s *Store) sealContent(ctx context.Context, q querier, spaceID int64, publicID string, v int, title string, c Content) (*sealedContent, error) {
 	if !validTitle(title) {
 		return nil, ErrInvalid
 	}
@@ -371,6 +372,10 @@ func (s *Store) sealContent(ctx context.Context, spaceID int64, publicID string,
 		return nil, err
 	}
 	tk, err := s.tenantKeys(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	lang, err := contentLanguage(ctx, q, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +388,7 @@ func (s *Store) sealContent(ctx context.Context, spaceID int64, publicID string,
 		plainText:     seal(plainTextPlace(spaceID, publicID), c.PlainText),
 		revision:      seal(revisionPlace(spaceID, publicID, v), c.Body),
 		version:       tk.current,
-		index:         makeSearchIndex(tk.search, title, c.PlainText),
+		index:         makeSearchIndex(tk.search, lang, title, c.PlainText),
 		slugToken:     slugToken(tk.search, slug.Make(title)),
 	}
 	for _, l := range c.WikiLinks {
@@ -491,7 +496,7 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 		nn.Content = Content{Body: emptyBody}
 	}
 	publicID := NewPublicID()
-	sealed, err := s.sealContent(ctx, spaceID, publicID, 1, nn.Title, nn.Content)
+	sealed, err := s.sealContent(ctx, s.pool, spaceID, publicID, 1, nn.Title, nn.Content)
 	if err != nil {
 		return "", err
 	}
@@ -518,13 +523,13 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 		// path of its parent.
 		err = tx.QueryRow(ctx, `
 			INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug_token, body, plain_text, key_version,
-			                   search_tokens, title_tokens, prefix_tokens, stem_tokens, search_version, version,
+			                   search_tokens, title_tokens, prefix_tokens, stem_tokens, stem_language, search_version, version,
 			                   created_by, updated_by, created_at, updated_at, access_path_id, classification_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $16, $18, $17, 1, $12, $12, $13, $13, $14, $15)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $16, $18, $19, $17, 1, $12, $12, $13, $13, $14, $15)
 			RETURNING id`,
 			publicID, spaceID, parentID, nn.Kind, sealed.title, sealed.slugToken, sealed.body, sealed.plainText,
 			sealed.version, sealed.index.tokens, sealed.index.titleTokens, nullID(nn.AuthorID), now, pathID, classID,
-			sealed.index.prefixTokens, searchIndexVersion, sealed.index.stemTokens).Scan(&id)
+			sealed.index.prefixTokens, searchIndexVersion, sealed.index.stemTokens, sealed.index.lang).Scan(&id)
 		if err != nil {
 			return err
 		}
@@ -584,7 +589,7 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 		}
 		// The new version is BaseVersion+1: the update applies only to
 		// that version.
-		sealed, err := s.sealContent(ctx, spaceID, publicID, u.BaseVersion+1, u.Title, u.Content)
+		sealed, err := s.sealContent(ctx, tx, spaceID, publicID, u.BaseVersion+1, u.Title, u.Content)
 		if err != nil {
 			return err
 		}
@@ -595,7 +600,7 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 		err = tx.QueryRow(ctx, `
 			UPDATE nodes n SET title = $4, slug_token = $5, body = $6, plain_text = $7, key_version = $11,
 			                 search_tokens = $12, title_tokens = $13, prefix_tokens = $14, search_version = $15,
-			                 stem_tokens = $16,
+			                 stem_tokens = $16, stem_language = $17,
 			                 classification_id = CASE WHEN kind = 'folder' THEN NULL
 			                                          ELSE COALESCE($10, classification_id) END,
 			                 version = version + 1, updated_by = $8, updated_at = $9
@@ -604,7 +609,7 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 			          COALESCE((SELECT name FROM classifications WHERE id = n.classification_id), '')`,
 			spaceID, publicID, u.BaseVersion, sealed.title, sealed.slugToken, sealed.body, sealed.plainText,
 			nullID(u.AuthorID), now, newClass, sealed.version, sealed.index.tokens, sealed.index.titleTokens,
-			sealed.index.prefixTokens, searchIndexVersion, sealed.index.stemTokens,
+			sealed.index.prefixTokens, searchIndexVersion, sealed.index.stemTokens, sealed.index.lang,
 		).Scan(&id, &version, &className)
 		if errors.Is(err, pgx.ErrNoRows) {
 			var exists bool
@@ -1060,7 +1065,11 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 	if err != nil {
 		return nil, err
 	}
-	qt := makeQueryTokens(tk.search, include, exclude)
+	lang, err := contentLanguage(ctx, s.pool, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	qt := makeQueryTokens(tk.search, lang, include, exclude)
 	args := []any{tenantID, spaceIDs, qt.short, qt.exclude, qt.exact, qt.stems, maxSearchScan}
 	// Each long word has its own condition: a word that starts with it,
 	// or a word with the same stem. The SQL text contains only
@@ -1147,7 +1156,7 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 		if err != nil {
 			return nil, err
 		}
-		r.Snippet = snippet(string(plain), include)
+		r.Snippet = snippet(string(plain), include, lang)
 	}
 	return out, nil
 }

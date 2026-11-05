@@ -1,7 +1,7 @@
 {{define "content"}}
 {{template "nodehead" .}}
 {{with .Data}}
-<h1 class="vh">{{if .IsNew}}New {{.Kind}}{{else if .IsFolder}}Rename folder{{else}}Edit document{{end}}</h1>
+<h1 class="vh">{{if .IsNew}}{{if .IsFolder}}{{t "New folder"}}{{else}}{{t "New document"}}{{end}}{{else if .IsFolder}}{{t "Rename folder"}}{{else}}{{t "Edit document"}}{{end}}</h1>
 {{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
 <form id="nodeform" action="{{.Action}}" method="post" class="stack editor">
   {{template "csrf" $.CSRF}}
@@ -11,18 +11,18 @@
   <input type="hidden" name="kind" value="{{.Kind}}">
   <input type="hidden" name="parent" value="{{.ParentID}}">
   {{end}}
-  <label class="title"><span class="vh">Title</span>
-    <input name="title" value="{{.Title}}" required maxlength="200" placeholder="Title" autofocus></label>
+  <label class="title"><span class="vh">{{t "Title"}}</span>
+    <input name="title" value="{{.Title}}" required maxlength="200" placeholder="{{t "Title"}}" autofocus></label>
   {{if not .IsFolder}}
   <input type="hidden" name="body" value="{{.Body}}" data-editor-body>
-  <div class="wysiwyg" data-upload="{{.UploadURL}}" data-links="{{$.SpacePath}}/link-targets" data-csrf="{{$.CSRF}}">
+  <div class="wysiwyg" data-upload="{{.UploadURL}}" data-links="{{$.SpacePath}}/link-targets" data-csrf="{{$.CSRF}}" data-i18n="{{editortexts}}">
     {{template "editortoolbar" .}}
     <div class="wysiwyg-text prose" data-editor-text></div>
     <p class="editor-status" role="status" data-editor-status></p>
-    <noscript><p class="error">The editor needs JavaScript. Without JavaScript, you can change only the title.</p></noscript>
+    <noscript><p class="error">{{t "The editor needs JavaScript. Without JavaScript, you can change only the title."}}</p></noscript>
   </div>
   {{end}}
-  <label>Comment <input name="comment" value="{{.Comment}}" maxlength="500"></label>
+  <label>{{t "Comment"}} <input name="comment" value="{{.Comment}}" maxlength="500"></label>
 </form>
 {{if not .IsFolder}}<script src="{{.EditorURL}}" defer></script>{{end}}
 {{end}}
@@ -36,79 +36,79 @@
    command. A hidden field also sends its value, thus without the script
    the document keeps its classification. */}}
 {{define "editortoolbar"}}
-<div class="editor-toolbar" role="toolbar" aria-label="Format" hidden data-editor-toolbar>
+<div class="editor-toolbar" role="toolbar" aria-label="{{t "Format"}}" hidden data-editor-toolbar>
   <span class="group">
-    {{template "ebtn" (ebtn "undo" "undo" "Undo (Ctrl+Z)")}}
-    {{template "ebtn" (ebtn "redo" "redo" "Redo (Ctrl+Shift+Z)")}}
+    {{template "ebtn" (ebtn "undo" "undo" (t "Undo (Ctrl+Z)"))}}
+    {{template "ebtn" (ebtn "redo" "redo" (t "Redo (Ctrl+Shift+Z)"))}}
   </span>
   <span class="group">
-    <label class="vh" for="editor-block">Type of text</label>
+    <label class="vh" for="editor-block">{{t "Type of text"}}</label>
     <select id="editor-block" data-command="block">
-      <option value="paragraph">Text</option>
-      <option value="1">Heading 1</option>
-      <option value="2">Heading 2</option>
-      <option value="3">Heading 3</option>
-      <option value="4">Heading 4</option>
-      <option value="5">Heading 5</option>
-      <option value="6">Heading 6</option>
-      <option value="7">Heading 7</option>
-      <option value="8">Heading 8</option>
+      <option value="paragraph">{{t "Text"}}</option>
+      <option value="1">{{t "Heading %d" 1}}</option>
+      <option value="2">{{t "Heading %d" 2}}</option>
+      <option value="3">{{t "Heading %d" 3}}</option>
+      <option value="4">{{t "Heading %d" 4}}</option>
+      <option value="5">{{t "Heading %d" 5}}</option>
+      <option value="6">{{t "Heading %d" 6}}</option>
+      <option value="7">{{t "Heading %d" 7}}</option>
+      <option value="8">{{t "Heading %d" 8}}</option>
     </select>
   </span>
   <span class="group">
-    {{template "ebtn" (ebtn "bold" "bold" "Bold (Ctrl+B)")}}
-    {{template "ebtn" (ebtn "italic" "italic" "Italic (Ctrl+I)")}}
-    {{template "ebtn" (ebtn "underline" "underline" "Underline (Ctrl+U)")}}
-    {{template "ebtn" (ebtn "strike" "strike" "Strikethrough")}}
-    {{template "ebtn" (ebtn "code" "code" "Code")}}
+    {{template "ebtn" (ebtn "bold" "bold" (t "Bold (Ctrl+B)"))}}
+    {{template "ebtn" (ebtn "italic" "italic" (t "Italic (Ctrl+I)"))}}
+    {{template "ebtn" (ebtn "underline" "underline" (t "Underline (Ctrl+U)"))}}
+    {{template "ebtn" (ebtn "strike" "strike" (t "Strikethrough"))}}
+    {{template "ebtn" (ebtn "code" "code" (t "Code"))}}
   </span>
   <span class="group">
-    {{template "ebtn" (ebtn "alignLeft" "align-left" "Align left")}}
-    {{template "ebtn" (ebtn "alignCenter" "align-center" "Align center")}}
-    {{template "ebtn" (ebtn "alignRight" "align-right" "Align right")}}
+    {{template "ebtn" (ebtn "alignLeft" "align-left" (t "Align left"))}}
+    {{template "ebtn" (ebtn "alignCenter" "align-center" (t "Align center"))}}
+    {{template "ebtn" (ebtn "alignRight" "align-right" (t "Align right"))}}
   </span>
   <span class="group">
-    {{template "ebtn" (ebtn "bulletList" "list-bullet" "Bulleted list")}}
-    {{template "ebtn" (ebtn "orderedList" "list-number" "Numbered list")}}
-    {{template "ebtn" (ebtn "taskList" "list-task" "Task list")}}
-    {{template "ebtn" (ebtn "blockquote" "quote" "Quote")}}
-    {{template "ebtn" (ebtn "codeBlock" "code-block" "Code block")}}
-    {{template "ebtn" (ebtn "horizontalRule" "rule" "Horizontal line")}}
+    {{template "ebtn" (ebtn "bulletList" "list-bullet" (t "Bulleted list"))}}
+    {{template "ebtn" (ebtn "orderedList" "list-number" (t "Numbered list"))}}
+    {{template "ebtn" (ebtn "taskList" "list-task" (t "Task list"))}}
+    {{template "ebtn" (ebtn "blockquote" "quote" (t "Quote"))}}
+    {{template "ebtn" (ebtn "codeBlock" "code-block" (t "Code block"))}}
+    {{template "ebtn" (ebtn "horizontalRule" "rule" (t "Horizontal line"))}}
   </span>
   <span class="group">
-    {{template "ebtn" (ebtn "link" "link" "Link (Ctrl+K)")}}
-    {{template "ebtn" (ebtn "image" "image" "Image")}}
-    {{template "ebtn" (ebtn "table" "table" "Table")}}
-    {{template "ebtn" (ebtn "diagram" "diagram" "Mermaid diagram")}}
+    {{template "ebtn" (ebtn "link" "link" (t "Link (Ctrl+K)"))}}
+    {{template "ebtn" (ebtn "image" "image" (t "Image"))}}
+    {{template "ebtn" (ebtn "table" "table" (t "Table"))}}
+    {{template "ebtn" (ebtn "diagram" "diagram" (t "Mermaid diagram"))}}
   </span>
   <span class="group">
-    <label class="vh" for="editor-classification">Classification</label>
-    <select id="editor-classification" name="classification" title="Classification">
+    <label class="vh" for="editor-classification">{{t "Classification"}}</label>
+    <select id="editor-classification" name="classification" title="{{t "Classification"}}">
       {{range .Classifications}}<option value="{{.ID}}"{{if eq .ID $.ClassificationID}} selected{{end}}>{{.Name}}</option>{{end}}
     </select>
   </span>
   <span class="group" data-editor-group="table" hidden>
-    {{template "ebtn" (ebtn "addRow" "row-add" "Add row")}}
-    {{template "ebtn" (ebtn "deleteRow" "row-remove" "Remove row")}}
-    {{template "ebtn" (ebtn "addColumn" "col-add" "Add column")}}
-    {{template "ebtn" (ebtn "deleteColumn" "col-remove" "Remove column")}}
-    {{template "ebtn" (ebtn "mergeCells" "merge" "Merge or split cells")}}
-    {{template "ebtn" (ebtn "headerRow" "header-row" "Header row")}}
-    {{template "ebtn" (ebtn "deleteTable" "table-remove" "Remove table")}}
+    {{template "ebtn" (ebtn "addRow" "row-add" (t "Add row"))}}
+    {{template "ebtn" (ebtn "deleteRow" "row-remove" (t "Remove row"))}}
+    {{template "ebtn" (ebtn "addColumn" "col-add" (t "Add column"))}}
+    {{template "ebtn" (ebtn "deleteColumn" "col-remove" (t "Remove column"))}}
+    {{template "ebtn" (ebtn "mergeCells" "merge" (t "Merge or split cells"))}}
+    {{template "ebtn" (ebtn "headerRow" "header-row" (t "Header row"))}}
+    {{template "ebtn" (ebtn "deleteTable" "table-remove" (t "Remove table"))}}
   </span>
   <input type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,.svg" hidden data-editor-file>
 </div>
 <div class="editor-linkbar" hidden data-editor-linkbar>
   <div class="linkfield">
-    <label for="editor-href">Link address or title of a page</label>
-    <input id="editor-href" type="text" placeholder="Title of a page, https://… or wiki:Title" autocomplete="off"
+    <label for="editor-href">{{t "Link address or title of a page"}}</label>
+    <input id="editor-href" type="text" placeholder="{{t "Title of a page, https://… or wiki:Title"}}" autocomplete="off"
       role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="editor-link-list" data-editor-href>
-    <ul id="editor-link-list" class="linklist" role="listbox" aria-label="Pages" hidden data-editor-linklist></ul>
+    <ul id="editor-link-list" class="linklist" role="listbox" aria-label="{{t "Pages"}}" hidden data-editor-linklist></ul>
     <small class="linknote" data-editor-linknote></small>
   </div>
-  <button type="button" data-command="linkApply">Apply</button>
-  <button type="button" data-command="linkRemove">Remove link</button>
-  <button type="button" data-command="linkCancel">Cancel</button>
+  <button type="button" data-command="linkApply">{{t "Apply"}}</button>
+  <button type="button" data-command="linkRemove">{{t "Remove link"}}</button>
+  <button type="button" data-command="linkCancel">{{t "Cancel"}}</button>
 </div>
 {{end}}
 

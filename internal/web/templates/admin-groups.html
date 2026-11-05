@@ -1,13 +1,13 @@
 {{define "content"}}
-{{template "listhead" (head "Groups" (tool (print .TenantPath "/admin/groups/new") "new" "New local group"))}}
-<p>OIDC groups come from the identity provider. The application updates their members at each sign-in. You can change the members of local groups.</p>
+{{template "listhead" (head (t "Groups") (tool (print .TenantPath "/admin/groups/new") "new" (t "New local group")))}}
+<p>{{t "OIDC groups come from the identity provider. The application updates their members at each sign-in. You can change the members of local groups."}}</p>
 <table>
-  <thead><tr><th>Name</th><th>Source</th><th class="num">Members</th><th>Description</th></tr></thead>
+  <thead><tr><th>{{t "Name"}}</th><th>{{t "Source"}}</th><th class="num">{{t "Members"}}</th><th>{{t "Description"}}</th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr><td><a href="{{$.TenantPath}}/admin/groups/{{.ID}}">{{.Name}}</a></td><td>{{source .Source}}</td><td class="num">{{.Members}}</td><td>{{.Description}}</td></tr>
   {{else}}
-  <tr><td colspan="4">There are no groups.</td></tr>
+  <tr><td colspan="4">{{t "There are no groups."}}</td></tr>
   {{end}}
   </tbody>
 </table>

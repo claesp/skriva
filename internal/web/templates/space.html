@@ -7,7 +7,7 @@
 {{if .Data.Items.Nodes}}
 {{template "itemtable" .Data.Items}}
 {{else}}
-<p>This space is empty.{{if .Can "doc.create"}} Use <strong>New</strong> in the page header to make the first document.{{end}}</p>
+<p>{{t "This space is empty."}}{{if .Can "doc.create"}} {{thtml "Use <strong>New</strong> in the page header to make the first document."}}{{end}}</p>
 {{end}}
 {{template "nodefoot"}}
 {{end}}

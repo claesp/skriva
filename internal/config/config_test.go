@@ -178,6 +178,22 @@ func TestMmdrPath(t *testing.T) {
 	}
 }
 
+func TestLanguage(t *testing.T) {
+	c, err := load(env(validEnv()))
+	if err != nil || c.Language != "en" {
+		t.Fatalf("default language = %q, %v", c.Language, err)
+	}
+	m := validEnv()
+	m["SKRIVA_LANGUAGE"] = "sv"
+	if c, err = load(env(m)); err != nil || c.Language != "sv" {
+		t.Fatalf("SKRIVA_LANGUAGE=sv gives %q, %v", c.Language, err)
+	}
+	m["SKRIVA_LANGUAGE"] = "fr"
+	if _, err := load(env(m)); err == nil {
+		t.Fatal("SKRIVA_LANGUAGE=fr gives no error")
+	}
+}
+
 func TestProgramMemory(t *testing.T) {
 	c, err := load(env(validEnv()))
 	if err != nil {

@@ -169,6 +169,19 @@ function isAllowedHref(href) {
 }
 
 function start(root) {
+  // texts are the translations of the texts of the script. The server
+  // gives them in data-i18n. A text without a translation stays in
+  // English. tr replaces each %s with the next argument.
+  let texts = {}
+  try {
+    texts = JSON.parse(root.dataset.i18n || '{}')
+  } catch {
+    // Use the English texts.
+  }
+  const tr = (msg, ...args) => {
+    let i = 0
+    return (texts[msg] || msg).replace(/%s/g, () => String(args[i++] ?? ''))
+  }
   const form = root.closest('form')
   const input = form.querySelector('[data-editor-body]')
   const toolbar = root.querySelector('[data-editor-toolbar]')
@@ -227,7 +240,7 @@ function start(root) {
       Image.configure({ inline: false, allowBase64: false }),
     ],
     editorProps: {
-      attributes: { 'aria-label': 'Text', 'aria-multiline': 'true', role: 'textbox', spellcheck: 'true' },
+      attributes: { 'aria-label': tr('Text'), 'aria-multiline': 'true', role: 'textbox', spellcheck: 'true' },
       handlePaste: (_view, event) => uploadFiles(event.clipboardData?.files),
       handleDrop: (view, event) => {
         const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })
@@ -243,7 +256,7 @@ function start(root) {
     data.append('file', file)
     const resp = await fetch(root.dataset.upload, { method: 'POST', body: data, credentials: 'same-origin' })
     if (!resp.ok) {
-      throw new Error((await resp.text()).trim() || 'The upload failed.')
+      throw new Error((await resp.text()).trim() || tr('The upload failed.'))
     }
     return (await resp.json()).url
   }
@@ -254,7 +267,7 @@ function start(root) {
 
   async function insertImages(files, pos) {
     for (const file of files) {
-      say('Uploading ' + file.name + '…')
+      say(tr('Uploading %s…', file.name))
       try {
         const src = await upload(file)
         const node = { type: 'image', attrs: { src, alt: altText(file) } }
@@ -296,7 +309,7 @@ function start(root) {
 
   async function fetchTargets(params) {
     const resp = await fetch(root.dataset.links + '?' + new URLSearchParams(params), { credentials: 'same-origin' })
-    if (!resp.ok) throw new Error('The search failed.')
+    if (!resp.ok) throw new Error(tr('The search failed.'))
     return resp.json()
   }
 
@@ -311,7 +324,7 @@ function start(root) {
       li.textContent = t.title
       if (t.parent) {
         const small = document.createElement('small')
-        small.textContent = 'in ' + t.parent
+        small.textContent = tr('in %s', t.parent)
         li.append(' ', small)
       }
       return li
@@ -339,7 +352,7 @@ function start(root) {
     if (!t) return
     hrefInput.value = 'doc:' + t.id
     chosenTitle = t.title
-    linkNote.textContent = 'Links to the page "' + t.title + '".'
+    linkNote.textContent = tr('Links to the page "%s".', t.title)
     showTargets([])
     hrefInput.focus()
   }
@@ -352,7 +365,7 @@ function start(root) {
     try {
       const [t] = await fetchTargets({ id: m[1] })
       if (hrefInput.value === href) {
-        linkNote.textContent = t ? 'Links to the page "' + t.title + '".' : 'The page does not exist, or you cannot read it.'
+        linkNote.textContent = t ? tr('Links to the page "%s".', t.title) : tr('The page does not exist, or you cannot read it.')
       }
     } catch {
       // The note is only information.
@@ -417,7 +430,7 @@ function start(root) {
       return
     }
     if (!isAllowedHref(href)) {
-      say('Select a page in the list, or type an address: https://…, mailto:…, wiki:Title or a path that starts with /.', true)
+      say(tr('Select a page in the list, or type an address: https://…, mailto:…, wiki:Title or a path that starts with /.'), true)
       return
     }
     say('')

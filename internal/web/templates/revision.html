@@ -3,8 +3,8 @@
 {{with .Data}}
 <div class="notice versionnote">
   {{$current := eq .Revision.Version .Node.Version}}
-  <span>This is {{if $current}}the current version ({{.Revision.Version}}){{else}}version {{.Revision.Version}}{{end}} from {{date .Revision.CreatedAt}}{{with .Revision.Author}} by {{.}}{{end}}.</span>
-  {{template "tool" (when (and ($.Can "doc.edit") (not $current)) (tool (print $.SpacePath "/edit/" .Node.PublicID "?from=" .Revision.Version) "restore" "Restore"))}}
+  <span>{{$v := .Revision.Version}}{{$d := date .Revision.CreatedAt}}{{with .Revision.Author}}{{if $current}}{{thtml "This is the current version (%d) from %s by %s." $v $d .}}{{else}}{{thtml "This is version %d from %s by %s." $v $d .}}{{end}}{{else}}{{if $current}}{{thtml "This is the current version (%d) from %s." $v $d}}{{else}}{{thtml "This is version %d from %s." $v $d}}{{end}}{{end}}</span>
+  {{template "tool" (when (and ($.Can "doc.edit") (not $current)) (tool (print $.SpacePath "/edit/" .Node.PublicID "?from=" .Revision.Version) "restore" (t "Restore")))}}
 </div>
 <div class="pagehead"><h1>{{.Revision.Title}}</h1></div>
 <article class="prose">{{.HTML}}</article>

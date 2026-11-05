@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/claesp/skriva/internal/i18n"
 	"github.com/claesp/skriva/internal/rbac"
 	"github.com/claesp/skriva/internal/store"
 )
@@ -26,7 +27,10 @@ var templateFS embed.FS
 var staticFS embed.FS
 
 type templates struct {
-	pages map[string]*template.Template
+	// pages are the templates by language code, then by name. Each
+	// language has its own copy with the template functions of the
+	// language (see langFuncs).
+	pages map[string]map[string]*template.Template
 	// versions contains a hash of each static file. It changes the URL
 	// when the file changes, thus browsers can keep the file in a cache.
 	versions map[string]string
@@ -103,7 +107,6 @@ type defaultRoleArgs struct {
 }
 
 var funcs = template.FuncMap{
-	"date":    func(t time.Time) template.HTML { return timeElement(t, now()) },
 	"sub":     func(a, b int) int { return a - b },
 	"mib":     mebibytes,
 	"docpath": docPath,
@@ -125,7 +128,6 @@ var funcs = template.FuncMap{
 		return crumbArgs{rootURL, rootLabel, parentURL, parentLabel, title, icon}
 	},
 	"spacetop": func(v *view, tab string) spaceTopArgs { return spaceTopArgs{v, tab} },
-	"source":   groupSource,
 	// ebtn gives the data of a button in the toolbar of the editor.
 	"ebtn": func(command, icon, label string) toolArgs {
 		return toolArgs{Href: command, Icon: icon, Label: label}
@@ -148,17 +150,48 @@ var funcs = template.FuncMap{
 	},
 	// dtool is a disabled button in a toolbar.
 	"dtool": func(icon, label string) toolArgs { return toolArgs{Icon: icon, Label: label, Disabled: true} },
-	"ntool": func(currentTab, tab, href, closeURL, icon, label string) toolArgs {
-		if currentTab == tab {
-			return toolArgs{Href: closeURL, Icon: icon, Label: label + " (close)", Current: true}
-		}
-		return toolArgs{Href: href, Icon: icon, Label: label}
-	},
+	// langname gives the name of a language in the language itself.
+	"langname": i18n.Name,
+}
+
+// langFuncs returns the template functions of the language of p:
+//   - t gives a text: {{t "Save"}} or {{t "%d of %d" .A .B}}.
+//   - tn gives the singular or the plural text for a number:
+//     {{tn .N "%d item" "%d items"}}.
+//   - thtml gives a text with HTML tags. The arguments are escaped:
+//     {{thtml "Type <code>%s</code>." "-word"}}.
+//
+// The texts are the keys of the catalogs in internal/i18n/locales.
+func langFuncs(p *i18n.Printer) template.FuncMap {
+	return template.FuncMap{
+		"t":      p.T,
+		"tn":     p.N,
+		"thtml":  p.HTML,
+		"date":   func(t time.Time) template.HTML { return timeElement(p, t, now()) },
+		"source": func(source string) string { return groupSource(p, source) },
+		// permtext gives the description of a permission.
+		"permtext": func(perm rbac.Permission) string { return permissionText(p, perm) },
+		// editortexts gives the texts of the editor script as JSON.
+		"editortexts": func() string { return editorTexts(p) },
+		"ntool": func(currentTab, tab, href, closeURL, icon, label string) toolArgs {
+			if currentTab == tab {
+				return toolArgs{Href: closeURL, Icon: icon, Label: p.T("%s (close)", label), Current: true}
+			}
+			return toolArgs{Href: href, Icon: icon, Label: label}
+		},
+	}
 }
 
 func loadTemplates() (*templates, error) {
+	all := template.FuncMap{}
+	for k, f := range funcs {
+		all[k] = f
+	}
+	for k, f := range langFuncs(i18n.For(i18n.Default)) {
+		all[k] = f
+	}
 	// parts.html contains templates that more than one page uses.
-	base, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS,
+	base, err := template.New("layout.html").Funcs(all).ParseFS(templateFS,
 		"templates/layout.html", "templates/parts.html")
 	if err != nil {
 		return nil, err
@@ -167,7 +200,7 @@ func loadTemplates() (*templates, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &templates{pages: map[string]*template.Template{}}
+	parsed := map[string]*template.Template{}
 	for _, f := range files {
 		name := path.Base(f)
 		if name == "layout.html" || name == "parts.html" {
@@ -180,7 +213,20 @@ func loadTemplates() (*templates, error) {
 		if _, err := clone.ParseFS(templateFS, f); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", name, err)
 		}
-		t.pages[strings.TrimSuffix(name, ".html")] = clone
+		parsed[strings.TrimSuffix(name, ".html")] = clone
+	}
+	t := &templates{pages: map[string]map[string]*template.Template{}}
+	for _, l := range i18n.UILanguages() {
+		lf := langFuncs(i18n.For(l.Code))
+		pages := map[string]*template.Template{}
+		for name, p := range parsed {
+			c, err := p.Clone()
+			if err != nil {
+				return nil, err
+			}
+			pages[name] = c.Funcs(lf)
+		}
+		t.pages[l.Code] = pages
 	}
 
 	// Each static file has a version: a part of the hash of the content.
@@ -215,6 +261,8 @@ type spaceTopArgs struct {
 
 // view is the data for all templates.
 type view struct {
+	// Lang is the language code of the page.
+	Lang     string
 	Title    string
 	Tenant   *store.Tenant
 	Space    *store.Space
@@ -286,6 +334,7 @@ func (s *Server) renderAdmin(w http.ResponseWriter, r *http.Request, status int,
 func (s *Server) newView(r *http.Request, title string, data any) *view {
 	ri := reqInfoFrom(r.Context())
 	return &view{
+		Lang:     s.lang(r),
 		Title:    title,
 		Tenant:   ri.Tenant,
 		Space:    ri.Space,
@@ -300,7 +349,7 @@ func (s *Server) newView(r *http.Request, title string, data any) *view {
 // write runs the template name into a buffer first. Thus a template error
 // gives a clean error page and not a half page.
 func (s *Server) write(w http.ResponseWriter, r *http.Request, status int, name string, v *view) {
-	t, ok := s.tmpl.pages[name]
+	t, ok := s.tmpl.pages[v.Lang][name]
 	if !ok {
 		s.log.Error("no template", "template", name)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -320,7 +369,7 @@ func (s *Server) write(w http.ResponseWriter, r *http.Request, status int, name 
 }
 
 func (s *Server) renderError(w http.ResponseWriter, r *http.Request, status int, msg string) {
-	s.render(w, r, status, "error", http.StatusText(status), struct {
+	s.render(w, r, status, "error", statusText(s.tr(r), status), struct {
 		Status  int
 		Message string
 	}{status, msg})
@@ -356,14 +405,63 @@ func (s *Server) staticHandler() http.Handler {
 }
 
 // groupSource gives the text for the source of a group.
-func groupSource(source string) string {
+func groupSource(p *i18n.Printer, source string) string {
 	switch source {
 	case store.GroupOIDC:
 		return "OpenID Connect"
 	case store.GroupLocal:
-		return "Local"
+		return p.T("Local")
 	}
 	return source
+}
+
+// permissionText gives the description of a permission in the language
+// of p. The texts are the same as rbac.Permission.Description.
+func permissionText(p *i18n.Printer, perm rbac.Permission) string {
+	switch perm {
+	case rbac.DocRead:
+		return p.T("Read folders, documents, history and search results")
+	case rbac.DocCreate:
+		return p.T("Create folders and documents")
+	case rbac.DocEdit:
+		return p.T("Edit and move folders and documents")
+	case rbac.DocDelete:
+		return p.T("Delete folders and documents")
+	case rbac.SpaceManage:
+		return p.T("Create, change and delete spaces")
+	case rbac.TenantManage:
+		return p.T("Manage users, groups, roles and role bindings of the tenant")
+	}
+	return perm.Description()
+}
+
+// statusText gives the title of an error page for an HTTP status code.
+func statusText(p *i18n.Printer, status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return p.T("Bad request")
+	case http.StatusUnauthorized:
+		return p.T("Not signed in")
+	case http.StatusForbidden:
+		return p.T("Forbidden")
+	case http.StatusNotFound:
+		return p.T("Not found")
+	case http.StatusMethodNotAllowed:
+		return p.T("Method not allowed")
+	case http.StatusConflict:
+		return p.T("Conflict")
+	case http.StatusRequestEntityTooLarge:
+		return p.T("Too large")
+	case http.StatusUnsupportedMediaType:
+		return p.T("Unsupported file type")
+	case http.StatusTooManyRequests:
+		return p.T("Too many requests")
+	case http.StatusServiceUnavailable:
+		return p.T("Service unavailable")
+	case http.StatusInternalServerError:
+		return p.T("Internal server error")
+	}
+	return http.StatusText(status)
 }
 
 // now gives the current time. Tests can replace it.
@@ -372,10 +470,10 @@ var now = time.Now
 // timeElement gives a time element for t. The text is relative to now,
 // for example "24 minutes ago". The title shows the full time in ISO 8601
 // format.
-func timeElement(t, now time.Time) template.HTML {
+func timeElement(p *i18n.Printer, t, now time.Time) template.HTML {
 	t = t.UTC()
 	s := fmt.Sprintf(`<time datetime="%s" title="%s">%s</time>`,
-		t.Format(time.RFC3339), t.Format("2006-01-02T15:04:05-07:00"), relativeTime(t, now))
+		t.Format(time.RFC3339), t.Format("2006-01-02T15:04:05-07:00"), template.HTMLEscapeString(relativeTime(p, t, now)))
 	return template.HTML(s) // #nosec G203 -- all values come from the time, not from a user.
 }
 
@@ -387,37 +485,29 @@ const relativeDays = 10
 // "24 minutes ago", "3 hours ago", "Yesterday" and "2 days ago". If t is
 // more than relativeDays days ago, it gives the date, as in "2026-10-31".
 // The calculation of days uses the calendar days in UTC.
-func relativeTime(t, now time.Time) string {
+func relativeTime(p *i18n.Printer, t, now time.Time) string {
 	t, now = t.UTC(), now.UTC()
 	d := now.Sub(t)
 	switch {
 	case d < time.Second:
-		return "Just now"
+		return p.T("Just now")
 	case d < time.Minute:
-		return plural(int(d/time.Second), "second") + " ago"
+		return p.N(int(d/time.Second), "%d second ago", "%d seconds ago")
 	case d < time.Hour:
-		return plural(int(d/time.Minute), "minute") + " ago"
+		return p.N(int(d/time.Minute), "%d minute ago", "%d minutes ago")
 	case d < 24*time.Hour:
-		return plural(int(d/time.Hour), "hour") + " ago"
+		return p.N(int(d/time.Hour), "%d hour ago", "%d hours ago")
 	}
 	y, m, dd := t.Date()
 	ny, nm, nd := now.Date()
 	days := int(time.Date(ny, nm, nd, 0, 0, 0, 0, time.UTC).Sub(time.Date(y, m, dd, 0, 0, 0, 0, time.UTC)) / (24 * time.Hour))
 	switch {
 	case days <= 1:
-		return "Yesterday"
+		return p.T("Yesterday")
 	case days <= relativeDays:
-		return plural(days, "day") + " ago"
+		return p.N(days, "%d day ago", "%d days ago")
 	}
 	return t.Format("2006-01-02")
-}
-
-// plural gives n and the word, with an "s" if n is not 1.
-func plural(n int, word string) string {
-	if n == 1 {
-		return "1 " + word
-	}
-	return fmt.Sprintf("%d %ss", n, word)
 }
 
 // mebibytes shows a size in bytes as MiB with one decimal, for example

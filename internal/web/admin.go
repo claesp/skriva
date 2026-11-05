@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"regexp"
 	"slices"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/claesp/skriva/internal/i18n"
 	"github.com/claesp/skriva/internal/rbac"
 	"github.com/claesp/skriva/internal/store"
 )
@@ -143,23 +143,46 @@ type confirmDelete struct {
 	CSRF    string
 }
 
-// tabCrumbs are the last parts of the path for the tabs of an item.
-var tabCrumbs = map[string]string{
-	"bindings":    "Role bindings",
-	"permissions": "Permissions",
-	"access":      "Access",
-	"delete":      "Delete",
-	"spaces":      "Spaces",
+// tabCrumb returns the last part of the path for a tab of an item.
+func tabCrumb(p *i18n.Printer, tab string) string {
+	switch tab {
+	case "bindings":
+		return p.T("Role bindings")
+	case "permissions":
+		return p.T("Permissions")
+	case "access":
+		return p.T("Access")
+	case "delete":
+		return p.T("Delete")
+	case "spaces":
+		return p.T("Spaces")
+	}
+	return ""
 }
 
 // defaultRoleText describes the default role of a space or a node. A nil
 // role uses the default role of the parent.
-func defaultRoleText(role *string, parent string) string {
+func defaultRoleText(p *i18n.Printer, role *string) string {
 	switch {
 	case role == nil:
-		return "Same as the " + parent
+		return p.T("Same as the parent")
 	case *role == "":
-		return "None. Only users with a role binding have access."
+		return p.T("None. Only users with a role binding have access.")
+	}
+	return *role
+}
+
+// spaceDefaultRoleText describes the default role of a space in the
+// language of p. A nil role uses the default role of the tenant,
+// tenantRole ("" for none).
+func spaceDefaultRoleText(p *i18n.Printer, role *string, tenantRole string) string {
+	switch {
+	case role == nil && tenantRole != "":
+		return p.T("Same as the tenant (%s)", tenantRole)
+	case role == nil:
+		return p.T("Same as the tenant")
+	case *role == "":
+		return p.T("None. Only users with a role binding have access.")
 	}
 	return *role
 }
@@ -174,7 +197,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "users", "admin-users", "Users", users)
+	s.renderAdmin(w, r, http.StatusOK, "users", "admin-users", s.tr(r).T("Users"), users)
 }
 
 // userHead is the data of the head of the user pages.
@@ -197,7 +220,7 @@ func (s *Server) loadUser(w http.ResponseWriter, r *http.Request, tab string) (u
 		s.storeResult(w, r, err)
 		return userHead{}, false
 	}
-	return userHead{user, id == reqInfoFrom(r.Context()).Session.User.ID, tab, tabCrumbs[tab]}, true
+	return userHead{user, id == reqInfoFrom(r.Context()).Session.User.ID, tab, tabCrumb(s.tr(r), tab)}, true
 }
 
 func (s *Server) handleAdminUser(w http.ResponseWriter, r *http.Request) {
@@ -281,7 +304,7 @@ func (s *Server) handleAdminUserDisable(disabled bool) http.HandlerFunc {
 		}
 		sess := reqInfoFrom(r.Context()).Session
 		if disabled && id == sess.User.ID {
-			s.badRequest(w, r, "You cannot disable your own account.")
+			s.badRequest(w, r, s.tr(r).T("You cannot disable your own account."))
 			return
 		}
 		if !s.storeResult(w, r, s.store.SetUserDisabled(r.Context(), tenantOf(r).ID, id, disabled)) {
@@ -299,18 +322,18 @@ func (s *Server) handleAdminGroups(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-groups", "Groups", groups)
+	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-groups", s.tr(r).T("Groups"), groups)
 }
 
 func (s *Server) handleAdminGroupNew(w http.ResponseWriter, r *http.Request) {
-	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group-new", "New local group", nil)
+	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group-new", s.tr(r).T("New local group"), nil)
 }
 
 func (s *Server) handleAdminGroupCreate(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.PostFormValue("name"))
 	desc := strings.TrimSpace(r.PostFormValue("description"))
 	if name == "" || utf8.RuneCountInString(name) > 200 || utf8.RuneCountInString(desc) > 500 {
-		s.badRequest(w, r, "The group name is necessary and must have 200 characters or less.")
+		s.badRequest(w, r, s.tr(r).T("The group name is necessary and must have 200 characters or less."))
 		return
 	}
 	id, err := s.store.CreateLocalGroup(r.Context(), tenantOf(r).ID, name, desc)
@@ -339,7 +362,7 @@ func (s *Server) loadGroup(w http.ResponseWriter, r *http.Request, tab string) (
 		s.storeResult(w, r, err)
 		return groupHead{}, false
 	}
-	return groupHead{group, tab, tabCrumbs[tab]}, true
+	return groupHead{group, tab, tabCrumb(s.tr(r), tab)}, true
 }
 
 func (s *Server) handleAdminGroup(w http.ResponseWriter, r *http.Request) {
@@ -352,7 +375,7 @@ func (s *Server) handleAdminGroup(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group", "Group "+h.Group.Name, struct {
+	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group", s.tr(r).T("Group %s", h.Group.Name), struct {
 		groupHead
 		Members []*store.User
 	}{h, members})
@@ -369,7 +392,7 @@ func (s *Server) handleAdminGroupBindings(w http.ResponseWriter, r *http.Request
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group-bindings", "Group "+h.Group.Name, struct {
+	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group-bindings", s.tr(r).T("Group %s", h.Group.Name), struct {
 		groupHead
 		Table bindingTable
 	}{h, table})
@@ -381,15 +404,16 @@ func (s *Server) handleAdminGroupDeleteForm(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if h.Group.Source != store.GroupLocal {
-		s.badRequest(w, r, "The identity provider controls this group. You cannot delete it.")
+		s.badRequest(w, r, s.tr(r).T("The identity provider controls this group. You cannot delete it."))
 		return
 	}
 	g := adminPath(r) + "/groups/" + strconv.FormatInt(h.Group.ID, 10)
-	s.renderAdmin(w, r, http.StatusOK, "groups", "confirm-delete", "Delete group", confirmDelete{
-		Heading: "Delete group " + h.Group.Name,
-		Message: "Do you want to delete the group and its role bindings? The members lose the roles of the group.",
+	p := s.tr(r)
+	s.renderAdmin(w, r, http.StatusOK, "groups", "confirm-delete", p.T("Delete group"), confirmDelete{
+		Heading: p.T("Delete group %s", h.Group.Name),
+		Message: p.T("Do you want to delete the group and its role bindings? The members lose the roles of the group."),
 		Action:  g + "/delete", Cancel: g, Parent: h.Group.Name, CSRF: csrfOf(r),
-		RootURL: adminPath(r) + "/groups", RootLabel: "Groups",
+		RootURL: adminPath(r) + "/groups", RootLabel: p.T("Groups"),
 	})
 }
 
@@ -413,7 +437,7 @@ func (s *Server) handleAdminMemberNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.Group.Source != store.GroupLocal {
-		s.badRequest(w, r, "The identity provider controls the members of this group.")
+		s.badRequest(w, r, s.tr(r).T("The identity provider controls the members of this group."))
 		return
 	}
 	ctx := r.Context()
@@ -431,7 +455,7 @@ func (s *Server) handleAdminMemberNew(w http.ResponseWriter, r *http.Request) {
 	users = slices.DeleteFunc(users, func(u *store.User) bool {
 		return slices.ContainsFunc(members, func(m *store.User) bool { return m.ID == u.ID })
 	})
-	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group-member-new", "New member", struct {
+	s.renderAdmin(w, r, http.StatusOK, "groups", "admin-group-member-new", s.tr(r).T("New member"), struct {
 		Group *store.Group
 		Users []*store.User
 	}{h.Group, users})
@@ -441,7 +465,7 @@ func (s *Server) handleAdminMemberAdd(w http.ResponseWriter, r *http.Request) {
 	gid, ok1 := pathID(r, "id")
 	uid, ok2 := formID(r, "user_id")
 	if !ok1 || !ok2 {
-		s.badRequest(w, r, "Select a user.")
+		s.badRequest(w, r, s.tr(r).T("Select a user."))
 		return
 	}
 	if !s.storeResult(w, r, s.store.AddLocalGroupMember(r.Context(), tenantOf(r).ID, gid, uid)) {
@@ -469,25 +493,25 @@ func (s *Server) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "roles", "admin-roles", "Roles", roles)
+	s.renderAdmin(w, r, http.StatusOK, "roles", "admin-roles", s.tr(r).T("Roles"), roles)
 }
 
 func (s *Server) handleAdminRoleNew(w http.ResponseWriter, r *http.Request) {
-	s.renderAdmin(w, r, http.StatusOK, "roles", "admin-role-new", "New role", rbac.All)
+	s.renderAdmin(w, r, http.StatusOK, "roles", "admin-role-new", s.tr(r).T("New role"), rbac.All)
 }
 
 func (s *Server) handleAdminRoleCreate(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.PostFormValue("name"))
 	desc := strings.TrimSpace(r.PostFormValue("description"))
 	if !roleNameRE.MatchString(name) || utf8.RuneCountInString(desc) > 500 {
-		s.badRequest(w, r, "The role name must start with a-z and contain only a-z, 0-9 and \"-\".")
+		s.badRequest(w, r, s.tr(r).T("The role name must start with a-z and contain only a-z, 0-9 and \"-\"."))
 		return
 	}
 	var perms []rbac.Permission
 	for _, p := range r.PostForm["permission"] {
 		perm := rbac.Permission(p)
 		if !perm.Valid() {
-			s.badRequest(w, r, "The form contains an unknown permission.")
+			s.badRequest(w, r, s.tr(r).T("The form contains an unknown permission."))
 			return
 		}
 		perms = append(perms, perm)
@@ -519,10 +543,11 @@ func (s *Server) handleAdminRoleDeleteForm(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	rp := adminPath(r) + "/roles"
-	s.renderAdmin(w, r, http.StatusOK, "roles", "confirm-delete", "Delete role", confirmDelete{
-		Heading: "Delete role " + roles[i].Name,
-		Message: "Do you want to delete the role and its role bindings? The users and groups lose the permissions of the role.",
-		Action:  rp + "/" + strconv.FormatInt(id, 10) + "/delete", Cancel: rp, Parent: "Roles", CSRF: csrfOf(r),
+	p := s.tr(r)
+	s.renderAdmin(w, r, http.StatusOK, "roles", "confirm-delete", p.T("Delete role"), confirmDelete{
+		Heading: p.T("Delete role %s", roles[i].Name),
+		Message: p.T("Do you want to delete the role and its role bindings? The users and groups lose the permissions of the role."),
+		Action:  rp + "/" + strconv.FormatInt(id, 10) + "/delete", Cancel: rp, Parent: p.T("Roles"), CSRF: csrfOf(r),
 	})
 }
 
@@ -535,7 +560,7 @@ func (s *Server) handleAdminRoleDelete(w http.ResponseWriter, r *http.Request) {
 	err := s.store.DeleteRole(r.Context(), tenantOf(r).ID, id)
 	if errors.Is(err, store.ErrRoleInUse) {
 		s.renderError(w, r, http.StatusConflict,
-			"The role is the default role of the tenant, a space or an item. Change the default role first.")
+			s.tr(r).T("The role is the default role of the tenant, a space or an item. Change the default role first."))
 		return
 	}
 	if !s.storeResult(w, r, err) {
@@ -575,7 +600,7 @@ func (s *Server) handleAdminRecent(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	s.renderAdmin(w, r, http.StatusOK, "recent", "admin-recent", "Recent changes", out)
+	s.renderAdmin(w, r, http.StatusOK, "recent", "admin-recent", s.tr(r).T("Recent changes"), out)
 }
 
 func (s *Server) handleAdminBindings(w http.ResponseWriter, r *http.Request) {
@@ -584,7 +609,7 @@ func (s *Server) handleAdminBindings(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "bindings", "admin-bindings", "Role bindings", table)
+	s.renderAdmin(w, r, http.StatusOK, "bindings", "admin-bindings", s.tr(r).T("Role bindings"), table)
 }
 
 // bindingForm is the data of the form for a new role binding. The query
@@ -613,7 +638,7 @@ func (s *Server) handleAdminBindingNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if subject := q.Get("subject"); subject != "" {
-		if f.Subject, f.SubjectLabel, err = s.subjectLabel(ctx, t.ID, subject); err != nil {
+		if f.Subject, f.SubjectLabel, err = s.subjectLabel(ctx, s.tr(r), t.ID, subject); err != nil {
 			s.storeResult(w, r, err)
 			return
 		}
@@ -650,12 +675,12 @@ func (s *Server) handleAdminBindingNew(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "bindings", "admin-binding-new", "New role binding", f)
+	s.renderAdmin(w, r, http.StatusOK, "bindings", "admin-binding-new", s.tr(r).T("New role binding"), f)
 }
 
 // subjectLabel checks a subject of the form "user:ID" or "group:ID". It
 // returns the subject and a text for the form.
-func (s *Server) subjectLabel(ctx context.Context, tenantID int64, subject string) (string, string, error) {
+func (s *Server) subjectLabel(ctx context.Context, p *i18n.Printer, tenantID int64, subject string) (string, string, error) {
 	kind, idText, _ := strings.Cut(subject, ":")
 	id, err := strconv.ParseInt(idText, 10, 64)
 	if err != nil || id <= 0 {
@@ -667,13 +692,13 @@ func (s *Server) subjectLabel(ctx context.Context, tenantID int64, subject strin
 		if err != nil {
 			return "", "", err
 		}
-		return subject, "User " + u.Username, nil
+		return subject, p.T("User %s", u.Username), nil
 	case "group":
 		g, err := s.store.Group(ctx, tenantID, id)
 		if err != nil {
 			return "", "", err
 		}
-		return subject, "Group " + g.Name, nil
+		return subject, p.T("Group %s", g.Name), nil
 	}
 	return "", "", store.ErrNotFound
 }
@@ -686,7 +711,7 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 	kind, idText, _ := strings.Cut(r.PostFormValue("subject"), ":")
 	id, err := strconv.ParseInt(idText, 10, 64)
 	if !roleNameRE.MatchString(role) || err != nil || id <= 0 {
-		s.badRequest(w, r, "Select a role and a user or a group.")
+		s.badRequest(w, r, s.tr(r).T("Select a role and a user or a group."))
 		return
 	}
 	// An empty "space" field gives a binding for all spaces. The "node"
@@ -695,7 +720,7 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 	var scope store.Scope
 	if slug := r.PostFormValue("space"); slug != "" {
 		if !store.ValidCode(slug) {
-			s.badRequest(w, r, "The space is not valid.")
+			s.badRequest(w, r, s.tr(r).T("The space is not valid."))
 			return
 		}
 		sp, err := s.store.Space(r.Context(), t.ID, slug)
@@ -706,7 +731,7 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 		scope.SpaceID = sp.ID
 		if pub := r.PostFormValue("node"); pub != "" {
 			if !store.ValidPublicID(pub) {
-				s.badRequest(w, r, "The item is not valid.")
+				s.badRequest(w, r, s.tr(r).T("The item is not valid."))
 				return
 			}
 			n, err := s.store.Node(r.Context(), sp.ID, pub)
@@ -723,7 +748,7 @@ func (s *Server) handleAdminBindingCreate(w http.ResponseWriter, r *http.Request
 	case "group":
 		err = s.store.BindRoleToGroup(r.Context(), t.ID, role, id, scope)
 	default:
-		s.badRequest(w, r, "Select a role and a user or a group.")
+		s.badRequest(w, r, s.tr(r).T("Select a role and a user or a group."))
 		return
 	}
 	if !s.storeResult(w, r, err) {
@@ -755,13 +780,14 @@ func (s *Server) spaceForm(r *http.Request) (slug, name, desc, msg string) {
 	slug = strings.TrimSpace(r.PostFormValue("slug"))
 	name = strings.TrimSpace(r.PostFormValue("name"))
 	desc = strings.TrimSpace(r.PostFormValue("description"))
+	p := s.tr(r)
 	switch {
 	case !s.validSpaceSlug(slug):
-		msg = spaceCodeError
+		msg = p.T(spaceCodeError)
 	case name == "" || utf8.RuneCountInString(name) > 200:
-		msg = "The name is necessary and must have 200 characters or less."
+		msg = p.T("The name is necessary and must have 200 characters or less.")
 	case utf8.RuneCountInString(desc) > 500:
-		msg = "The description must have 500 characters or less."
+		msg = p.T("The description must have 500 characters or less.")
 	}
 	return slug, name, desc, msg
 }
@@ -772,11 +798,11 @@ func (s *Server) handleAdminSpaces(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-spaces", "Spaces", spaces)
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-spaces", s.tr(r).T("Spaces"), spaces)
 }
 
 func (s *Server) handleAdminSpaceNew(w http.ResponseWriter, r *http.Request) {
-	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-new", "New space", nil)
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-new", s.tr(r).T("New space"), nil)
 }
 
 func (s *Server) handleAdminSpaceCreate(w http.ResponseWriter, r *http.Request) {
@@ -814,7 +840,7 @@ func (s *Server) loadSpace(w http.ResponseWriter, r *http.Request, tab string) (
 		s.storeResult(w, r, err)
 		return spaceHead{}, false
 	}
-	return spaceHead{Space: sp, Tab: tab, Crumb: tabCrumbs[tab]}, true
+	return spaceHead{Space: sp, Tab: tab, Crumb: tabCrumb(s.tr(r), tab)}, true
 }
 
 func (s *Server) handleAdminSpace(w http.ResponseWriter, r *http.Request) {
@@ -827,7 +853,7 @@ func (s *Server) handleAdminSpace(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space", "Space "+h.Space.Name, h)
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space", s.tr(r).T("Space %s", h.Space.Name), h)
 }
 
 func (s *Server) handleAdminSpaceEdit(w http.ResponseWriter, r *http.Request) {
@@ -840,7 +866,7 @@ func (s *Server) handleAdminSpaceEdit(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-edit", "Settings of "+h.Space.Name, h)
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-edit", s.tr(r).T("Settings of %s", h.Space.Name), h)
 }
 
 // formInt reads a whole number from a form field. It returns false if the
@@ -858,13 +884,13 @@ func (s *Server) handleAdminSpaceUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 	quota, ok := formInt(r, "upload_quota_mb", store.MinUploadQuotaMB, store.MaxUploadQuotaMB)
 	if !ok {
-		s.badRequest(w, r, fmt.Sprintf("The upload limit must be a number of MiB from %d to %d.",
+		s.badRequest(w, r, s.tr(r).T("The upload limit must be a number of MiB from %d to %d.",
 			store.MinUploadQuotaMB, store.MaxUploadQuotaMB))
 		return
 	}
 	results, ok := formInt(r, "search_results", store.MinSearchResults, store.MaxSearchResults)
 	if !ok {
-		s.badRequest(w, r, fmt.Sprintf("The number of search results must be from %d to %d.",
+		s.badRequest(w, r, s.tr(r).T("The number of search results must be from %d to %d.",
 			store.MinSearchResults, store.MaxSearchResults))
 		return
 	}
@@ -873,7 +899,7 @@ func (s *Server) handleAdminSpaceUpdate(w http.ResponseWriter, r *http.Request) 
 	defClass, err1 := strconv.ParseInt(r.PostFormValue("default_classification"), 10, 64)
 	minClass, err2 := strconv.ParseInt(r.PostFormValue("min_classification"), 10, 64)
 	if err1 != nil || err2 != nil {
-		s.badRequest(w, r, "The classification is not valid.")
+		s.badRequest(w, r, s.tr(r).T("The classification is not valid."))
 		return
 	}
 	slug := r.PathValue("slug")
@@ -896,11 +922,12 @@ func (s *Server) handleAdminSpaceDeleteForm(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	sp := adminPath(r) + "/spaces/" + h.Space.Slug
-	s.renderAdmin(w, r, http.StatusOK, "spaces", "confirm-delete", "Delete space", confirmDelete{
-		Heading: "Delete space " + h.Space.Name,
-		Message: "Do you want to delete the space? This deletes all folders and documents in it.",
+	p := s.tr(r)
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "confirm-delete", p.T("Delete space"), confirmDelete{
+		Heading: p.T("Delete space %s", h.Space.Name),
+		Message: p.T("Do you want to delete the space? This deletes all folders and documents in it."),
 		Action:  sp + "/delete", Code: h.Space.Slug, Cancel: sp, Parent: h.Space.Name, CSRF: csrfOf(r),
-		RootURL: adminPath(r) + "/spaces", RootLabel: "Spaces",
+		RootURL: adminPath(r) + "/spaces", RootLabel: p.T("Spaces"),
 	})
 }
 
@@ -909,7 +936,7 @@ func (s *Server) handleAdminSpaceDeleteForm(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleAdminSpaceDelete(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if r.PostFormValue("confirm") != slug {
-		s.badRequest(w, r, "Type the space code to confirm the deletion.")
+		s.badRequest(w, r, s.tr(r).T("Type the space code to confirm the deletion."))
 		return
 	}
 	t := tenantOf(r)
@@ -934,15 +961,12 @@ func (s *Server) handleAdminSpaceAccess(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, r, err)
 		return
 	}
-	parent := "tenant"
-	if role := tenantOf(r).DefaultRole; role != "" {
-		parent += " (" + role + ")"
-	}
-	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-access", "Access to "+h.Space.Name, struct {
+	p := s.tr(r)
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-access", p.T("Access to %s", h.Space.Name), struct {
 		spaceHead
 		DefaultRoleText string
 		Table           bindingTable
-	}{h, defaultRoleText(h.Space.DefaultRole, parent), table})
+	}{h, spaceDefaultRoleText(p, h.Space.DefaultRole, tenantOf(r).DefaultRole), table})
 }
 
 func (s *Server) handleAdminSpaceDefaultRoleForm(w http.ResponseWriter, r *http.Request) {
@@ -960,7 +984,7 @@ func (s *Server) handleAdminSpaceDefaultRoleForm(w http.ResponseWriter, r *http.
 	if h.Space.DefaultRole != nil {
 		defaultRole = *h.Space.DefaultRole
 	}
-	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-default-role", "Default role", struct {
+	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-default-role", s.tr(r).T("Default role"), struct {
 		Space       *store.Space
 		DefaultRole string
 		Roles       []store.Role
@@ -974,7 +998,7 @@ func (s *Server) handleAdminSpaceDefaultRole(w http.ResponseWriter, r *http.Requ
 	slug := r.PathValue("slug")
 	role, ok := defaultRoleValue(r)
 	if !ok {
-		s.badRequest(w, r, "The role is not valid.")
+		s.badRequest(w, r, s.tr(r).T("The role is not valid."))
 		return
 	}
 	if !s.storeResult(w, r, s.store.SetSpaceDefaultRole(r.Context(), t.ID, slug, role)) {

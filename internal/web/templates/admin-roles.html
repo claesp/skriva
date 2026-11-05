@@ -1,15 +1,15 @@
 {{define "content"}}
-{{template "listhead" (head "Roles" (tool (print .TenantPath "/admin/roles/new") "new" "New role"))}}
-{{with .Tenant.DefaultRole}}<p>All signed-in users have the role "{{.}}".</p>{{end}}
+{{template "listhead" (head (t "Roles") (tool (print .TenantPath "/admin/roles/new") "new" (t "New role")))}}
+{{with .Tenant.DefaultRole}}<p>{{thtml "All signed-in users have the role \"%s\"." .}}</p>{{end}}
 <table>
-  <thead><tr><th>Name</th><th>Description</th><th>Permissions</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>{{t "Name"}}</th><th>{{t "Description"}}</th><th>{{t "Permissions"}}</th><th class="actions"><span class="vh">{{t "Actions"}}</span></th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr>
-    <td>{{.Name}}{{if .Builtin}} <span class="tag">built-in</span>{{end}}</td>
+    <td>{{.Name}}{{if .Builtin}} <span class="tag">{{t "built-in"}}</span>{{end}}</td>
     <td>{{.Description}}</td>
     <td>{{range .Permissions}}<code>{{.}}</code> {{end}}</td>
-    <td class="actions">{{template "tool" (when (not .Builtin) (tool (print $.TenantPath "/admin/roles/" .ID "/delete") "delete" "Delete"))}}</td>
+    <td class="actions">{{template "tool" (when (not .Builtin) (tool (print $.TenantPath "/admin/roles/" .ID "/delete") "delete" (t "Delete")))}}</td>
   </tr>
   {{end}}
   </tbody>

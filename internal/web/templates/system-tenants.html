@@ -1,15 +1,15 @@
 {{define "content"}}
-{{template "listhead" (head "Tenants" (tool "/admin/tenants/new" "new" "New tenant"))}}
+{{template "listhead" (head (t "Tenants") (tool "/admin/tenants/new" "new" (t "New tenant")))}}
 <table>
-  <thead><tr><th>Code</th><th>Name</th><th>Identity provider</th><th>Status</th><th class="actions"><span class="vh">Actions</span></th></tr></thead>
+  <thead><tr><th>{{t "Code"}}</th><th>{{t "Name"}}</th><th>{{t "Identity provider"}}</th><th>{{t "Status"}}</th><th class="actions"><span class="vh">{{t "Actions"}}</span></th></tr></thead>
   <tbody>
   {{range .Data}}
   <tr>
     <td><a href="/admin/tenants/{{.Code}}"><code>{{.Code}}</code></a></td>
-    <td>{{.Name}}{{if .IsDefault}} <span class="tag">default</span>{{end}}</td>
-    <td>{{if .OIDCConfigured}}<code>{{.OIDCIssuer}}</code>{{else}}<span class="tag danger">Not set</span>{{end}}</td>
-    <td>{{if .Disabled}}<span class="tag danger">Disabled</span>{{else}}Active{{end}}</td>
-    <td class="actions">{{template "tool" (tool (print "/" .Code "/") "open" "Open the tenant")}}</td>
+    <td>{{.Name}}{{if .IsDefault}} <span class="tag">{{t "default"}}</span>{{end}}</td>
+    <td>{{if .OIDCConfigured}}<code>{{.OIDCIssuer}}</code>{{else}}<span class="tag danger">{{t "Not set"}}</span>{{end}}</td>
+    <td>{{if .Disabled}}<span class="tag danger">{{t "Disabled"}}</span>{{else}}{{t "Active"}}{{end}}</td>
+    <td class="actions">{{template "tool" (tool (print "/" .Code "/") "open" (t "Open the tenant"))}}</td>
   </tr>
   {{end}}
   </tbody>

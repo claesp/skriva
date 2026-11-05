@@ -1,0 +1,26 @@
+{{define "content"}}
+{{with .Data}}
+{{template "plainhead" (t "Profile")}}
+<div class="pagehead"><h1>{{t "Profile"}}</h1></div>
+{{if .Saved}}<p class="notice" role="status">{{t "The profile is saved."}}</p>{{end}}
+{{with .Error}}<p class="error" role="alert">{{.}}</p>{{end}}
+<table class="settings">
+  <tbody>
+    <tr><th scope="row">{{t "Name"}}</th><td>{{.User.Name}}</td></tr>
+    <tr><th scope="row">{{t "User name"}}</th><td>{{.User.Username}}</td></tr>
+    <tr><th scope="row">{{t "Email"}}</th><td>{{with .User.Email}}{{.}}{{else}}{{t "None"}}{{end}}</td></tr>
+  </tbody>
+</table>
+<p class="help"><small>{{t "The identity provider gives these values. Change them there."}}</small></p>
+<form method="post" action="{{.Action}}" class="stack">
+  {{template "csrf" $.CSRF}}
+  <label>{{t "Language"}}
+    <select name="language" autofocus>
+      <option value=""{{if eq .User.Language ""}} selected{{end}}>{{t "The default (%s)" .Default}}</option>
+      {{range .Languages}}<option value="{{.Code}}" lang="{{.Code}}"{{if eq .Code $.Data.User.Language}} selected{{end}}>{{.Name}}</option>{{end}}
+    </select></label>
+  {{template "savebutton"}}
+</form>
+{{template "nodefoot"}}
+{{end}}
+{{end}}

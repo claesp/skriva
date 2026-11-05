@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/claesp/skriva/internal/i18n"
 	"github.com/claesp/skriva/internal/rbac"
 	"github.com/claesp/skriva/internal/store"
 )
@@ -132,7 +133,7 @@ func (s *Server) withRecover(next http.Handler) http.Handler {
 					panic(v)
 				}
 				s.log.Error("panic in handler", "panic", v, "stack", string(debug.Stack()))
-				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				http.Error(w, s.tr(r).T("Internal server error"), http.StatusInternalServerError)
 			}
 		}()
 		next.ServeHTTP(w, r)
@@ -252,7 +253,7 @@ func (s *Server) needLogin(w http.ResponseWriter, r *http.Request, base string) 
 		http.Redirect(w, r, base+"/login?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
 		return
 	}
-	s.renderError(w, r, http.StatusUnauthorized, "You must sign in.")
+	s.renderError(w, r, http.StatusUnauthorized, s.tr(r).T("You must sign in."))
 }
 
 // checkCSRF checks the CSRF token of requests that change data. It writes
@@ -266,19 +267,20 @@ func (s *Server) checkCSRF(w http.ResponseWriter, r *http.Request, sess *store.S
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 		parse = func() error { return r.ParseMultipartForm(maxUploadBytes + 64<<10) }
 	}
+	p := s.tr(r)
 	if err := parse(); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			s.renderError(w, r, http.StatusRequestEntityTooLarge, "The form is too large.")
+			s.renderError(w, r, http.StatusRequestEntityTooLarge, p.T("The form is too large."))
 			return false
 		}
-		s.badRequest(w, r, "The form is not valid.")
+		s.badRequest(w, r, p.T("The form is not valid."))
 		return false
 	}
 	token := r.PostFormValue("csrf_token")
 	if subtle.ConstantTimeCompare([]byte(token), []byte(sess.CSRFToken)) != 1 {
 		s.log.Warn("bad CSRF token", "user_id", sess.User.ID, "path", r.URL.Path)
-		s.renderError(w, r, http.StatusForbidden, "The form is not valid. Go back, reload the page and try again.")
+		s.renderError(w, r, http.StatusForbidden, p.T("The form is not valid. Go back, reload the page and try again."))
 		return false
 	}
 	return true
@@ -335,17 +337,18 @@ func (s *Server) serverError(w http.ResponseWriter, r *http.Request, err error) 
 	} else {
 		s.log.Error("internal error", "method", r.Method, "path", r.URL.Path, "error", err)
 	}
-	s.renderError(w, r, http.StatusInternalServerError, "An internal error occurred. Try again later.")
+	s.renderError(w, r, http.StatusInternalServerError, s.tr(r).T("An internal error occurred. Try again later."))
 }
 
 func (s *Server) forbidden(w http.ResponseWriter, r *http.Request) {
-	s.renderError(w, r, http.StatusForbidden, "You do not have permission for this action.")
+	s.renderError(w, r, http.StatusForbidden, s.tr(r).T("You do not have permission for this action."))
 }
 
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
-	s.renderError(w, r, http.StatusNotFound, "The page does not exist.")
+	s.renderError(w, r, http.StatusNotFound, s.tr(r).T("The page does not exist."))
 }
 
+// badRequest writes an error page with msg. The caller translates msg.
 func (s *Server) badRequest(w http.ResponseWriter, r *http.Request, msg string) {
 	s.renderError(w, r, http.StatusBadRequest, msg)
 }
@@ -359,30 +362,29 @@ func (s *Server) storeResult(w http.ResponseWriter, r *http.Request, err error) 
 	case errors.Is(err, store.ErrNotFound):
 		s.notFound(w, r)
 	case errors.Is(err, store.ErrClassification):
-		s.renderError(w, r, http.StatusConflict, classificationMessage(err))
+		s.renderError(w, r, http.StatusConflict, classificationMessage(s.tr(r), err))
 	case errors.Is(err, store.ErrConflict):
-		s.renderError(w, r, http.StatusConflict, "The name is in use already.")
+		s.renderError(w, r, http.StatusConflict, s.tr(r).T("The name is in use already."))
 	case errors.Is(err, store.ErrInvalid):
-		s.badRequest(w, r, "The request is not permitted for this item.")
+		s.badRequest(w, r, s.tr(r).T("The request is not permitted for this item."))
 	default:
 		s.serverError(w, r, err)
 	}
 	return false
 }
 
-// classificationMessage is the text for a *store.ClassificationError.
-func classificationMessage(err error) string {
+// classificationMessage is the text for a *store.ClassificationError in
+// the language of p.
+func classificationMessage(p *i18n.Printer, err error) string {
 	var ce *store.ClassificationError
 	if !errors.As(err, &ce) {
-		return "The classification is lower than the lowest permitted level."
+		return p.T("The classification is lower than the lowest permitted level.")
 	}
-	if ce.Documents == 1 {
-		return "1 document has a classification lower than " + ce.Min + ". " +
-			"Give it the classification " + ce.Min + " or higher first."
+	if ce.Documents > 0 {
+		return p.N(ce.Documents,
+			"%[1]d document has a classification lower than %[2]s. Give it the classification %[2]s or higher first.",
+			"%[1]d documents have a classification lower than %[2]s. Give them the classification %[2]s or higher first.",
+			ce.Documents, ce.Min)
 	}
-	if ce.Documents > 1 {
-		return strconv.Itoa(ce.Documents) + " documents have a classification lower than " + ce.Min + ". " +
-			"Give them the classification " + ce.Min + " or higher first."
-	}
-	return "The classification must be " + ce.Min + " or higher here. The space or a parent folder sets this limit."
+	return p.T("The classification must be %s or higher here. The space or a parent folder sets this limit.", ce.Min)
 }

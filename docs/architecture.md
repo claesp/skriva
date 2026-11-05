@@ -125,6 +125,7 @@ space `default0` ("Default").
 | `internal/export`   | Makes the export files of a document. See [Export](#export). |
 | `internal/diagram`  | Makes the images of Mermaid diagrams with the mmdr program. See [Mermaid diagrams](#mermaid-diagrams). |
 | `internal/slug`     | Makes slugs from titles. |
+| `internal/i18n`     | The languages of the user interface and of the content, the catalogs of translations and the stemmers. See [Languages](#languages). |
 | `internal/diff`     | Compares two sequences (the Myers algorithm). |
 | `internal/web`      | Contains the HTTP handlers, middleware and templates. |
 | `internal/testdb`   | Makes temporary databases for the integration tests. |
@@ -578,7 +579,7 @@ is a sequence of letters and digits, in lower case.
 | `search_tokens` | The words of the title and the text (`word:` + word). | Yes |
 | `title_tokens` | The words of the title. | No |
 | `prefix_tokens` | The first 3 to 20 letters of each word (`prefix:` + letters). A word of 3 to 20 letters is also a prefix of itself. | Yes |
-| `stem_tokens` | The English stem of each word (`stem:` + stem), from the Snowball (Porter2) stemmer `github.com/kljensen/snowball/english`. "describe", "describes" and "describing" have the stem "describ". | Yes |
+| `stem_tokens` | The stem of each word in the content language of the tenant (`stem:` + stem), from the Snowball stemmers of `github.com/kljensen/snowball`. In English, "describe", "describes" and "describing" have the stem "describ". Without a content language, the stem is the word. | Yes |
 
 A search word of 3 letters or more must be a prefix of a word, or have
 the same stem as a word (`prefix_tokens @> … OR stem_tokens @> …`, one
@@ -607,6 +608,13 @@ Until then, an old row does not have the prefixes and the stems, and
 the search does not find it with a search word of 3 letters or more. Change
 `searchIndexVersion` when the words or the tokens change.
 
+`nodes.stem_language` is the content language of the stems of the row.
+`ReindexBatch` also makes the index of each row with a different
+language than `tenants.content_language` again. A save reads the
+content language in its transaction. Thus a save during a change of the
+content language cannot keep stems of the old language: the next batch
+finds the row.
+
 The permission check comes before the limit:
 
 1. The query reads at most 10000 matches (`maxSearchScan`), without the
@@ -620,6 +628,48 @@ The permission check comes before the limit:
    makes the parts of the text with the words.
 
 The search does not find phrases or the middle of a word.
+
+## Languages
+
+The package `internal/i18n` contains the languages:
+
+- The languages of the user interface (`i18n.UILanguages`): English
+  and Swedish.
+- The content languages (`i18n.ContentLanguages`), each with a Snowball
+  stemmer for the search.
+
+The texts in the code and in the templates are in English. The English
+text is the key of a translation. The catalogs are JSON files in
+`internal/i18n/locales/<code>/`. The program embeds them. All files of
+a language merge into one catalog. The same text in two files must have
+the same translation. A text without a translation stays in English.
+
+`i18n.Printer` gives the texts of one language:
+
+- `T(text, args...)` translates a text. With arguments, the text is a
+  format for `fmt.Sprintf`.
+- `N(n, one, other)` selects the singular or the plural text.
+- `HTML(text, args...)` gives a text with HTML tags. The text comes
+  from the code or the catalog. The arguments are escaped.
+
+The web package parses the templates one time and makes a copy for each
+language. Each copy has the template functions `t`, `tn` and `thtml` of
+its language, and a localized `date`. `Server.lang` selects the
+language of a request: the language of the user (`users.language`),
+else of the tenant (`tenants.language`), else `SKRIVA_LANGUAGE`. The
+handlers get the Printer with `Server.tr`. The editor script gets its
+texts as JSON in the attribute `data-i18n` (`editorTexts`).
+
+The tests in `internal/web/i18n_test.go` keep the catalogs complete:
+
+- They read the texts of `t`, `tn` and `thtml` in the templates, and of
+  `T`, `N`, `HTML` and `Catalog` in the Go files (with `go/ast`). Each
+  text must have a translation, and each translation must have a text.
+- No template can contain text for the user outside these functions.
+- The texts of `tr` in the editor script must be in `editorTexts`.
+
+Store errors and audit details stay in English. The web layer
+translates the messages that it shows for store errors.
 
 ## Migrations
 

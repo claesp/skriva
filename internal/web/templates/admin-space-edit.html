@@ -1,29 +1,29 @@
 {{define "content"}}
 {{with .Data.Space}}
 {{$s := print $.TenantPath "/admin/spaces/" .Slug}}
-{{template "formhead" (crumb3 (print $.TenantPath "/admin/spaces") "Spaces" $s .Name "Settings" "edit")}}
+{{template "formhead" (crumb3 (print $.TenantPath "/admin/spaces") (t "Spaces") $s .Name (t "Settings") "edit")}}
 <form method="post" action="{{$s}}" class="stack">
   {{template "csrf" $.CSRF}}
-  <label>Name <input name="name" value="{{.Name}}" required maxlength="200" autofocus></label>
-  <label>Code <input name="slug" value="{{.Slug}}" required minlength="2" maxlength="16" pattern="[a-z0-9][a-z0-9\-]{0,14}[a-z0-9]" aria-describedby="code-help"></label>
-  <p id="code-help" class="help"><small>2 to 16 characters: a-z, 0-9 and "-". The code is part of the URLs. A new code changes all URLs of the space. Bookmarks to the old URLs stop working.</small></p>
-  <label>Description <input name="description" value="{{.Description}}" maxlength="500"></label>
-  <label>Upload limit (MiB) <input name="upload_quota_mb" type="number" value="{{.UploadQuotaMB}}" required min="1" max="1048576" aria-describedby="quota-help"></label>
-  <p id="quota-help" class="help"><small>The largest total size of all uploaded files in the space, from 1 to 1048576 MiB. A new limit does not delete files. If the files use more than the limit, users cannot upload more files.</small></p>
-  <label>Search results <input name="search_results" type="number" value="{{.SearchResults}}" required min="10" max="1000" aria-describedby="results-help"></label>
-  <p id="results-help" class="help"><small>The largest number of results from this space in one search, from 10 to 1000. The search counts only the documents and folders that the user can read.</small></p>
-  <label>Default classification
+  <label>{{t "Name"}} <input name="name" value="{{.Name}}" required maxlength="200" autofocus></label>
+  <label>{{t "Code"}} <input name="slug" value="{{.Slug}}" required minlength="2" maxlength="16" pattern="[a-z0-9][a-z0-9\-]{0,14}[a-z0-9]" aria-describedby="code-help"></label>
+  <p id="code-help" class="help"><small>{{thtml "2 to 16 characters: a-z, 0-9 and \"-\". The code is part of the URLs. A new code changes all URLs of the space. Bookmarks to the old URLs stop working."}}</small></p>
+  <label>{{t "Description"}} <input name="description" value="{{.Description}}" maxlength="500"></label>
+  <label>{{t "Upload limit (MiB)"}} <input name="upload_quota_mb" type="number" value="{{.UploadQuotaMB}}" required min="1" max="1048576" aria-describedby="quota-help"></label>
+  <p id="quota-help" class="help"><small>{{t "The largest total size of all uploaded files in the space, from 1 to 1048576 MiB. A new limit does not delete files. If the files use more than the limit, users cannot upload more files."}}</small></p>
+  <label>{{t "Search results"}} <input name="search_results" type="number" value="{{.SearchResults}}" required min="10" max="1000" aria-describedby="results-help"></label>
+  <p id="results-help" class="help"><small>{{t "The largest number of results from this space in one search, from 10 to 1000. The search counts only the documents and folders that the user can read."}}</small></p>
+  <label>{{t "Default classification"}}
     <select name="default_classification" aria-describedby="defclass-help">
-      <option value="0"{{if eq .DefaultClassificationID 0}} selected{{end}}>The default of the tenant</option>
+      <option value="0"{{if eq .DefaultClassificationID 0}} selected{{end}}>{{t "The default of the tenant"}}</option>
       {{range $.Data.Classifications}}<option value="{{.ID}}"{{if eq .ID $.Data.Space.DefaultClassificationID}} selected{{end}}>{{.Name}}</option>{{end}}
     </select></label>
-  <p id="defclass-help" class="help"><small>The classification of a new document in the space. A folder can set a different default.</small></p>
-  <label>Lowest classification
+  <p id="defclass-help" class="help"><small>{{t "The classification of a new document in the space. A folder can set a different default."}}</small></p>
+  <label>{{t "Lowest classification"}}
     <select name="min_classification" aria-describedby="minclass-help">
-      <option value="0"{{if eq .MinClassificationID 0}} selected{{end}}>No limit</option>
+      <option value="0"{{if eq .MinClassificationID 0}} selected{{end}}>{{t "No limit"}}</option>
       {{range $.Data.Classifications}}<option value="{{.ID}}"{{if eq .ID $.Data.Space.MinClassificationID}} selected{{end}}>{{.Name}}</option>{{end}}
     </select></label>
-  <p id="minclass-help" class="help"><small>The documents in the space must have this classification or a higher one. A folder can only set a higher limit. Before you set a limit, give the documents with a lower classification a higher one.</small></p>
+  <p id="minclass-help" class="help"><small>{{t "The documents in the space must have this classification or a higher one. A folder can only set a higher limit. Before you set a limit, give the documents with a lower classification a higher one."}}</small></p>
   {{template "savebutton"}}
 </form>
 {{end}}

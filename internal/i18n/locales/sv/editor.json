@@ -1,0 +1,10 @@
+{
+  "Links to the page \"%s\".": "Länkar till sidan ”%s”.",
+  "Select a page in the list, or type an address: https://…, mailto:…, wiki:Title or a path that starts with /.": "Välj en sida i listan, eller skriv en adress: https://…, mailto:…, wiki:Titel eller en sökväg som börjar med /.",
+  "Text": "Text",
+  "The page does not exist, or you cannot read it.": "Sidan finns inte, eller så kan du inte läsa den.",
+  "The search failed.": "Sökningen misslyckades.",
+  "The upload failed.": "Uppladdningen misslyckades.",
+  "Uploading %s…": "Laddar upp %s…",
+  "in %s": "i %s"
+}

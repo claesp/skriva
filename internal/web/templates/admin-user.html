@@ -5,24 +5,24 @@
 <div class="pagehead"><h1>{{.User.Username}}</h1></div>
 <table class="settings">
   <tbody>
-    <tr><th scope="row">Name</th><td>{{.User.DisplayName}}</td><td class="actions"></td></tr>
-    <tr><th scope="row">E-mail</th><td>{{.User.Email}}</td><td class="actions"></td></tr>
-    <tr><th scope="row">Issuer</th><td><code>{{.User.Issuer}}</code></td><td class="actions"></td></tr>
-    <tr><th scope="row">Subject</th><td><code>{{.User.Subject}}</code></td><td class="actions"></td></tr>
-    <tr><th scope="row">First sign-in</th><td>{{date .User.CreatedAt}}</td><td class="actions"></td></tr>
-    <tr><th scope="row">Status</th>
-      <td>{{if .User.Disabled}}<span class="tag danger">Disabled</span>{{else}}Active{{end}}</td>
-      <td class="actions">{{if .IsSelf}}{{template "tool" (dtool "disable" "Disable")}}{{else if .User.Disabled}}{{template "post" (post (print $u "/enable") "enable" "Enable" $.CSRF "")}}{{else}}{{template "post" (post (print $u "/disable") "disable" "Disable" $.CSRF "")}}{{end}}</td></tr>
+    <tr><th scope="row">{{t "Name"}}</th><td>{{.User.DisplayName}}</td><td class="actions"></td></tr>
+    <tr><th scope="row">{{t "E-mail"}}</th><td>{{.User.Email}}</td><td class="actions"></td></tr>
+    <tr><th scope="row">{{t "Issuer"}}</th><td><code>{{.User.Issuer}}</code></td><td class="actions"></td></tr>
+    <tr><th scope="row">{{t "Subject"}}</th><td><code>{{.User.Subject}}</code></td><td class="actions"></td></tr>
+    <tr><th scope="row">{{t "First sign-in"}}</th><td>{{date .User.CreatedAt}}</td><td class="actions"></td></tr>
+    <tr><th scope="row">{{t "Status"}}</th>
+      <td>{{if .User.Disabled}}<span class="tag danger">{{t "Disabled"}}</span>{{else}}{{t "Active"}}{{end}}</td>
+      <td class="actions">{{if .IsSelf}}{{template "tool" (dtool "disable" (t "Disable"))}}{{else if .User.Disabled}}{{template "post" (post (print $u "/enable") "enable" (t "Enable") $.CSRF "")}}{{else}}{{template "post" (post (print $u "/disable") "disable" (t "Disable") $.CSRF "")}}{{end}}</td></tr>
   </tbody>
 </table>
-<h2>Groups</h2>
+<h2>{{t "Groups"}}</h2>
 <table>
-  <thead><tr><th>Name</th><th>Source</th></tr></thead>
+  <thead><tr><th>{{t "Name"}}</th><th>{{t "Source"}}</th></tr></thead>
   <tbody>
   {{range .Groups}}
   <tr><td><a href="{{$.TenantPath}}/admin/groups/{{.ID}}">{{.Name}}</a></td><td>{{source .Source}}</td></tr>
   {{else}}
-  <tr><td colspan="2">The user is not a member of a group.</td></tr>
+  <tr><td colspan="2">{{t "The user is not a member of a group."}}</td></tr>
   {{end}}
   </tbody>
 </table>

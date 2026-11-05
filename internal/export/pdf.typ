@@ -12,10 +12,12 @@
 
 #set document(
   title: data.title,
-  description: if classification != "" { "Classification: " + classification } else { none },
+  description: if classification != "" { data.label + ": " + classification } else { none },
   keywords: if classification != "" { (classification,) } else { () },
 )
-#set text(font: "Libertinus Serif", size: 11pt, lang: "en", hyphenate: auto)
+// lang is the content language of the tenant, for the rules of the
+// text (quotes, hyphenation). Without a content language, it is "en".
+#set text(font: "Libertinus Serif", size: 11pt, lang: if data.lang != "" { data.lang } else { "en" }, hyphenate: auto)
 #set par(justify: false, leading: 0.65em, spacing: 1.1em)
 #show raw: set text(font: "DejaVu Sans Mono", size: 0.85em)
 #show link: underline

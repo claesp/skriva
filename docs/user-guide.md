@@ -8,6 +8,17 @@
 The wiki then shows the page that you opened. Each tenant has its own
 sign-in. If you use more than one tenant, sign in to each tenant.
 
+## Your profile
+
+Click your name at the right side of the page header to open your
+profile. The profile shows your name, user name and email address. The
+identity provider gives these values. Change them there.
+
+**Language** selects the language of the pages. "The default" uses the
+language of the tenant. The language applies to all pages of the tenant
+and to your next sign-in. The system administration has its own profile
+at `/admin/profile`.
+
 ## Spaces, folders and documents
 
 - The start page of a tenant shows its **spaces** in a table, with the
@@ -92,10 +103,11 @@ spaces** (the space icon) to search in all spaces of the tenant.
   "installation". A shorter word finds only the whole word. The search
   does not find the end or the middle of a word: "scribe" does not find
   "describe".
-- A word of 3 letters or more also finds the other forms of the English
-  word: "describing" finds "describe", and "planning" finds "plans". The
-  search uses the English stem of the word. For other languages, this
-  does not work correctly, but the start of words works.
+- A word of 3 letters or more also finds the other forms of the word:
+  in English, "describing" finds "describe", and "planning" finds
+  "plans". The search uses the stems of the content language of the
+  tenant. The administrator sets the content language. Without a
+  content language, only the start of words works.
 - The results with the whole words come first. Then come the results
   with other forms of the words, then the results with parts of words.
 - Type `-word` to exclude the items with that word.

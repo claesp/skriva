@@ -2,15 +2,15 @@
 {{template "plainhead" (print .Space.Name " / " .Title)}}
 {{with .Data}}
 {{if .Nodes}}
-<div class="pagehead"><h1>Select a document</h1></div>
-<p>More than one item has the title "{{.Title}}".</p>
+<div class="pagehead"><h1>{{t "Select a document"}}</h1></div>
+<p>{{thtml "More than one item has the title \"%s\"." .Title}}</p>
 <ul class="pages">
   {{range .Nodes}}<li class="{{.Kind}}"><a href="{{docpath $.SpacePath .PublicID .Slug}}">{{.Title}}</a> <small>{{date .UpdatedAt}}</small></li>{{end}}
 </ul>
 {{else}}
-<div class="pagehead"><h1>Document not found</h1></div>
-<p>No document in this space has the title "{{.Title}}".</p>
-{{if $.Can "doc.create"}}<div class="buttons"><a class="button" href="{{.CreateURL}}">New document</a></div>{{end}}
+<div class="pagehead"><h1>{{t "Document not found"}}</h1></div>
+<p>{{thtml "No document in this space has the title \"%s\"." .Title}}</p>
+{{if $.Can "doc.create"}}<div class="buttons"><a class="button" href="{{.CreateURL}}">{{t "New document"}}</a></div>{{end}}
 {{end}}
 {{end}}
 {{template "nodefoot"}}

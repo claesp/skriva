@@ -90,23 +90,24 @@ func (s *Server) handleTrash(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	p := s.tr(r)
 	for _, t := range items {
 		if !canSeeTrashItem(ri.Access, &t) {
 			continue
 		}
 		if t.ParentAccessPathID != 0 && !ri.Access.Can(t.ParentAccessPathID, rbac.DocRead) {
-			t.ParentTitle = "A folder that you cannot read"
+			t.ParentTitle = p.T("A folder that you cannot read")
 		}
 		page.Items = append(page.Items, trashRow{t, ri.Access.Can(t.AccessPathID, rbac.SpaceManage)})
 	}
-	s.render(w, r, http.StatusOK, "trash", "Trash", page)
+	s.render(w, r, http.StatusOK, "trash", p.T("Trash"), page)
 }
 
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request, t *store.TrashItem) {
 	ri := reqInfoFrom(r.Context())
 	err := s.store.RestoreNode(r.Context(), ri.Space.ID, t.PublicID)
 	if errors.Is(err, store.ErrInvalid) {
-		s.badRequest(w, r, "The old parent of the item is in the trash. Restore the parent first.")
+		s.badRequest(w, r, s.tr(r).T("The old parent of the item is in the trash. Restore the parent first."))
 		return
 	}
 	if !s.storeResult(w, r, err) {
@@ -124,7 +125,7 @@ func (s *Server) handlePurgeForm(w http.ResponseWriter, r *http.Request, t *stor
 		return
 	}
 	page.Confirm = t
-	s.render(w, r, http.StatusOK, "trash", "Delete "+t.Title, page)
+	s.render(w, r, http.StatusOK, "trash", s.tr(r).T("Delete %s", t.Title), page)
 }
 
 func (s *Server) handlePurge(w http.ResponseWriter, r *http.Request, t *store.TrashItem) {

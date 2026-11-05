@@ -56,7 +56,7 @@ func defaultTenant(t *testing.T, st *store.Store) *store.Tenant {
 func settings(name string) store.TenantSettings {
 	return store.TenantSettings{
 		Name: name, OIDCScopes: []string{"openid"}, OIDCGroupsClaim: "groups",
-		DefaultRole: "viewer", SessionTTL: time.Hour, MaxDocBytes: 1 << 20,
+		DefaultRole: "viewer", SessionTTL: time.Hour, MaxDocBytes: 1 << 20, ContentLanguage: "en",
 	}
 }
 

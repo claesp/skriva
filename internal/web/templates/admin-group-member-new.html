@@ -1,15 +1,15 @@
 {{define "content"}}
 {{with .Data}}
 {{$g := print $.TenantPath "/admin/groups/" .Group.ID}}
-{{template "formhead" (crumb3 (print $.TenantPath "/admin/groups") "Groups" $g .Group.Name "New member" "new-user")}}
+{{template "formhead" (crumb3 (print $.TenantPath "/admin/groups") (t "Groups") $g .Group.Name (t "New member") "new-user")}}
 {{if .Users}}
 <form method="post" action="{{$g}}/members" class="stack">
   {{template "csrf" $.CSRF}}
-  <label>User <select name="user_id" required autofocus>{{range .Users}}<option value="{{.ID}}">{{.Username}}{{with .DisplayName}} ({{.}}){{end}}</option>{{end}}</select></label>
+  <label>{{t "User"}} <select name="user_id" required autofocus>{{range .Users}}<option value="{{.ID}}">{{.Username}}{{with .DisplayName}} ({{.}}){{end}}</option>{{end}}</select></label>
   {{template "savebutton"}}
 </form>
 {{else}}
-<p>All users are members of the group.</p>
+<p>{{t "All users are members of the group."}}</p>
 {{end}}
 {{end}}
 {{end}}

@@ -20,6 +20,8 @@ func (s *Server) tenantRoutes(mux routeMux) {
 	// session, and show only the spaces that the user can read.
 	mux.Handle("GET /{tenant}/{$}", s.require("", s.handleTenantHome))
 	mux.Handle("GET /{tenant}/search", s.require("", s.handleSearch))
+	mux.Handle("GET /{tenant}/profile", s.require("", s.handleProfile))
+	mux.Handle("POST /{tenant}/profile", s.require("", s.handleProfileUpdate))
 }
 
 func (s *Server) handleTenantHome(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +89,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	ri := reqInfoFrom(r.Context())
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if len(q) > maxSearchLen {
-		s.badRequest(w, r, "The search text is too long.")
+		s.badRequest(w, r, s.tr(r).T("The search text is too long."))
 		return
 	}
 	var results []store.SearchResult
@@ -126,7 +128,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, http.StatusOK, "search", "Search", struct {
+	s.render(w, r, http.StatusOK, "search", s.tr(r).T("Search"), struct {
 		Query   string
 		Results []store.SearchResult
 		Tree    []*store.TreeNode

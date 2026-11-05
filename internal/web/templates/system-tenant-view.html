@@ -2,49 +2,56 @@
 {{template "tenanthead" .}}
 {{with .Data}}
 {{$edit := print "/admin/tenants/" .Code "/edit"}}
-<div class="pagehead"><h1>{{.Name}}{{if .IsDefault}} <span class="tag">default</span>{{end}}</h1></div>
-{{template "sectionhead" (section "General" "" (tool (print $edit "#general") "edit" "Change the settings"))}}
+<div class="pagehead"><h1>{{.Name}}{{if .IsDefault}} <span class="tag">{{t "default"}}</span>{{end}}</h1></div>
+{{template "sectionhead" (section (t "General") "" (tool (print $edit "#general") "edit" (t "Change the settings")))}}
 <table class="settings">
   <tbody>
-    <tr><th scope="row">Code</th><td><code>{{.Code}}</code></td></tr>
-    <tr><th scope="row">Name</th><td>{{.Name}}</td></tr>
-    <tr><th scope="row">Status</th><td>{{if .Disabled}}<span class="tag danger">Disabled</span>{{else}}Active{{end}}</td></tr>
+    <tr><th scope="row">{{t "Code"}}</th><td><code>{{.Code}}</code></td></tr>
+    <tr><th scope="row">{{t "Name"}}</th><td>{{.Name}}</td></tr>
+    <tr><th scope="row">{{t "Status"}}</th><td>{{if .Disabled}}<span class="tag danger">{{t "Disabled"}}</span>{{else}}{{t "Active"}}{{end}}</td></tr>
   </tbody>
 </table>
-{{template "sectionhead" (section "Identity provider" "" (tool (print $edit "#idp") "edit" "Change the identity provider"))}}
+{{template "sectionhead" (section (t "Identity provider") "" (tool (print $edit "#idp") "edit" (t "Change the identity provider")))}}
 <table class="settings">
   <tbody>
-    <tr><th scope="row">Issuer URL</th><td>{{with .OIDCIssuer}}<code>{{.}}</code>{{else}}<span class="tag danger">Not set</span>{{end}}</td></tr>
-    <tr><th scope="row">Client ID</th><td>{{.OIDCClientID}}</td></tr>
-    <tr><th scope="row">Client secret</th><td>{{if .HasSecret}}Set{{else}}Not set{{end}}</td></tr>
-    <tr><th scope="row">Scopes</th><td><code>{{.Scopes}}</code></td></tr>
-    <tr><th scope="row">Groups claim</th><td><code>{{.OIDCGroupsClaim}}</code></td></tr>
-    <tr><th scope="row">Redirect URI</th><td><code>{{.RedirectURI}}</code></td></tr>
-    <tr><th scope="row">Post-logout redirect URI</th><td><code>{{.LogoutURI}}</code></td></tr>
+    <tr><th scope="row">{{t "Issuer URL"}}</th><td>{{with .OIDCIssuer}}<code>{{.}}</code>{{else}}<span class="tag danger">{{t "Not set"}}</span>{{end}}</td></tr>
+    <tr><th scope="row">{{t "Client ID"}}</th><td>{{.OIDCClientID}}</td></tr>
+    <tr><th scope="row">{{t "Client secret"}}</th><td>{{if .HasSecret}}{{t "Set"}}{{else}}{{t "Not set"}}{{end}}</td></tr>
+    <tr><th scope="row">{{t "Scopes"}}</th><td><code>{{.Scopes}}</code></td></tr>
+    <tr><th scope="row">{{t "Groups claim"}}</th><td><code>{{.OIDCGroupsClaim}}</code></td></tr>
+    <tr><th scope="row">{{t "Redirect URI"}}</th><td><code>{{.RedirectURI}}</code></td></tr>
+    <tr><th scope="row">{{t "Post-logout redirect URI"}}</th><td><code>{{.LogoutURI}}</code></td></tr>
   </tbody>
 </table>
-{{template "sectionhead" (section "Access" "" (tool (print $edit "#access") "edit" "Change the access"))}}
+{{template "sectionhead" (section (t "Access") "" (tool (print $edit "#access") "edit" (t "Change the access")))}}
 <table class="settings">
   <tbody>
-    <tr><th scope="row">Admin group</th><td>{{.AdminGroup}}</td></tr>
-    <tr><th scope="row">Default role</th><td>{{with .DefaultRole}}{{.}}{{else}}None{{end}}</td></tr>
+    <tr><th scope="row">{{t "Admin group"}}</th><td>{{.AdminGroup}}</td></tr>
+    <tr><th scope="row">{{t "Default role"}}</th><td>{{with .DefaultRole}}{{.}}{{else}}{{t "None"}}{{end}}</td></tr>
   </tbody>
 </table>
-{{template "sectionhead" (section "Limits" "" (tool (print $edit "#limits") "edit" "Change the limits"))}}
+{{template "sectionhead" (section (t "Limits") "" (tool (print $edit "#limits") "edit" (t "Change the limits")))}}
 <table class="settings">
   <tbody>
-    <tr><th scope="row">Session life</th><td>{{.SessionTTL}}</td></tr>
-    <tr><th scope="row">Maximum document size</th><td>{{.MaxDocKiB}} KiB</td></tr>
+    <tr><th scope="row">{{t "Session life"}}</th><td>{{.SessionTTL}}</td></tr>
+    <tr><th scope="row">{{t "Maximum document size"}}</th><td>{{.MaxDocKiB}} KiB</td></tr>
+  </tbody>
+</table>
+{{template "sectionhead" (section (t "Languages") "" (tool (print $edit "#languages") "edit" (t "Change the languages")))}}
+<table class="settings">
+  <tbody>
+    <tr><th scope="row">{{t "Language"}}</th><td>{{if .Language}}{{langname .Language}}{{else}}{{t "The default of the system (%s)" .SystemLanguage}}{{end}}</td></tr>
+    <tr><th scope="row">{{t "Content language"}}</th><td>{{if .ContentLanguage}}{{langname .ContentLanguage}}{{else}}{{t "None"}}{{end}}</td></tr>
   </tbody>
 </table>
 {{with .Keys}}
-<div class="sectionhead"><h2 id="encryption">Encryption</h2><nav class="toolbar" aria-label="Actions: Encryption"><span class="group">{{template "post" (post (print "/admin/tenants/" $.Data.Code "/rotate-key") "key" "Make a new data key" $.CSRF "")}}</span></nav></div>
-<p>The documents and the files of the tenant are encrypted with the data key of the tenant. A new key replaces the current key at once. The server then encrypts the old documents and files again with the new key, in the background.</p>
+<div class="sectionhead"><h2 id="encryption">{{t "Encryption"}}</h2><nav class="toolbar" aria-label="{{t "Actions: %s" (t "Encryption")}}"><span class="group">{{template "post" (post (print "/admin/tenants/" $.Data.Code "/rotate-key") "key" (t "Make a new data key") $.CSRF "")}}</span></nav></div>
+<p>{{t "The documents and the files of the tenant are encrypted with the data key of the tenant. A new key replaces the current key at once. The server then encrypts the old documents and files again with the new key, in the background."}}</p>
 <table class="settings">
   <tbody>
-    <tr><th scope="row">Data key</th><td>Version {{.Version}}, made {{date .CreatedAt}}</td></tr>
-    <tr><th scope="row">Key encryption key</th><td><code>{{.KEKID}}</code></td></tr>
-    <tr><th scope="row">Old keys</th><td>{{if .Retired}}{{.Retired}}. {{.OldItems}} items still use an old key.{{else}}None{{end}}</td></tr>
+    <tr><th scope="row">{{t "Data key"}}</th><td>{{thtml "Version %d, made %s" .Version (date .CreatedAt)}}</td></tr>
+    <tr><th scope="row">{{t "Key encryption key"}}</th><td><code>{{.KEKID}}</code></td></tr>
+    <tr><th scope="row">{{t "Old keys"}}</th><td>{{if .Retired}}{{.Retired}}. {{t "%d items still use an old key." .OldItems}}{{else}}{{t "None"}}{{end}}</td></tr>
   </tbody>
 </table>
 {{end}}
