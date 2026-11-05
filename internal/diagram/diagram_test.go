@@ -127,12 +127,14 @@ func TestRenderUnavailable(t *testing.T) {
 	}
 }
 
-// A text that takes too long or that makes mmdr panic gives the same
-// result each time. Thus the cache keeps the error.
+// A text that takes too long, that makes mmdr panic or that needs too
+// much memory gives the same result each time. Thus the cache keeps the
+// error.
 func TestRenderCachedFailure(t *testing.T) {
 	for name, tc := range map[string]struct{ body, msg string }{
 		"timeout": {"sleep 5", "takes more than 200ms"},
 		"panic":   {"echo 'panicked at /src/x.rs:1' >&2; exit 101", "mmdr cannot read the text"},
+		"memory":  {"kill -ABRT $$", "the diagram needs too much memory"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			prog, runs := fake(t, tc.body)

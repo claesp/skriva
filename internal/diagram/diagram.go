@@ -22,8 +22,11 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode"
+
+	"github.com/claesp/skriva/internal/proc"
 )
 
 // Options configure a Renderer.
@@ -36,6 +39,9 @@ type Options struct {
 	// MaxJobs is the largest number of mmdr processes at the same time.
 	// Zero means DefaultJobs.
 	MaxJobs int
+	// MaxMemory is the largest data memory of one mmdr process, in
+	// bytes. Zero means DefaultMaxMemory.
+	MaxMemory uint64
 	// CacheBytes is the largest size of the cache of images. Zero means
 	// DefaultCacheBytes.
 	CacheBytes int
@@ -84,6 +90,7 @@ const (
 	DefaultTimeout    = 5 * time.Second
 	DefaultJobs       = 2
 	DefaultCacheBytes = 32 << 20
+	DefaultMaxMemory  = 256 << 20
 )
 
 // Limits of a diagram.
@@ -147,6 +154,9 @@ func New(o Options) *Renderer {
 	}
 	if o.MaxJobs <= 0 {
 		o.MaxJobs = DefaultJobs
+	}
+	if o.MaxMemory == 0 {
+		o.MaxMemory = DefaultMaxMemory
 	}
 	if o.CacheBytes <= 0 {
 		o.CacheBytes = DefaultCacheBytes
@@ -217,7 +227,7 @@ func (r *Renderer) run(ctx context.Context, source string) ([]byte, error) {
 	stdout := &limitedBuffer{max: MaxSVG}
 	stderr := &limitedBuffer{max: 4 << 10}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	err = cmd.Run()
+	err = proc.Run(cmd, r.opts.MaxMemory)
 	switch {
 	case parent.Err() != nil:
 		return nil, fmt.Errorf("mmdr: %w", parent.Err())
@@ -236,6 +246,11 @@ func (r *Renderer) run(ctx context.Context, source string) ([]byte, error) {
 			// A panic of the Rust program. The output can contain
 			// paths of the source code, thus do not show it.
 			return nil, &SourceError{"mmdr cannot read the text"}
+		}
+		if ws, ok := exit.Sys().(syscall.WaitStatus); ok && ws.Signaled() && ws.Signal() == syscall.SIGABRT {
+			// A Rust program stops with SIGABRT if an allocation
+			// fails, thus the diagram needs too much memory.
+			return nil, &SourceError{"the diagram needs too much memory"}
 		}
 	}
 	if err != nil {

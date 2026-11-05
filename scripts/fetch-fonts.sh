@@ -12,7 +12,7 @@
 # version must have a new folder. Do not change a file in an old folder.
 set -eu
 
-IMAGE=${NODE_IMAGE:-docker.io/library/node:24-alpine}
+IMAGE=${NODE_IMAGE:-docker.io/library/node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT="$ROOT/internal/web/static/fonts"
 WORK=$(mktemp -d)

@@ -1,5 +1,9 @@
+# Each base image has a tag and the digest of its multi-arch index. The
+# digest makes sure that the build always uses the same image. See
+# docs/security.md (Container) for an update.
+
 # Build stage.
-FROM docker.io/library/golang:1.26-alpine AS build
+FROM docker.io/library/golang:1.26-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -10,14 +14,13 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/skriva ./cmd/skriv
 RUN mkdir -p /out/root && mkdir -m 700 /out/root/tmp
 
 # The Typst program for the PDF export. The program is a static binary.
-# The digest makes sure that the build always uses the same version.
-FROM ghcr.io/typst/typst:0.15.1@sha256:5410828f3b97f32fcc3eb95fed614c962d03f480f74cea06936540b95037d2ee AS typst
+FROM ghcr.io/typst/typst:0.15.1@sha256:032e292249bcd378480cc7c142cfa324b63ef8aadeb88d7e7230320c4c9c422f AS typst
 
 # The mmdr program for Mermaid diagrams (mermaid-rs-renderer). The
 # project has no static binary, thus the stage builds the program from
 # source. The build on Alpine Linux makes a static binary. The lock file
 # of the crate sets the versions of all dependencies.
-FROM docker.io/library/rust:1.99-alpine AS mmdr
+FROM docker.io/library/rust:1.99-alpine@sha256:27cd9befd4a05d6f6eb407c3e28365f5092f008bfc5946207cca76ae5179ef23 AS mmdr
 RUN cargo install --locked --no-default-features --features cli \
 	--root /out mermaid-rs-renderer@0.3.1
 

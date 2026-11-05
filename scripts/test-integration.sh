@@ -7,7 +7,7 @@
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=${POSTGRES_IMAGE:-docker.io/library/postgres:17-alpine}
+IMAGE=${POSTGRES_IMAGE:-docker.io/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24}
 # Use the same Typst image as the Containerfile.
 TYPST_IMAGE=${TYPST_IMAGE:-$(sed -n 's|^FROM \(ghcr.io/typst/typst[^ ]*\) AS typst$|\1|p' "$ROOT/Containerfile")}
 NAME=skriva-test-db-$$

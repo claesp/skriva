@@ -177,3 +177,24 @@ func TestMmdrPath(t *testing.T) {
 		t.Fatalf("MmdrPath from PATH = %q, %v", path, err)
 	}
 }
+
+func TestProgramMemory(t *testing.T) {
+	c, err := load(env(validEnv()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.TypstMemory != 1<<30 || c.MmdrMemory != 256<<20 {
+		t.Fatalf("memory = %d, %d", c.TypstMemory, c.MmdrMemory)
+	}
+	m := validEnv()
+	m["SKRIVA_TYPST_MEMORY"] = "2048"
+	if c, err = load(env(m)); err != nil || c.TypstMemory != 2<<30 {
+		t.Fatalf("SKRIVA_TYPST_MEMORY=2048 gives %d, %v", c.TypstMemory, err)
+	}
+	for _, bad := range []string{"0", "8", "1G", "-1", "100000"} {
+		m["SKRIVA_MMDR_MEMORY"] = bad
+		if _, err := load(env(m)); err == nil || !strings.Contains(err.Error(), "SKRIVA_MMDR_MEMORY") {
+			t.Errorf("SKRIVA_MMDR_MEMORY=%s gives %v", bad, err)
+		}
+	}
+}

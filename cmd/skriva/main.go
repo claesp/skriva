@@ -99,7 +99,7 @@ func run(log *slog.Logger) error {
 		}
 		log.Info("the PDF export is not available", "reason", err)
 	} else {
-		pdf = &export.PDFOptions{Typst: path}
+		pdf = &export.PDFOptions{Typst: path, MaxMemory: cfg.TypstMemory}
 	}
 	var diagrams *diagram.Renderer
 	if path, err := cfg.MmdrPath(); err != nil {
@@ -108,7 +108,7 @@ func run(log *slog.Logger) error {
 		}
 		log.Info("Mermaid diagrams are not available", "reason", err)
 	} else {
-		diagrams = diagram.New(diagram.Options{Program: path})
+		diagrams = diagram.New(diagram.Options{Program: path, MaxMemory: cfg.MmdrMemory})
 	}
 	handler, err := web.New(st, web.Options{
 		Formats:          export.NewFormats(pdf),

@@ -396,8 +396,8 @@ one static program in Rust. It does not use a browser or Node.js.
   mmdr measures the text with its own estimate, because the container
   has no system fonts. The PDF export uses the fonts of Typst.
 - `diagram.Renderer` keeps the recent images and error messages in a
-  cache in memory (32 MB). A diagram that takes more than 5 seconds is
-  also an error in the cache. A key is the same only for the same text.
+  cache in memory (32 MB). A diagram that takes more than 5 seconds or
+  that needs more than 256 MiB of memory is also an error in the cache. A key is the same only for the same text.
   Thus the cache needs no invalidation.
 - The HTML export contains the images as `data:` URIs. The PDF export
   writes the images into the temporary folder of Typst. The Markdown

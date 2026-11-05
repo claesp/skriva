@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,6 +59,10 @@ type Config struct {
 	// Mmdr is the path of the mmdr program for Mermaid diagrams, or "" to
 	// find "mmdr" in the PATH. See MmdrPath.
 	Mmdr string
+	// TypstMemory and MmdrMemory are the largest data memory of one
+	// process of the program, in bytes.
+	TypstMemory uint64
+	MmdrMemory  uint64
 }
 
 // GroupRole is one item of SKRIVA_GROUP_ROLES.
@@ -186,6 +191,9 @@ func load(getenv func(string) string) (*Config, error) {
 	}
 	c.SessionTTL = ttl
 
+	c.TypstMemory = megabytes(get, "SKRIVA_TYPST_MEMORY", 1024, &errs)
+	c.MmdrMemory = megabytes(get, "SKRIVA_MMDR_MEMORY", 256, &errs)
+
 	for key, val := range map[string]string{
 		"SKRIVA_DATABASE_URL":       c.DatabaseURL,
 		"SKRIVA_OIDC_ISSUER":        c.OIDCIssuer,
@@ -197,6 +205,19 @@ func load(getenv func(string) string) (*Config, error) {
 		}
 	}
 	return c, errors.Join(errs...)
+}
+
+// megabytes reads a memory size in MiB from the variable key, and
+// returns it in bytes. The value must be a whole number from 16 to
+// 65536. An empty variable gives def.
+func megabytes(get func(key, def string) string, key string, def uint64, errs *[]error) uint64 {
+	v := get(key, strconv.FormatUint(def, 10))
+	n, err := strconv.ParseUint(v, 10, 64)
+	if err != nil || n < 16 || n > 65536 {
+		*errs = append(*errs, fmt.Errorf("%s: must be a number of MiB from 16 to 65536", key))
+		return def << 20
+	}
+	return n << 20
 }
 
 // fromEnvOrFile reads KEY, or the file that KEY_FILE names. A file is

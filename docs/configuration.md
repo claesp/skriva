@@ -32,6 +32,8 @@ missing or not valid.
 | `SKRIVA_LISTEN_ADDR`             | `:8080`                 | The address for the HTTP server. |
 | `SKRIVA_TYPST`                   | `/typst` in the image   | The path of the [Typst](https://typst.app) program for the PDF export. If it is set, the program must exist, or the server does not start. If it is not set, the server finds `typst` in the `PATH`. Without the program, the PDF export is not available. |
 | `SKRIVA_MMDR`                    | `/mmdr` in the image    | The path of the [mmdr](https://github.com/1jehuang/mermaid-rs-renderer) program for Mermaid diagrams. If it is set, the program must exist, or the server does not start. If it is not set, the server finds `mmdr` in the `PATH`. Without the program, a diagram is a code block. |
+| `SKRIVA_TYPST_MEMORY`            | `1024`                  | The largest data memory of one Typst process, in MiB (16 to 65536). |
+| `SKRIVA_MMDR_MEMORY`             | `256`                   | The largest data memory of one mmdr process, in MiB (16 to 65536). |
 
 ## The system identity provider
 

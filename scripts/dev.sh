@@ -11,8 +11,8 @@ set -eu
 POD=skriva-dev
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 
-POSTGRES_IMAGE=${POSTGRES_IMAGE:-docker.io/library/postgres:17-alpine}
-KEYCLOAK_IMAGE=${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0}
+POSTGRES_IMAGE=${POSTGRES_IMAGE:-docker.io/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24}
+KEYCLOAK_IMAGE=${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0@sha256:09a381c715ab0b111835b70f2905955274843a219c6f27efb348e4d9f4086858}
 APP_IMAGE=${APP_IMAGE:-localhost/skriva:dev}
 
 DB_PORT=${DB_PORT:-15432}

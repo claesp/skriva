@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/claesp/skriva/internal/doc"
+	"github.com/claesp/skriva/internal/proc"
 )
 
 // PDFOptions configure the PDF format. The format uses the Typst program
@@ -32,6 +33,9 @@ type PDFOptions struct {
 	// MaxJobs is the largest number of Typst processes at the same time.
 	// Zero means DefaultPDFJobs.
 	MaxJobs int
+	// MaxMemory is the largest data memory of one Typst process, in
+	// bytes. Zero means DefaultPDFMemory.
+	MaxMemory uint64
 }
 
 // Default values of PDFOptions. The timeout is shorter than the timeout
@@ -39,6 +43,7 @@ type PDFOptions struct {
 const (
 	DefaultPDFTimeout = 25 * time.Second
 	DefaultPDFJobs    = 2
+	DefaultPDFMemory  = 1 << 30
 )
 
 // Limits of the PDF format.
@@ -78,6 +83,9 @@ func pdfFormat(o *PDFOptions) Format {
 		}
 		if r.opts.MaxJobs <= 0 {
 			r.opts.MaxJobs = DefaultPDFJobs
+		}
+		if r.opts.MaxMemory == 0 {
+			r.opts.MaxMemory = DefaultPDFMemory
 		}
 		r.jobs = make(chan struct{}, r.opts.MaxJobs)
 		f.Write = r.write
@@ -267,7 +275,7 @@ func (r *pdfRunner) compile(ctx context.Context, dir string, data *pdfData, crea
 	var stderr limitedBuffer
 	stderr.max = maxStderr
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	if err := proc.Run(cmd, r.opts.MaxMemory); err != nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("typst: %w", ctx.Err())
 		}

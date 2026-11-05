@@ -266,7 +266,10 @@ HTML file and the PDF file contain the images that the user can read
   - has empty package folders, thus it cannot load packages from the
     network,
   - has an empty environment, one thread (`--jobs 1`) and a time limit
-    of 25 seconds.
+    of 25 seconds,
+  - can use 1 GiB of data memory (`RLIMIT_DATA`, `SKRIVA_TYPST_MEMORY`).
+    If Typst needs more memory, the allocation fails and the export
+    gives an error.
   - At most two processes run at the same time. Other requests wait.
 
   The server removes the temporary folder after each export.
@@ -287,9 +290,14 @@ comes from a user.
   server sends only the images of the diagrams in the document.
 - The process gets the text on the standard input. It has an empty
   environment and no arguments from the user. It has a time limit of 5
-  seconds. At most two processes run at the same time. The server keeps
-  the result in a cache, also a time-out or an error. Thus a slow
-  diagram does not run again at each view.
+  seconds and 256 MiB of data memory (`RLIMIT_DATA`,
+  `SKRIVA_MMDR_MEMORY`). At most two processes run at the same time. The
+  server keeps the result in a cache, also a time-out, an error or a
+  diagram that needs too much memory. Thus a slow diagram does not run
+  again at each view.
+- The server sets the memory limit with `prlimit(2)` immediately after
+  the start of the process. The limit is not available on systems other
+  than Linux.
 - The text can have a maximum of 32 KB. The image can have a maximum of
   4 MB. The error message has a maximum of 300 characters.
 - The page shows the error message of mmdr as text. The message can
@@ -304,10 +312,31 @@ All queries use parameters. No query contains text from a user.
 The container image contains only the program, the Typst program for
 the PDF export, the mmdr program for Mermaid diagrams, an empty
 temporary folder and CA certificates. The programs run as user 65532,
-not as root. The Containerfile gets Typst from its official image, with
-a fixed digest. The project of mmdr has no static binary. Thus the
-Containerfile builds mmdr from source, with a fixed version and the
-lock file of the crate (`cargo install --locked`).
+not as root. The Containerfile gets Typst from its official image. The
+project of mmdr has no static binary. Thus the Containerfile builds mmdr
+from source, with a fixed version and the lock file of the crate
+(`cargo install --locked`).
+
+Each base image has a tag and a digest (`name:tag@sha256:...`), also
+the images in the scripts. The digest is the digest of the multi-arch
+index. Thus a build always uses the same image, also if the tag moves to
+a new image. The tag shows only the version for the reader. To update
+an image, change the tag and the digest together:
+
+1. Pull the image, and show its digests:
+
+   ```sh
+   podman pull docker.io/library/golang:1.26-alpine
+   podman image inspect --format '{{json .RepoDigests}}' docker.io/library/golang:1.26-alpine
+   ```
+
+2. The list has two digests: the index and the image of your platform.
+   Find the index. For the index, this command shows `image.index` or
+   `manifest.list` as the media type:
+
+   ```sh
+   podman manifest inspect docker.io/library/golang@sha256:... | head -3
+   ```
 
 ## Information classification
 
