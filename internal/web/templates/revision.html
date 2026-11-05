@@ -2,8 +2,9 @@
 {{template "nodehead" .}}
 {{with .Data}}
 <div class="notice versionnote">
-  <span>This is version {{.Revision.Version}} from {{date .Revision.CreatedAt}}{{with .Revision.Author}} by {{.}}{{end}}.</span>
-  {{template "tool" (when ($.Can "doc.edit") (tool (print $.SpacePath "/edit/" .Node.PublicID "?from=" .Revision.Version) "restore" "Restore"))}}
+  {{$current := eq .Revision.Version .Node.Version}}
+  <span>This is {{if $current}}the current version ({{.Revision.Version}}){{else}}version {{.Revision.Version}}{{end}} from {{date .Revision.CreatedAt}}{{with .Revision.Author}} by {{.}}{{end}}.</span>
+  {{template "tool" (when (and ($.Can "doc.edit") (not $current)) (tool (print $.SpacePath "/edit/" .Node.PublicID "?from=" .Revision.Version) "restore" "Restore"))}}
 </div>
 <div class="pagehead"><h1>{{.Revision.Title}}</h1></div>
 <article class="prose">{{.HTML}}</article>

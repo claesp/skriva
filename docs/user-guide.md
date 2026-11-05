@@ -238,11 +238,13 @@ Thus the comparison does not show changes to these formats.
 ## Restore an old version
 
 1. Click **History** (clock) in the toolbar.
-2. Click **Restore** (arrow in a circle) in the row of the version.
+2. Click **Restore** (arrow in a circle) in the row of the version. You
+   can also open the version and click **Restore** above the text.
 3. Click **Save**.
 
 The wiki saves the old text as a new version. The history does not
-change.
+change. For the current version, **Restore** is disabled, because the
+text is the same.
 
 ## The editor
 

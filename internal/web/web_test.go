@@ -576,7 +576,15 @@ func TestTreeAndDocuments(t *testing.T) {
 	if b := readBody(t, bob.get(sp+"/history/"+cfg)); !strings.Contains(b, "/history/"+cfg+"/1") {
 		t.Fatalf("history:\n%s", b)
 	}
-	wantStatus(t, bob.get(sp+"/history/"+cfg+"/1"), http.StatusOK)
+	// An old version has an active Restore button. The current version
+	// has a disabled button, because a restore gives the same text.
+	if b := readBody(t, bob.get(sp+"/history/"+cfg+"/1")); !strings.Contains(b, `href="`+sp+"/edit/"+cfg+`?from=1"`) {
+		t.Fatalf("old version has no Restore button:\n%s", b)
+	}
+	if b := readBody(t, bob.get(sp+"/history/"+cfg+"/2")); strings.Contains(b, "?from=2") ||
+		!strings.Contains(b, `title="Restore (not available)"`) || !strings.Contains(b, "This is the current version (2)") {
+		t.Fatalf("current version has an active Restore button:\n%s", b)
+	}
 	wantStatus(t, bob.get(sp+"/history/"+cfg+"/9"), http.StatusNotFound)
 	if b := readBody(t, bob.get(sp+"/edit/"+cfg+"?from=1")); !strings.Contains(b, `value="Configure"`) {
 		t.Fatalf("restore form:\n%s", b)
