@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -104,6 +105,7 @@ type defaultRoleArgs struct {
 var funcs = template.FuncMap{
 	"date":    func(t time.Time) template.HTML { return timeElement(t, now()) },
 	"sub":     func(a, b int) int { return a - b },
+	"mib":     mebibytes,
 	"docpath": docPath,
 	"upper":   strings.ToUpper,
 	"tree":    func(base string, nodes []*store.TreeNode) treeArgs { return treeArgs{base, nodes} },
@@ -416,4 +418,13 @@ func plural(n int, word string) string {
 		return "1 " + word
 	}
 	return fmt.Sprintf("%d %ss", n, word)
+}
+
+// mebibytes shows a size in bytes as MiB with one decimal, for example
+// "12.5 MiB". A size that is more than zero is at least "0.1 MiB".
+func mebibytes(n int64) string {
+	if n > 0 && n < 1<<20/10 {
+		n = 1 << 20 / 10
+	}
+	return strconv.FormatFloat(float64(n)/(1<<20), 'f', 1, 64) + " MiB"
 }

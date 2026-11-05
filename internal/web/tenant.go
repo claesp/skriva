@@ -9,10 +9,7 @@ import (
 	"github.com/claesp/skriva/internal/store"
 )
 
-const (
-	maxSearchLen   = 200
-	searchPageSize = 50
-)
+const maxSearchLen = 200
 
 func (s *Server) tenantRoutes(mux routeMux) {
 	mux.HandleFunc("GET /{tenant}/login", s.handleLogin)
@@ -61,29 +58,27 @@ func (s *Server) readable(r *http.Request) ([]int64, error) {
 	return s.store.ReadableSpaces(r.Context(), ri.Tenant.ID, ri.Session.User.ID)
 }
 
-// readableResults removes the results that the user cannot read. Folders
-// can have different permissions. Thus the function checks each node.
-func (s *Server) readableResults(r *http.Request, in []store.SearchResult) ([]store.SearchResult, error) {
+// canRead returns a function for store.Search. The function tells
+// whether the user of the request can read a node. Folders can have
+// different permissions. Thus Search checks each node. The function
+// reads the access of each space one time.
+func (s *Server) canRead(r *http.Request) func(spaceID, accessPathID int64) (bool, error) {
 	ri := reqInfoFrom(r.Context())
 	access := map[int64]*store.Access{}
 	if ri.Space != nil {
 		access[ri.Space.ID] = ri.Access
 	}
-	out := in[:0:0]
-	for _, res := range in {
-		acc, ok := access[res.SpaceID]
+	return func(spaceID, accessPathID int64) (bool, error) {
+		acc, ok := access[spaceID]
 		if !ok {
 			var err error
-			if acc, err = s.store.Access(r.Context(), ri.Tenant.ID, res.SpaceID, ri.Session.User.ID); err != nil {
-				return nil, err
+			if acc, err = s.store.Access(r.Context(), ri.Tenant.ID, spaceID, ri.Session.User.ID); err != nil {
+				return false, err
 			}
-			access[res.SpaceID] = acc
+			access[spaceID] = acc
 		}
-		if acc.Can(res.AccessPathID, rbac.DocRead) {
-			out = append(out, res)
-		}
+		return acc.Can(accessPathID, rbac.DocRead), nil
 	}
-	return out, nil
 }
 
 // handleSearch searches in the space of the request, or in all spaces of
@@ -98,8 +93,8 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	var results []store.SearchResult
 	if q != "" {
 		// In a space, search only that space. Outside a space, search
-		// only the spaces that the user can read. readableResults then
-		// removes the items that the user cannot read.
+		// only the spaces that the user can read. canRead then removes
+		// the items that the user cannot read.
 		spaceIDs := []int64{}
 		if ri.Space != nil {
 			spaceIDs = append(spaceIDs, ri.Space.ID)
@@ -111,12 +106,8 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		var err error
-		results, err = s.store.Search(r.Context(), ri.Tenant.ID, spaceIDs, q, searchPageSize)
+		results, err = s.store.Search(r.Context(), ri.Tenant.ID, spaceIDs, q, s.canRead(r))
 		if err != nil {
-			s.serverError(w, r, err)
-			return
-		}
-		if results, err = s.readableResults(r, results); err != nil {
 			s.serverError(w, r, err)
 			return
 		}

@@ -80,17 +80,17 @@ func TestEncryptionAtRest(t *testing.T) {
 	}
 
 	// Search finds whole words. It does not find parts of words.
-	results, err := st2.Search(ctx, tn.ID, []int64{sp.ID}, "SWORDFISH launch", 10)
+	results, err := st2.Search(ctx, tn.ID, []int64{sp.ID}, "SWORDFISH launch", readAll)
 	if err != nil || len(results) != 1 || fmt.Sprint(results[0].Snippet) != "[{The  false} {launch true} { code is  false} {swordfish. true}]" {
 		t.Fatalf("search = %+v, %v", results, err)
 	}
-	if results, _ := st2.Search(ctx, tn.ID, []int64{sp.ID}, "sword", 10); len(results) != 0 {
+	if results, _ := st2.Search(ctx, tn.ID, []int64{sp.ID}, "sword", readAll); len(results) != 0 {
 		t.Fatalf("part of a word: %+v", results)
 	}
-	if results, _ := st2.Search(ctx, tn.ID, []int64{sp.ID}, "plan -swordfish", 10); len(results) != 0 {
+	if results, _ := st2.Search(ctx, tn.ID, []int64{sp.ID}, "plan -swordfish", readAll); len(results) != 0 {
 		t.Fatalf("excluded word: %+v", results)
 	}
-	if results, _ := st2.Search(ctx, tn.ID, []int64{sp.ID}, "plan", 10); len(results) != 1 {
+	if results, _ := st2.Search(ctx, tn.ID, []int64{sp.ID}, "plan", readAll); len(results) != 1 {
 		t.Fatalf("title word: %+v", results)
 	}
 
@@ -289,7 +289,7 @@ func TestTitleEncryption(t *testing.T) {
 	}
 
 	// The search shows the result with the word in the title first.
-	results, err := st.Search(ctx, tn.ID, []int64{sp.ID}, "swordfish", 10)
+	results, err := st.Search(ctx, tn.ID, []int64{sp.ID}, "swordfish", readAll)
 	if err != nil || len(results) != 2 || results[0].PublicID != secretID {
 		t.Fatalf("Search = %+v, %v", results, err)
 	}

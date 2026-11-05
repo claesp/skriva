@@ -241,6 +241,13 @@ control characters.
 ## Limits
 
 - The maximum request body is 2 MiB. For an upload, it is 10 MiB.
+- All uploaded files of a space together have a quota (default 1024
+  MiB). An administrator of the space can change it.
+- A search reads at most 10000 matches. It removes the matches that the
+  user cannot read before it applies the limit of results of each
+  space. Thus the matches that a user cannot read do not hide the
+  matches that the user can read. Only the text of the results is
+  decrypted.
 - The maximum document text is 1 MiB (the JSON text). Each tenant can
   set a lower limit. A document can have a maximum of 64 levels and
   200000 nodes.

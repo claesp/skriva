@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"slices"
@@ -798,6 +799,9 @@ type spaceHead struct {
 	Space *store.Space
 	Tab   string
 	Crumb string
+	// FileBytes is the size of the uploaded files. Only the space page
+	// sets it.
+	FileBytes int64
 }
 
 // loadSpace loads the space from the {slug} path value.
@@ -807,12 +811,17 @@ func (s *Server) loadSpace(w http.ResponseWriter, r *http.Request, tab string) (
 		s.storeResult(w, r, err)
 		return spaceHead{}, false
 	}
-	return spaceHead{sp, tab, tabCrumbs[tab]}, true
+	return spaceHead{Space: sp, Tab: tab, Crumb: tabCrumbs[tab]}, true
 }
 
 func (s *Server) handleAdminSpace(w http.ResponseWriter, r *http.Request) {
 	h, ok := s.loadSpace(w, r, "")
 	if !ok {
+		return
+	}
+	var err error
+	if h.FileBytes, err = s.store.SpaceFileBytes(r.Context(), h.Space.ID); err != nil {
+		s.serverError(w, r, err)
 		return
 	}
 	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space", "Space "+h.Space.Name, h)
@@ -826,14 +835,35 @@ func (s *Server) handleAdminSpaceEdit(w http.ResponseWriter, r *http.Request) {
 	s.renderAdmin(w, r, http.StatusOK, "spaces", "admin-space-edit", "Settings of "+h.Space.Name, h)
 }
 
+// formInt reads a whole number from a form field. It returns false if the
+// value is not a number from lo to hi.
+func formInt(r *http.Request, name string, lo, hi int) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(r.PostFormValue(name)))
+	return n, err == nil && n >= lo && n <= hi
+}
+
 func (s *Server) handleAdminSpaceUpdate(w http.ResponseWriter, r *http.Request) {
 	newSlug, name, desc, msg := s.spaceForm(r)
 	if msg != "" {
 		s.badRequest(w, r, msg)
 		return
 	}
+	quota, ok := formInt(r, "upload_quota_mb", store.MinUploadQuotaMB, store.MaxUploadQuotaMB)
+	if !ok {
+		s.badRequest(w, r, fmt.Sprintf("The upload limit must be a number of MiB from %d to %d.",
+			store.MinUploadQuotaMB, store.MaxUploadQuotaMB))
+		return
+	}
+	results, ok := formInt(r, "search_results", store.MinSearchResults, store.MaxSearchResults)
+	if !ok {
+		s.badRequest(w, r, fmt.Sprintf("The number of search results must be from %d to %d.",
+			store.MinSearchResults, store.MaxSearchResults))
+		return
+	}
 	slug := r.PathValue("slug")
-	if !s.storeResult(w, r, s.store.UpdateSpace(r.Context(), tenantOf(r).ID, slug, newSlug, name, desc)) {
+	if !s.storeResult(w, r, s.store.UpdateSpace(r.Context(), tenantOf(r).ID, slug, store.SpaceSettings{
+		Slug: newSlug, Name: name, Description: desc, UploadQuotaMB: quota, SearchResults: results,
+	})) {
 		return
 	}
 	if newSlug != slug {

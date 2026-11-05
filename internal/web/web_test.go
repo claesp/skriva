@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
@@ -134,11 +135,13 @@ func newEnv(t *testing.T) *env {
 	// the PDF export. Without it, the PDF export is not available.
 	var pdf *export.PDFOptions
 	if path := os.Getenv("SKRIVA_TEST_TYPST"); path != "" {
-		pdf = &export.PDFOptions{Typst: path, TempDir: os.Getenv("SKRIVA_TEST_TYPST_TMP")}
+		// The test programs can be scripts that run Podman. Podman needs
+		// more memory than the program, thus the limits are high.
+		pdf = &export.PDFOptions{Typst: path, TempDir: os.Getenv("SKRIVA_TEST_TYPST_TMP"), MaxMemory: 8 << 30}
 	}
 	s, err := New(st, Options{
 		Formats:          export.NewFormats(pdf),
-		Diagrams:         diagram.New(diagram.Options{Program: mmdrProgram(t), Timeout: 30 * time.Second}),
+		Diagrams:         diagram.New(diagram.Options{Program: mmdrProgram(t), Timeout: 30 * time.Second, MaxMemory: 8 << 30}),
 		BaseURL:          base,
 		SystemAuth:       idp,
 		SystemAdminGroup: "sysadmins",
@@ -840,7 +843,20 @@ func TestTenantAdmin(t *testing.T) {
 	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Team"}, "slug": {"teamspce"}}), http.StatusSeeOther)
 	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"Again"}, "slug": {"teamspce"}}), http.StatusConflict)
 	wantStatus(t, alice.get("/dflt/teamspce/"), http.StatusOK)
-	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce", url.Values{"name": {"Team space"}, "slug": {"teamspce"}}), http.StatusSeeOther)
+	edit := url.Values{"name": {"Team space"}, "slug": {"teamspce"}, "upload_quota_mb": {"5"}, "search_results": {"20"}}
+	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce", edit), http.StatusSeeOther)
+	for field, bad := range map[string]string{"upload_quota_mb": "0", "search_results": "5000"} {
+		v := url.Values{}
+		maps.Copy(v, edit)
+		v.Set(field, bad)
+		wantStatus(t, alice.post("/dflt/admin/spaces/teamspce", v), http.StatusBadRequest)
+	}
+	resp = alice.get("/dflt/admin/spaces/teamspce")
+	wantStatus(t, resp, http.StatusOK)
+	page := readBody(t, resp)
+	if !strings.Contains(page, "5 MiB for all files. The files use 0.0 MiB now.") || !strings.Contains(page, "20 at most") {
+		t.Fatalf("space page does not show the limits:\n%s", page)
+	}
 	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce/delete", url.Values{"confirm": {"wrong"}}), http.StatusBadRequest)
 	wantStatus(t, alice.post("/dflt/admin/spaces/teamspce/delete", url.Values{"confirm": {"teamspce"}}), http.StatusSeeOther)
 	wantStatus(t, alice.get("/dflt/teamspce/"), http.StatusNotFound)
@@ -1375,6 +1391,31 @@ func (c *client) upload(path, name string, data []byte) *http.Response {
 
 // png is the start of a PNG file. The server finds the type from it.
 var png = append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+
+// The upload quota of a space applies to all files together.
+func TestUploadQuota(t *testing.T) {
+	e := newEnv(t)
+	bob := e.login("bob")
+	id := bob.create("document", "", "Pictures", "x")
+	space, err := e.st.Space(ctx, e.dft.ID, "default0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.UpdateSpace(ctx, e.dft.ID, space.Slug, store.SpaceSettings{
+		Slug: space.Slug, Name: space.Name, UploadQuotaMB: 1, SearchResults: 10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	img := append(png, make([]byte, 600<<10)...)
+	wantStatus(t, bob.upload(sp+"/files?node="+id, "a.png", img), http.StatusOK)
+	resp := bob.upload(sp+"/files?node="+id, "b.png", img)
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("upload over the quota: status %d", resp.StatusCode)
+	}
+	if body := readBody(t, resp); !strings.Contains(body, "can use 1 MiB") {
+		t.Fatalf("upload over the quota: %s", body)
+	}
+}
 
 func TestUploads(t *testing.T) {
 	e := newEnv(t)
@@ -1951,9 +1992,9 @@ func TestChangeCodes(t *testing.T) {
 	// A space code with 2 characters and a code with "-".
 	wantStatus(t, alice.post("/dflt/admin/spaces", url.Values{"name": {"HR"}, "slug": {"hr"}}), http.StatusSeeOther)
 	wantStatus(t, alice.get("/dflt/hr/"), http.StatusOK)
-	wantStatus(t, alice.post("/dflt/admin/spaces/hr", url.Values{"name": {"HR"}, "slug": {"default0"}}), http.StatusConflict)
-	wantStatus(t, alice.post("/dflt/admin/spaces/hr", url.Values{"name": {"HR"}, "slug": {"admin"}}), http.StatusBadRequest)
-	wantStatus(t, alice.post("/dflt/admin/spaces/default0", url.Values{"name": {"Main"}, "slug": {"main-docs"}}), http.StatusSeeOther)
+	wantStatus(t, alice.post("/dflt/admin/spaces/hr", url.Values{"name": {"HR"}, "slug": {"default0"}, "upload_quota_mb": {"1024"}, "search_results": {"50"}}), http.StatusConflict)
+	wantStatus(t, alice.post("/dflt/admin/spaces/hr", url.Values{"name": {"HR"}, "slug": {"admin"}, "upload_quota_mb": {"1024"}, "search_results": {"50"}}), http.StatusBadRequest)
+	wantStatus(t, alice.post("/dflt/admin/spaces/default0", url.Values{"name": {"Main"}, "slug": {"main-docs"}, "upload_quota_mb": {"1024"}, "search_results": {"50"}}), http.StatusSeeOther)
 	wantStatus(t, alice.get("/dflt/default0/"), http.StatusNotFound)
 	if b := readBody(t, alice.get("/dflt/main-docs/d/"+id+"/plan")); !strings.Contains(b, "text") {
 		t.Fatalf("document after the space code changed:\n%s", b)

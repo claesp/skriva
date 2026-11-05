@@ -81,6 +81,11 @@ CREATE TABLE spaces (
     -- The default role in the space. NULL means that the space uses the
     -- default role of the tenant. An empty value means no default role.
     default_role text,
+    -- The largest total size of the uploaded files in the space, in MiB.
+    upload_quota_mb integer NOT NULL DEFAULT 1024 CHECK (upload_quota_mb BETWEEN 1 AND 1048576),
+    -- The largest number of search results from the space. The search
+    -- counts only the items that the user can read.
+    search_results  integer NOT NULL DEFAULT 50 CHECK (search_results BETWEEN 10 AND 1000),
     created_at   timestamptz NOT NULL DEFAULT now(),
     UNIQUE (tenant_id, slug),
     UNIQUE (tenant_id, id)
@@ -263,6 +268,9 @@ CREATE TABLE files (
     content_type text        NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml')),
     -- The data, encrypted with the data key of the tenant.
     data         bytea       NOT NULL,
+    -- The size of the data before the encryption, in bytes. The upload
+    -- quota of the space uses it.
+    size         bigint      NOT NULL CHECK (size >= 0),
     key_version  integer     NOT NULL,
     created_by   bigint      REFERENCES users (id) ON DELETE SET NULL,
     created_at   timestamptz NOT NULL DEFAULT now(),

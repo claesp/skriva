@@ -209,7 +209,9 @@ func TestMmdr(t *testing.T) {
 	if prog == "" {
 		t.Skip("SKRIVA_TEST_MMDR is not set")
 	}
-	r := New(Options{Program: prog, Timeout: 30 * time.Second})
+	// The test program can be a script that runs Podman. Podman needs more
+	// memory than the program, thus the limit is high.
+	r := New(Options{Program: prog, Timeout: 30 * time.Second, MaxMemory: 8 << 30})
 	svg, err := r.Render(context.Background(), "flowchart LR\n  A[Översikt] --> B{OK?}\n  B -->|Yes| C[Save]\n")
 	if err != nil || !strings.Contains(string(svg), "Översikt") {
 		t.Fatalf("Render = %.200q, %v", svg, err)

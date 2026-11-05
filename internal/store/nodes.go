@@ -1000,14 +1000,24 @@ type SearchResult struct {
 	Snippet []SnippetPart
 }
 
+// maxSearchScan is the largest number of matches that Search reads
+// before the permission check. It limits the work for one search.
+const maxSearchScan = 10000
+
 // Search finds the folders and documents of the given spaces of a tenant
 // with all words of the query in the title or in the text. A word with
-// "-" at the start excludes the documents with that word. The caller
-// must give only the spaces that the user can read. The text is
+// "-" at the start excludes the documents with that word. The text is
 // encrypted, thus the search uses the index of keyed hashes of the words
 // (search_tokens). It finds whole words only. Results with the words in
 // the title come first.
-func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, query string, limit int) ([]SearchResult, error) {
+//
+// can tells whether the user can read a node of a space with the given
+// access path. Search first removes the nodes that the user cannot read.
+// Then it keeps at most Space.SearchResults results of each space. Thus
+// a user gets the same number of results, also if many matches are in
+// folders that the user cannot read.
+func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, query string,
+	can func(spaceID, accessPathID int64) (bool, error)) ([]SearchResult, error) {
 	if len(spaceIDs) == 0 {
 		return nil, nil
 	}
@@ -1020,40 +1030,82 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 		return nil, err
 	}
 	incTokens, excTokens := tokensOf(tk.search, include), tokensOf(tk.search, exclude)
+	// The query does not read the text. Only the results need it.
 	rows, err := s.pool.Query(ctx, `
-		SELECT `+summaryCols+`, sp.slug, sp.name, n.plain_text
+		SELECT `+summaryCols+`, sp.slug, sp.name, sp.search_results
 		FROM nodes n
 		JOIN spaces sp ON sp.id = n.space_id
 		WHERE sp.tenant_id = $1 AND sp.id = ANY($2) AND n.deleted_at IS NULL
 		  AND n.search_tokens @> $3 AND NOT (n.search_tokens && $4)
-		ORDER BY n.title_tokens @> $3 DESC, n.updated_at DESC
-		LIMIT $5`, tenantID, spaceIDs, incTokens, excTokens, limit)
+		ORDER BY n.title_tokens @> $3 DESC, n.updated_at DESC, n.id DESC
+		LIMIT $5`, tenantID, spaceIDs, incTokens, excTokens, maxSearchScan)
 	if err != nil {
 		return nil, err
 	}
 	type found struct {
 		SearchResult
-		title, plainText []byte
+		title []byte
+		limit int
 	}
+	// Collect the rows first. can can use the database, and an open
+	// result holds a connection.
 	list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (found, error) {
 		var r found
-		err := row.Scan(append(summaryDest(&r.NodeSummary, &r.title), &r.SpaceSlug, &r.SpaceName, &r.plainText)...)
+		err := row.Scan(append(summaryDest(&r.NodeSummary, &r.title), &r.SpaceSlug, &r.SpaceName, &r.limit)...)
 		return r, err
 	})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]SearchResult, 0, len(list))
+	var out []SearchResult
+	var ids []int64
+	count := map[int64]int{}
 	for _, r := range list {
+		if count[r.SpaceID] >= r.limit {
+			continue
+		}
+		ok, err := can(r.SpaceID, r.AccessPathID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		count[r.SpaceID]++
 		if err := s.openSummary(ctx, &r.NodeSummary, r.title); err != nil {
 			return nil, err
 		}
-		plain, err := s.open(ctx, tenantID, plainTextPlace(r.SpaceID, r.PublicID), r.plainText)
+		out = append(out, r.SearchResult)
+		ids = append(ids, r.ID)
+	}
+	if len(out) == 0 {
+		return out, nil
+	}
+	rows, err = s.pool.Query(ctx, "SELECT id, plain_text FROM nodes WHERE id = ANY($1)", ids)
+	if err != nil {
+		return nil, err
+	}
+	texts := map[int64][]byte{}
+	var id int64
+	var text []byte
+	if _, err := pgx.ForEachRow(rows, []any{&id, &text}, func() error {
+		texts[id] = text
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		r := &out[i]
+		sealed, ok := texts[r.ID]
+		if !ok {
+			// The node was removed after the first query.
+			continue
+		}
+		plain, err := s.open(ctx, tenantID, plainTextPlace(r.SpaceID, r.PublicID), sealed)
 		if err != nil {
 			return nil, err
 		}
 		r.Snippet = snippet(string(plain), include)
-		out = append(out, r.SearchResult)
 	}
 	return out, nil
 }

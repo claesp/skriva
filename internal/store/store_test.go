@@ -310,10 +310,10 @@ func TestTenantIsolation(t *testing.T) {
 	if _, err := st.Node(ctx, spB.ID, id); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("node from other space: %v", err)
 	}
-	if res, _ := st.Search(ctx, b.ID, []int64{spB.ID}, "zebra", 10); len(res) != 0 {
+	if res, _ := st.Search(ctx, b.ID, []int64{spB.ID}, "zebra", readAll); len(res) != 0 {
 		t.Fatalf("search in tenant b finds tenant a data: %+v", res)
 	}
-	if res, _ := st.Search(ctx, a.ID, []int64{spA.ID}, "zebra", 10); len(res) != 1 || res[0].SpaceSlug != "default0" {
+	if res, _ := st.Search(ctx, a.ID, []int64{spA.ID}, "zebra", readAll); len(res) != 1 || res[0].SpaceSlug != "default0" {
 		t.Fatalf("search in tenant a: %+v", res)
 	}
 }
@@ -688,7 +688,7 @@ func TestNodeVersions(t *testing.T) {
 	if res, _ := st.NodesBySlug(ctx, sp.ID, "home"); len(res) != 1 || res[0].PublicID != id {
 		t.Fatalf("NodesBySlug = %+v", res)
 	}
-	if _, err := st.Search(ctx, tn.ID, []int64{sp.ID}, `"unclosed OR -( & |`, 10); err != nil {
+	if _, err := st.Search(ctx, tn.ID, []int64{sp.ID}, `"unclosed OR -( & |`, readAll); err != nil {
 		t.Fatalf("search with odd syntax: %v", err)
 	}
 

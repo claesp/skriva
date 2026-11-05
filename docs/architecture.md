@@ -459,6 +459,13 @@ user can read one of the nodes in `file_refs`. Before a node uses a
 file, only the user that uploaded it can read it. The cleanup task
 deletes files that no node uses after one day.
 
+Each space has an upload quota (`spaces.upload_quota_mb`, default
+1024 MiB). `files.size` is the size before the encryption. `CreateFile`
+locks the row of the space, adds the sizes of the files of the space,
+and refuses the file (`ErrQuota`, HTTP 413) if the total is larger than
+the quota. The lock makes sure that two uploads at the same time cannot
+both use the last part of the quota.
+
 A draw.io diagram is an uploaded file of the type `image/svg+xml`.
 draw.io can export a diagram as SVG with a copy of the diagram in the
 `content` attribute of the root element (a `.drawio.svg` file). Thus
@@ -547,8 +554,19 @@ hash of each word of the title and the text: the first 8 bytes of
 HMAC-SHA-256 with the search key of the tenant. A word is a sequence of
 letters and digits, in lower case. A search makes the hashes of the
 search words and finds the rows that contain all of them (`@>`). Items
-with the words in the title (`nodes.title_tokens`) come first. The store decrypts the plain
-text of the results and makes the parts of the text with the words.
+with the words in the title (`nodes.title_tokens`) come first.
+
+The permission check comes before the limit:
+
+1. The query reads at most 10000 matches (`maxSearchScan`), without the
+   text.
+2. The store removes each match that the user cannot read. The web
+   layer gives the check (`canRead`). It reads the access of each space
+   one time.
+3. The store keeps at most `spaces.search_results` results of each
+   space (default 50).
+4. The store reads the plain text of the results only, decrypts it and
+   makes the parts of the text with the words.
 The search finds whole words only, not word parts or phrases. A word
 with `-` before it (`-word`) excludes the items with that word.
 

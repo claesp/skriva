@@ -30,7 +30,9 @@ func pdfOptions(t *testing.T) *PDFOptions {
 		}
 		t.Cleanup(func() { os.RemoveAll(tmp) })
 	}
-	return &PDFOptions{Typst: path, TempDir: tmp}
+	// The test program can be a script that runs Podman. Podman needs more
+	// memory than the program, thus the limit is high.
+	return &PDFOptions{Typst: path, TempDir: tmp, MaxMemory: 8 << 30}
 }
 
 // TestWriteImages checks the image files without Typst.

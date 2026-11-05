@@ -2,7 +2,10 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // File is an uploaded file.
@@ -19,8 +22,14 @@ type File struct {
 	AccessPaths []int64
 }
 
+// ErrQuota tells that the files of the space use all of the upload quota
+// of the space (Space.UploadQuotaMB).
+var ErrQuota = errors.New("the upload quota of the space is full")
+
 // CreateFile saves an uploaded file in a space. It returns the public ID
-// of the file. The caller must check the content type and the size.
+// of the file. The caller must check the content type and the size. It
+// returns ErrQuota if the files of the space and the new file are larger
+// than the upload quota of the space.
 func (s *Store) CreateFile(ctx context.Context, spaceID int64, contentType string, data []byte, userID int64) (string, error) {
 	publicID := NewPublicID()
 	tenantID, err := s.tenantOfSpace(ctx, spaceID)
@@ -31,9 +40,28 @@ func (s *Store) CreateFile(ctx context.Context, spaceID int64, contentType strin
 	if err != nil {
 		return "", err
 	}
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO files (space_id, public_id, content_type, data, key_version, created_by, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`, spaceID, publicID, contentType, sealed, version, nullID(userID), s.now())
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		// The lock makes sure that two uploads at the same time cannot
+		// both use the last part of the quota.
+		if err := lockSpace(ctx, tx, spaceID); err != nil {
+			return err
+		}
+		var room bool
+		if err := tx.QueryRow(ctx, `
+			SELECT (SELECT COALESCE(sum(size), 0) FROM files WHERE space_id = $1) + $2
+			       <= upload_quota_mb::bigint << 20
+			FROM spaces WHERE id = $1`, spaceID, len(data)).Scan(&room); err != nil {
+			return err
+		}
+		if !room {
+			return ErrQuota
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO files (space_id, public_id, content_type, data, size, key_version, created_by, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			spaceID, publicID, contentType, sealed, len(data), version, nullID(userID), s.now())
+		return err
+	})
 	if err != nil {
 		return "", err
 	}

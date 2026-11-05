@@ -92,6 +92,8 @@ spaces** (the space icon) to search in all spaces of the tenant.
 - Type `-word` to exclude the items with that word.
 - Items with the words in the title come first.
 - The results show only the items that you can read.
+- Each space gives a maximum number of results (50 if the administrator
+  did not change it). In all spaces, each space gives its own maximum.
 
 The text of the documents is encrypted in the database. Thus the search
 uses an index of keyed hashes of the words, not the words. See
@@ -359,6 +361,10 @@ an image file into the text. The wiki keeps the image with the document.
 - The file must be a PNG, JPEG, GIF or WebP image, or a draw.io
   diagram in SVG format (see below). Other SVG files are not permitted.
 - The maximum size is 10 MiB.
+- All files of a space together have a limit (1024 MiB if the
+  administrator did not change it). When the space is full, the editor
+  shows a message. Ask an administrator of the space to increase the
+  limit.
 - The name of the file becomes the description of the image (the
   alternative text).
 - A user who can read the document can see its images.

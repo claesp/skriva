@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -111,6 +112,14 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	fileID, err := s.store.CreateFile(r.Context(), ri.Space.ID, contentType, data, ri.Session.User.ID)
+	if errors.Is(err, store.ErrQuota) {
+		s.log.Info("upload quota full", "tenant", ri.Tenant.Code, "space", ri.Space.Slug,
+			"bytes", len(data), "user_id", ri.Session.User.ID)
+		uploadError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("The space has no room for this file. "+
+			"All files of the space together can use %d MiB. Ask an administrator of the space to increase the limit.",
+			ri.Space.UploadQuotaMB))
+		return
+	}
 	if err != nil {
 		s.log.Error("upload", "error", err)
 		uploadError(w, http.StatusInternalServerError, "The server cannot save the file.")

@@ -9,6 +9,8 @@
     <tr><th scope="row">Name</th><td>{{.Name}}</td></tr>
     <tr><th scope="row">Code</th><td><code>{{.Slug}}</code></td></tr>
     <tr><th scope="row">Description</th><td>{{.Description}}</td></tr>
+    <tr><th scope="row">Upload limit</th><td>{{.UploadQuotaMB}} MiB for all files. The files use {{mib $.Data.FileBytes}} now.</td></tr>
+    <tr><th scope="row">Search results</th><td>{{.SearchResults}} at most</td></tr>
     <tr><th scope="row">Made</th><td>{{date .CreatedAt}}</td></tr>
   </tbody>
 </table>

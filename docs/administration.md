@@ -216,5 +216,17 @@ Users with the permission `space.manage` manage the spaces:
 
 - Make a space. See [Codes](#codes) for the format of the code.
 - Change the code, the name and the description of a space.
+- Change the limits of a space (the space page, **Change the settings**):
+  - **Upload limit**: the largest total size of all uploaded files in
+    the space, in MiB (1 to 1048576). The default is 1024 MiB. The space
+    page shows the size of the files now. A lower limit does not delete
+    files. When the files use all of the limit, users cannot upload more
+    files. A file stays while a document uses it, in any version and
+    also in the trash. The cleanup task deletes a file that no document
+    uses after one day.
+  - **Search results**: the largest number of results from the space in
+    one search (10 to 1000). The default is 50. The search counts only
+    the items that the user can read. Thus the limit is the same for all
+    users, also if a user cannot read many items of the space.
 - Delete a space. Type the space code to confirm. This deletes all
   folders and documents in the space.
