@@ -568,13 +568,40 @@ plain text.
 
 ### Search
 
-The text is encrypted, thus PostgreSQL cannot search it. The column
-`nodes.search_tokens` (`bigint[]`, with a GIN index) contains a keyed
-hash of each word of the title and the text: the first 8 bytes of
-HMAC-SHA-256 with the search key of the tenant. A word is a sequence of
-letters and digits, in lower case. A search makes the hashes of the
-search words and finds the rows that contain all of them (`@>`). Items
-with the words in the title (`nodes.title_tokens`) come first.
+The text is encrypted, thus PostgreSQL cannot search it. The index has
+three columns, each a `bigint[]`. The values are keyed hashes: the
+first 8 bytes of HMAC-SHA-256 with the search key of the tenant. A word
+is a sequence of letters and digits, in lower case.
+
+| Column | Contents | GIN index |
+| --- | --- | --- |
+| `search_tokens` | The words of the title and the text (`word:` + word). | Yes |
+| `title_tokens` | The words of the title. | No |
+| `prefix_tokens` | The first 3 to 20 letters of each word (`prefix:` + letters). A word of 3 to 20 letters is also a prefix of itself. | Yes |
+
+A search word of 3 letters or more must be a prefix of a word
+(`prefix_tokens @>`). A longer search word uses its first 20 letters. A
+shorter search word must be a whole word (`search_tokens @>`). A word
+with `-` before it (`-word`) excludes the items with that whole word.
+The order of the results:
+
+1. All search words are whole words in the title (`title_tokens`).
+2. All search words are whole words in the title or the text
+   (`search_tokens`).
+3. The other results: at least one search word is only the start of a
+   word.
+
+In each group, the newest change comes first. The parts of the text in
+the results mark the whole words and the words that start with a search
+word.
+
+`nodes.search_version` is the format of the index
+(`searchIndexVersion`). The cleanup task (every 10 minutes and at start)
+makes the index of rows with an older format again (`ReindexBatch`): it
+decrypts the title and the plain text and writes the three columns.
+Until then, an old row does not have the prefixes, and the search does
+not find it with a search word of 3 letters or more. Change
+`searchIndexVersion` when the words or the tokens change.
 
 The permission check comes before the limit:
 

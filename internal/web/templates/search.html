@@ -19,7 +19,7 @@
 <form action="" method="get" class="stack" role="search">
   <label>{{if $.Space}}Search in {{$.Space.Name}}{{else}}Search in all spaces{{end}}
     <input type="search" name="q" value="{{.Query}}" maxlength="200" autofocus aria-describedby="search-help"></label>
-  <p id="search-help" class="meta">The search finds whole words in the titles and the text. Type <code>-word</code> to exclude a word.</p>
+  <p id="search-help" class="meta">The search finds words in the titles and the text. A word of 3 letters or more also finds the words that start with it. Type <code>-word</code> to exclude a word.</p>
   <div class="buttons"><button type="submit">Search</button></div>
 </form>
 {{if .Query}}

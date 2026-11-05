@@ -79,13 +79,17 @@ func TestEncryptionAtRest(t *testing.T) {
 		t.Fatalf("File = %v", err)
 	}
 
-	// Search finds whole words. It does not find parts of words.
+	// Search finds whole words, and words that start with a search word
+	// of 3 letters or more.
 	results, err := st2.Search(ctx, tn.ID, []int64{sp.ID}, "SWORDFISH launch", readAll)
 	if err != nil || len(results) != 1 || fmt.Sprint(results[0].Snippet) != "[{The  false} {launch true} { code is  false} {swordfish. true}]" {
 		t.Fatalf("search = %+v, %v", results, err)
 	}
-	if results, _ := st2.Search(ctx, tn.ID, []int64{sp.ID}, "sword", readAll); len(results) != 0 {
-		t.Fatalf("part of a word: %+v", results)
+	if results, _ := st2.Search(ctx, tn.ID, []int64{sp.ID}, "sword", readAll); len(results) != 1 {
+		t.Fatalf("start of a word: %+v", results)
+	}
+	if results, _ := st2.Search(ctx, tn.ID, []int64{sp.ID}, "fish", readAll); len(results) != 0 {
+		t.Fatalf("end of a word: %+v", results)
 	}
 	if results, _ := st2.Search(ctx, tn.ID, []int64{sp.ID}, "plan -swordfish", readAll); len(results) != 0 {
 		t.Fatalf("excluded word: %+v", results)

@@ -201,6 +201,13 @@ CREATE TABLE nodes (
     -- The keyed hashes of the words of the title only. The search shows
     -- the results with the words in the title first.
     title_tokens   bigint[]    NOT NULL DEFAULT '{}',
+    -- The keyed hashes of the prefixes of the words (3 to 20 letters),
+    -- with a different domain than the words. A search for a part of a
+    -- word ("describe" finds "describes") uses them.
+    prefix_tokens  bigint[]    NOT NULL DEFAULT '{}',
+    -- The version of the format of the search index. The cleanup task
+    -- makes the index again for rows with an older version.
+    search_version smallint    NOT NULL DEFAULT 0,
     version        integer     NOT NULL DEFAULT 1,
     -- The default role of the node. NULL means that the node uses the
     -- default role of its parent (or of the space). An empty value means
@@ -237,6 +244,8 @@ CREATE TABLE nodes (
     CHECK (kind = 'folder' OR (default_classification_id IS NULL AND min_classification_id IS NULL))
 );
 CREATE INDEX nodes_search_idx ON nodes USING gin (search_tokens);
+CREATE INDEX nodes_prefix_idx ON nodes USING gin (prefix_tokens);
+CREATE INDEX nodes_search_version_idx ON nodes (search_version);
 CREATE INDEX nodes_parent_idx ON nodes (space_id, parent_id);
 CREATE INDEX nodes_slug_idx ON nodes (space_id, slug_token) WHERE slug_token IS NOT NULL;
 CREATE INDEX nodes_space_updated_idx ON nodes (space_id, updated_at DESC);

@@ -173,7 +173,10 @@ There are three options:
    documents with all hashes. This supports whole words, not word parts
    or phrases, and it has no ranking. It tells the database
    administrator which documents have the same words, and how frequent
-   a word is. It does not tell the words.
+   a word is. It does not tell the words. Skriva uses this method. It
+   also keeps hashes of the first 3 to 20 letters of each word, for a
+   search for the start of a word, and it puts the results with whole
+   words first. See [Architecture: search](architecture.md#search).
 2. **Search in the application.** Skriva decrypts the readable documents
    of a space and searches in memory. This is correct, but slow for
    large spaces.

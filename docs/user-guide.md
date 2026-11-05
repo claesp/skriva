@@ -87,10 +87,16 @@ spaces** (the space icon) to search in all spaces of the tenant.
 
 - The search finds the items with all the words, in the title or in the
   text. Upper case and lower case are the same.
-- The search finds whole words only. "install" does not find
-  "installation".
+- A word of 3 letters or more also finds the words that start with it.
+  "describe" finds "describes" and "described", and "install" finds
+  "installation". A shorter word finds only the whole word. The search
+  does not find the end or the middle of a word: "scribe" does not find
+  "describe".
+- The results with the whole words come before the results with parts
+  of words.
 - Type `-word` to exclude the items with that word.
-- Items with the words in the title come first.
+- Items with the whole words in the title come first, then the items
+  with the whole words in the text.
 - The results show only the items that you can read.
 - Each space gives a maximum number of results (50 if the administrator
   did not change it). In all spaces, each space gives its own maximum.

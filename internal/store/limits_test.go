@@ -3,6 +3,7 @@ package store_test
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/claesp/skriva/internal/store"
@@ -114,5 +115,73 @@ func TestSearchPermissionFirst(t *testing.T) {
 		return false, errors.New("broken")
 	}); err == nil {
 		t.Fatal("Search ignores the error of the permission check")
+	}
+}
+
+// A search word also finds the words that start with it. These results
+// come after the results with whole words.
+func TestSearchPartialWords(t *testing.T) {
+	st := newStore(t)
+	tn := defaultTenant(t, st)
+	sp := defaultSpace(t, st, tn)
+	u := login(t, st, tn, "pat")
+	mk := func(title, text string) string {
+		t.Helper()
+		id, err := st.CreateNode(ctx, sp.ID, store.NewNode{Kind: store.KindDocument, Title: title,
+			Content: content(text), AuthorID: u.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	// The newest document comes first in each group. Thus the order of
+	// the results shows the groups.
+	inTitle := mk("Describe the plan", "x")
+	inText := mk("Plan", "We describe it.")
+	partial := mk("Notes", "It describes the design.")
+	mk("Other", "A description of nothing.")
+	titles := func(q string) []string {
+		t.Helper()
+		res, err := st.Search(ctx, tn.ID, []int64{sp.ID}, q, readAll)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, r := range res {
+			out = append(out, r.PublicID)
+		}
+		return out
+	}
+	if got := titles("describe"); !slices.Equal(got, []string{inTitle, inText, partial}) {
+		t.Fatalf("describe = %v, want %v", got, []string{inTitle, inText, partial})
+	}
+	if got := titles("describ plan"); len(got) != 2 {
+		t.Fatalf("describ plan = %v", got)
+	}
+	// A short word finds only the whole word.
+	if got := titles("it"); !slices.Equal(got, []string{partial, inText}) {
+		t.Fatalf("it = %v", got)
+	}
+	// An excluded word is a whole word.
+	if got := titles("describe -describes"); !slices.Equal(got, []string{inTitle, inText}) {
+		t.Fatalf("describe -describes = %v", got)
+	}
+
+	// ReindexBatch makes an index of an old format again.
+	if err := st.ResetSearchIndex(ctx, sp.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := titles("describ"); len(got) != 0 {
+		t.Fatalf("describ with the old index = %v", got)
+	}
+	n, err := st.ReindexBatch(ctx)
+	if err != nil || n != 4 {
+		t.Fatalf("ReindexBatch = %d, %v", n, err)
+	}
+	if n, err := st.ReindexBatch(ctx); err != nil || n != 0 {
+		t.Fatalf("second ReindexBatch = %d, %v", n, err)
+	}
+	if got := titles("describ"); len(got) != 3 {
+		t.Fatalf("describ after ReindexBatch = %v", got)
 	}
 }

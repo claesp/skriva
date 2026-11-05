@@ -411,7 +411,15 @@ for the methods that the project compared.
 - **Search.** The search index contains keyed hashes of the words
   (HMAC-SHA-256 with the search key, 8 bytes), not the words. The index
   tells which documents contain the same words, and how frequent a word
-  is, but not the words. The search finds whole words only.
+  is, but not the words.
+- **Prefixes.** For the search for parts of words, the index also
+  contains keyed hashes of the first 3 to 20 letters of each word
+  (`nodes.prefix_tokens`), with a different domain ("prefix:") than the
+  words. This tells more than the words alone: a database administrator
+  can see which words start with the same letters, and the length of
+  short words (the number of prefixes). The letters stay unknown. A
+  document has approximately 5 to 10 times more prefix hashes than word
+  hashes.
 - **Titles.** The database cannot sort or filter encrypted titles. Thus
   the server decrypts the titles and sorts them in memory, for the tree,
   the lists and the page picker of the editor. Wiki links and backlinks

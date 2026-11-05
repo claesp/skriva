@@ -212,7 +212,8 @@ func bootstrap(ctx context.Context, st *store.Store, cfg *config.Config, log *sl
 	return st.EnsureAdminGroups(ctx)
 }
 
-// reencryptTime is the maximum time of one run of the re-encryption.
+// reencryptTime is the maximum time of one run of the re-encryption, and
+// of one run of the search index task.
 const reencryptTime = 2 * time.Minute
 
 // reencrypt encrypts the values that use a retired data key again with
@@ -239,6 +240,30 @@ func reencrypt(ctx context.Context, st *store.Store, log *slog.Logger) {
 	}
 }
 
+// reindex makes the search index of the nodes with an old index format
+// again, in batches.
+func reindex(ctx context.Context, st *store.Store, log *slog.Logger) {
+	cctx, cancel := context.WithTimeout(ctx, reencryptTime)
+	defer cancel()
+	total := 0
+	for {
+		n, err := st.ReindexBatch(cctx)
+		total += n
+		if err != nil {
+			if ctx.Err() == nil && cctx.Err() == nil {
+				log.Warn("search index", "error", err)
+			}
+			break
+		}
+		if n == 0 {
+			break
+		}
+	}
+	if total > 0 {
+		log.Info("search index made again", "nodes", total)
+	}
+}
+
 // cleanup removes expired sessions and login states at intervals.
 func cleanup(ctx context.Context, st *store.Store, log *slog.Logger) {
 	t := time.NewTicker(10 * time.Minute)
@@ -250,6 +275,7 @@ func cleanup(ctx context.Context, st *store.Store, log *slog.Logger) {
 		}
 		cancel()
 		reencrypt(ctx, st, log)
+		reindex(ctx, st, log)
 		select {
 		case <-ctx.Done():
 			return

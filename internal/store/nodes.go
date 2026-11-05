@@ -353,7 +353,7 @@ type sealedContent struct {
 	title, revisionTitle      []byte
 	body, plainText, revision []byte
 	version                   int
-	tokens, titleTokens       []int64
+	index                     searchIndex
 	// slugToken is the hash of the slug of the title, or nil.
 	slugToken *int64
 	// wikiTokens are the hashes of the slugs of the wiki links.
@@ -383,8 +383,7 @@ func (s *Store) sealContent(ctx context.Context, spaceID int64, publicID string,
 		plainText:     seal(plainTextPlace(spaceID, publicID), c.PlainText),
 		revision:      seal(revisionPlace(spaceID, publicID, v), c.Body),
 		version:       tk.current,
-		tokens:        searchTokens(tk.search, title+"\n"+c.PlainText),
-		titleTokens:   searchTokens(tk.search, title),
+		index:         makeSearchIndex(tk.search, title, c.PlainText),
 		slugToken:     slugToken(tk.search, slug.Make(title)),
 	}
 	for _, l := range c.WikiLinks {
@@ -519,12 +518,13 @@ func (s *Store) CreateNode(ctx context.Context, spaceID int64, nn NewNode) (stri
 		// path of its parent.
 		err = tx.QueryRow(ctx, `
 			INSERT INTO nodes (public_id, space_id, parent_id, kind, title, slug_token, body, plain_text, key_version,
-			                   search_tokens, title_tokens, version, created_by, updated_by, created_at, updated_at,
-			                   access_path_id, classification_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, $12, $12, $13, $13, $14, $15)
+			                   search_tokens, title_tokens, prefix_tokens, search_version, version,
+			                   created_by, updated_by, created_at, updated_at, access_path_id, classification_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $16, $17, 1, $12, $12, $13, $13, $14, $15)
 			RETURNING id`,
 			publicID, spaceID, parentID, nn.Kind, sealed.title, sealed.slugToken, sealed.body, sealed.plainText,
-			sealed.version, sealed.tokens, sealed.titleTokens, nullID(nn.AuthorID), now, pathID, classID).Scan(&id)
+			sealed.version, sealed.index.tokens, sealed.index.titleTokens, nullID(nn.AuthorID), now, pathID, classID,
+			sealed.index.prefixTokens, searchIndexVersion).Scan(&id)
 		if err != nil {
 			return err
 		}
@@ -594,7 +594,7 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 		var className string
 		err = tx.QueryRow(ctx, `
 			UPDATE nodes n SET title = $4, slug_token = $5, body = $6, plain_text = $7, key_version = $11,
-			                 search_tokens = $12, title_tokens = $13,
+			                 search_tokens = $12, title_tokens = $13, prefix_tokens = $14, search_version = $15,
 			                 classification_id = CASE WHEN kind = 'folder' THEN NULL
 			                                          ELSE COALESCE($10, classification_id) END,
 			                 version = version + 1, updated_by = $8, updated_at = $9
@@ -602,7 +602,8 @@ func (s *Store) UpdateNode(ctx context.Context, spaceID int64, publicID string, 
 			RETURNING id, version,
 			          COALESCE((SELECT name FROM classifications WHERE id = n.classification_id), '')`,
 			spaceID, publicID, u.BaseVersion, sealed.title, sealed.slugToken, sealed.body, sealed.plainText,
-			nullID(u.AuthorID), now, newClass, sealed.version, sealed.tokens, sealed.titleTokens,
+			nullID(u.AuthorID), now, newClass, sealed.version, sealed.index.tokens, sealed.index.titleTokens,
+			sealed.index.prefixTokens, searchIndexVersion,
 		).Scan(&id, &version, &className)
 		if errors.Is(err, pgx.ErrNoRows) {
 			var exists bool
@@ -1028,8 +1029,14 @@ const maxSearchScan = 10000
 // with all words of the query in the title or in the text. A word with
 // "-" at the start excludes the documents with that word. The text is
 // encrypted, thus the search uses the index of keyed hashes of the words
-// (search_tokens). It finds whole words only. Results with the words in
-// the title come first.
+// and of their prefixes. A search word of 3 letters or more also finds
+// the words that start with it ("describe" finds "describes"). A shorter
+// search word finds only the whole word. The order of the results:
+//  1. all search words are whole words in the title,
+//  2. all search words are whole words in the title or the text,
+//  3. the other results, with parts of words.
+//
+// In each group, the newest change comes first.
 //
 // can tells whether the user can read a node of a space with the given
 // access path. Search first removes the nodes that the user cannot read.
@@ -1049,16 +1056,17 @@ func (s *Store) Search(ctx context.Context, tenantID int64, spaceIDs []int64, qu
 	if err != nil {
 		return nil, err
 	}
-	incTokens, excTokens := tokensOf(tk.search, include), tokensOf(tk.search, exclude)
+	qt := makeQueryTokens(tk.search, include, exclude)
 	// The query does not read the text. Only the results need it.
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+summaryCols+`, sp.slug, sp.name, sp.search_results
 		FROM nodes n
 		JOIN spaces sp ON sp.id = n.space_id
 		WHERE sp.tenant_id = $1 AND sp.id = ANY($2) AND n.deleted_at IS NULL
-		  AND n.search_tokens @> $3 AND NOT (n.search_tokens && $4)
-		ORDER BY n.title_tokens @> $3 DESC, n.updated_at DESC, n.id DESC
-		LIMIT $5`, tenantID, spaceIDs, incTokens, excTokens, maxSearchScan)
+		  AND n.search_tokens @> $3 AND n.prefix_tokens @> $4 AND NOT (n.search_tokens && $5)
+		ORDER BY CASE WHEN n.title_tokens @> $6 THEN 0 WHEN n.search_tokens @> $6 THEN 1 ELSE 2 END,
+		         n.updated_at DESC, n.id DESC
+		LIMIT $7`, tenantID, spaceIDs, qt.short, qt.prefixes, qt.exclude, qt.exact, maxSearchScan)
 	if err != nil {
 		return nil, err
 	}

@@ -343,6 +343,14 @@ func searchToken(key []byte, word string) int64 {
 	return int64(binary.BigEndian.Uint64(m.Sum(nil)[:8])) // #nosec G115 -- a hash value, any bit pattern is good.
 }
 
+// prefixToken returns the keyed hash of the prefix of a word. The prefix
+// "prefix:" makes the hash different from the hash of a word.
+func prefixToken(key []byte, prefix string) int64 {
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte("prefix:" + prefix))
+	return int64(binary.BigEndian.Uint64(m.Sum(nil)[:8])) // #nosec G115 -- a hash value, any bit pattern is good.
+}
+
 // slugToken returns the keyed hash of the slug of a title, for wiki
 // links, or nil for an empty slug. The prefix "slug:" makes the hash
 // different from the hash of a word.
