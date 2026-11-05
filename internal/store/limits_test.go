@@ -118,8 +118,9 @@ func TestSearchPermissionFirst(t *testing.T) {
 	}
 }
 
-// A search word also finds the words that start with it. These results
-// come after the results with whole words.
+// A search word also finds the words that start with it, and the words
+// with the same stem. These results come after the results with whole
+// words. Stem matches come before the other partial matches.
 func TestSearchPartialWords(t *testing.T) {
 	st := newStore(t)
 	tn := defaultTenant(t, st)
@@ -140,6 +141,8 @@ func TestSearchPartialWords(t *testing.T) {
 	inText := mk("Plan", "We describe it.")
 	partial := mk("Notes", "It describes the design.")
 	mk("Other", "A description of nothing.")
+	describing := mk("Draft", "We are describing it.")
+	planets := mk("Planets", "x")
 	titles := func(q string) []string {
 		t.Helper()
 		res, err := st.Search(ctx, tn.ID, []int64{sp.ID}, q, readAll)
@@ -152,18 +155,27 @@ func TestSearchPartialWords(t *testing.T) {
 		}
 		return out
 	}
-	if got := titles("describe"); !slices.Equal(got, []string{inTitle, inText, partial}) {
-		t.Fatalf("describe = %v, want %v", got, []string{inTitle, inText, partial})
+	// "describes" and "describing" have the stem of "describe".
+	if got, want := titles("describe"), []string{inTitle, inText, describing, partial}; !slices.Equal(got, want) {
+		t.Fatalf("describe = %v, want %v", got, want)
+	}
+	// "describing" does not start "describe", but the stem is the same.
+	if got, want := titles("describing"), []string{describing, partial, inText, inTitle}; !slices.Equal(got, want) {
+		t.Fatalf("describing = %v, want %v", got, want)
+	}
+	// "planets" only starts with "plan". The stem is different.
+	if got, want := titles("plan"), []string{inText, inTitle, planets}; !slices.Equal(got, want) {
+		t.Fatalf("plan = %v, want %v", got, want)
 	}
 	if got := titles("describ plan"); len(got) != 2 {
 		t.Fatalf("describ plan = %v", got)
 	}
 	// A short word finds only the whole word.
-	if got := titles("it"); !slices.Equal(got, []string{partial, inText}) {
+	if got := titles("it"); !slices.Equal(got, []string{describing, partial, inText}) {
 		t.Fatalf("it = %v", got)
 	}
 	// An excluded word is a whole word.
-	if got := titles("describe -describes"); !slices.Equal(got, []string{inTitle, inText}) {
+	if got := titles("describe -describes"); !slices.Equal(got, []string{inTitle, inText, describing}) {
 		t.Fatalf("describe -describes = %v", got)
 	}
 
@@ -174,14 +186,17 @@ func TestSearchPartialWords(t *testing.T) {
 	if got := titles("describ"); len(got) != 0 {
 		t.Fatalf("describ with the old index = %v", got)
 	}
+	if got := titles("describing"); len(got) != 0 {
+		t.Fatalf("describing with the old index = %v", got)
+	}
 	n, err := st.ReindexBatch(ctx)
-	if err != nil || n != 4 {
+	if err != nil || n != 6 {
 		t.Fatalf("ReindexBatch = %d, %v", n, err)
 	}
 	if n, err := st.ReindexBatch(ctx); err != nil || n != 0 {
 		t.Fatalf("second ReindexBatch = %d, %v", n, err)
 	}
-	if got := titles("describ"); len(got) != 3 {
+	if got := titles("describ"); len(got) != 4 {
 		t.Fatalf("describ after ReindexBatch = %v", got)
 	}
 }

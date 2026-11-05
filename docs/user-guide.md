@@ -92,8 +92,12 @@ spaces** (the space icon) to search in all spaces of the tenant.
   "installation". A shorter word finds only the whole word. The search
   does not find the end or the middle of a word: "scribe" does not find
   "describe".
-- The results with the whole words come before the results with parts
-  of words.
+- A word of 3 letters or more also finds the other forms of the English
+  word: "describing" finds "describe", and "planning" finds "plans". The
+  search uses the English stem of the word. For other languages, this
+  does not work correctly, but the start of words works.
+- The results with the whole words come first. Then come the results
+  with other forms of the words, then the results with parts of words.
 - Type `-word` to exclude the items with that word.
 - Items with the whole words in the title come first, then the items
   with the whole words in the text.

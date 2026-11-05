@@ -569,7 +569,7 @@ plain text.
 ### Search
 
 The text is encrypted, thus PostgreSQL cannot search it. The index has
-three columns, each a `bigint[]`. The values are keyed hashes: the
+four columns, each a `bigint[]`. The values are keyed hashes: the
 first 8 bytes of HMAC-SHA-256 with the search key of the tenant. A word
 is a sequence of letters and digits, in lower case.
 
@@ -578,29 +578,33 @@ is a sequence of letters and digits, in lower case.
 | `search_tokens` | The words of the title and the text (`word:` + word). | Yes |
 | `title_tokens` | The words of the title. | No |
 | `prefix_tokens` | The first 3 to 20 letters of each word (`prefix:` + letters). A word of 3 to 20 letters is also a prefix of itself. | Yes |
+| `stem_tokens` | The English stem of each word (`stem:` + stem), from the Snowball (Porter2) stemmer `github.com/kljensen/snowball/english`. "describe", "describes" and "describing" have the stem "describ". | Yes |
 
-A search word of 3 letters or more must be a prefix of a word
-(`prefix_tokens @>`). A longer search word uses its first 20 letters. A
-shorter search word must be a whole word (`search_tokens @>`). A word
+A search word of 3 letters or more must be a prefix of a word, or have
+the same stem as a word (`prefix_tokens @> … OR stem_tokens @> …`, one
+condition for each search word). A longer search word uses its first 20
+letters for the prefix. A shorter search word must be a whole word
+(`search_tokens @>`). A word
 with `-` before it (`-word`) excludes the items with that whole word.
 The order of the results:
 
 1. All search words are whole words in the title (`title_tokens`).
 2. All search words are whole words in the title or the text
    (`search_tokens`).
-3. The other results: at least one search word is only the start of a
+3. Each search word has the same stem as a word (`stem_tokens`).
+4. The other results: at least one search word is only the start of a
    word.
 
 In each group, the newest change comes first. The parts of the text in
-the results mark the whole words and the words that start with a search
-word.
+the results mark the whole words, the words that start with a search
+word and the words with the stem of a search word.
 
 `nodes.search_version` is the format of the index
 (`searchIndexVersion`). The cleanup task (every 10 minutes and at start)
 makes the index of rows with an older format again (`ReindexBatch`): it
-decrypts the title and the plain text and writes the three columns.
-Until then, an old row does not have the prefixes, and the search does
-not find it with a search word of 3 letters or more. Change
+decrypts the title and the plain text and writes the four columns.
+Until then, an old row does not have the prefixes and the stems, and
+the search does not find it with a search word of 3 letters or more. Change
 `searchIndexVersion` when the words or the tokens change.
 
 The permission check comes before the limit:
@@ -614,8 +618,8 @@ The permission check comes before the limit:
    space (default 50).
 4. The store reads the plain text of the results only, decrypts it and
    makes the parts of the text with the words.
-The search finds whole words only, not word parts or phrases. A word
-with `-` before it (`-word`) excludes the items with that word.
+
+The search does not find phrases or the middle of a word.
 
 ## Migrations
 

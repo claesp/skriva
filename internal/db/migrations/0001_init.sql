@@ -205,6 +205,10 @@ CREATE TABLE nodes (
     -- with a different domain than the words. A search for a part of a
     -- word ("describe" finds "describes") uses them.
     prefix_tokens  bigint[]    NOT NULL DEFAULT '{}',
+    -- The keyed hashes of the English stems of the words, with a
+    -- different domain than the words. A search for a different form of a
+    -- word ("describing" finds "describe") uses them.
+    stem_tokens    bigint[]    NOT NULL DEFAULT '{}',
     -- The version of the format of the search index. The cleanup task
     -- makes the index again for rows with an older version.
     search_version smallint    NOT NULL DEFAULT 0,
@@ -245,6 +249,7 @@ CREATE TABLE nodes (
 );
 CREATE INDEX nodes_search_idx ON nodes USING gin (search_tokens);
 CREATE INDEX nodes_prefix_idx ON nodes USING gin (prefix_tokens);
+CREATE INDEX nodes_stem_idx ON nodes USING gin (stem_tokens);
 CREATE INDEX nodes_search_version_idx ON nodes (search_version);
 CREATE INDEX nodes_parent_idx ON nodes (space_id, parent_id);
 CREATE INDEX nodes_slug_idx ON nodes (space_id, slug_token) WHERE slug_token IS NOT NULL;

@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/kljensen/snowball/english"
 )
 
 // Limits of the search index.
@@ -31,7 +32,7 @@ const (
 	// searchIndexVersion is the version of the format of the index. A
 	// change of the words or the tokens needs a new version. Then
 	// ReindexBatch makes the index of the old rows again.
-	searchIndexVersion = 2
+	searchIndexVersion = 3
 )
 
 // searchIndex is the search index of a node.
@@ -40,7 +41,9 @@ type searchIndex struct {
 	// titleTokens are the hashes of the words of the title.
 	// prefixTokens are the hashes of the prefixes of the words of the
 	// title and the text.
-	tokens, titleTokens, prefixTokens []int64
+	// stemTokens are the hashes of the stems of the words of the title
+	// and the text.
+	tokens, titleTokens, prefixTokens, stemTokens []int64
 }
 
 // makeSearchIndex makes the search index of a title and a plain text.
@@ -52,7 +55,32 @@ func makeSearchIndex(key []byte, title, plainText string) searchIndex {
 		tokens:       tokens,
 		titleTokens:  searchTokens(key, title),
 		prefixTokens: prefixTokens(key, words),
+		stemTokens:   stemTokens(key, words),
 	}
+}
+
+// wordStem returns the stem of a word with the English Snowball
+// (Porter2) stemmer. Different forms of a word have the same stem:
+// "describe", "describes" and "describing" give "describ". Words with
+// fewer than 3 letters and English stop words do not change.
+func wordStem(word string) string {
+	return english.Stem(word, false)
+}
+
+// stemTokens returns the hashes of the different stems of the words,
+// sorted.
+func stemTokens(key []byte, words []string) []int64 {
+	seen := map[string]bool{}
+	// Not nil: the column is NOT NULL, and pgx sends nil as NULL.
+	out := []int64{}
+	for _, w := range words {
+		if st := wordStem(w); !seen[st] {
+			seen[st] = true
+			out = append(out, stemToken(key, st))
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // wordPrefix returns the prefix of a word for the index, or "" if the
@@ -96,25 +124,36 @@ type queryTokens struct {
 	// exact are the hashes of all words. A result with all of them has
 	// the words as whole words.
 	exact []int64
+	// stems are the hashes of the stems of all words. A result with all
+	// of them has a form of each word.
+	stems []int64
 	// short are the hashes of the words with fewer than minPrefixRunes
 	// letters. A result must contain them as whole words.
 	short []int64
-	// prefixes are the hashes of the prefixes of the other words. A
-	// result must contain words that start with them.
-	prefixes []int64
+	// long are the other words. For each of them, a result must contain
+	// a word that starts with it, or a word with the same stem.
+	long []longWord
 	// exclude are the hashes of the words that a result must not
 	// contain.
 	exclude []int64
+}
+
+// longWord are the tokens of a search word with minPrefixRunes letters
+// or more: the hash of its prefix and the hash of its stem.
+type longWord struct {
+	prefix, stem int64
 }
 
 func makeQueryTokens(key []byte, include, exclude []string) queryTokens {
 	// The arrays must not be nil: pgx sends nil as NULL, and "@> NULL"
 	// finds nothing.
 	q := queryTokens{exact: tokensOf(key, include), exclude: tokensOf(key, exclude),
-		short: []int64{}, prefixes: []int64{}}
+		stems: []int64{}, short: []int64{}}
 	for _, w := range include {
-		if p := wordPrefix(w, min(len([]rune(w)), maxPrefixRunes)); len([]rune(w)) >= minPrefixRunes {
-			q.prefixes = append(q.prefixes, prefixToken(key, p))
+		st := stemToken(key, wordStem(w))
+		q.stems = append(q.stems, st)
+		if n := len([]rune(w)); n >= minPrefixRunes {
+			q.long = append(q.long, longWord{prefix: prefixToken(key, wordPrefix(w, min(n, maxPrefixRunes))), stem: st})
 		} else {
 			q.short = append(q.short, searchToken(key, w))
 		}
@@ -196,18 +235,28 @@ type SnippetPart struct {
 }
 
 // snippet returns a part of text around the first word of words. Each
-// word of text that contains one of words is a part with Mark. "…" shows
+// word of text that matches one of words is a part with Mark. "…" shows
 // that the snippet starts or ends in the text.
 func snippet(text string, words []string) []SnippetPart {
 	fields := strings.Fields(text)
-	// A word of the text matches if it is a search word, or if it starts
-	// with a search word of minPrefixRunes letters or more.
+	stems := map[string]bool{}
+	for _, q := range words {
+		if len([]rune(q)) >= minPrefixRunes {
+			stems[wordStem(q)] = true
+		}
+	}
+	// A word of the text matches if it is a search word. It also matches
+	// if it starts with a search word of minPrefixRunes letters or more,
+	// or if it has the same stem as such a word.
 	match := func(f string) bool {
 		for _, w := range searchWords(f, 8) {
 			for _, q := range words {
 				if w == q || (len([]rune(q)) >= minPrefixRunes && strings.HasPrefix(w, wordPrefix(q, min(len([]rune(q)), maxPrefixRunes)))) {
 					return true
 				}
+			}
+			if len(stems) > 0 && stems[wordStem(w)] {
+				return true
 			}
 		}
 		return false
@@ -293,9 +342,10 @@ func (s *Store) ReindexBatch(ctx context.Context) (int, error) {
 			if plain, err = s.open(ctx, it.tenantID, plainTextPlace(it.spaceID, it.publicID), it.plainText); err == nil {
 				idx := makeSearchIndex(tk.search, string(title), string(plain))
 				_, err = s.pool.Exec(ctx, `
-					UPDATE nodes SET search_tokens = $3, title_tokens = $4, prefix_tokens = $5, search_version = $6
-					WHERE id = $1 AND version = $2 AND search_version < $6`,
-					it.id, it.version, idx.tokens, idx.titleTokens, idx.prefixTokens, searchIndexVersion)
+					UPDATE nodes SET search_tokens = $3, title_tokens = $4, prefix_tokens = $5, stem_tokens = $6,
+					                 search_version = $7
+					WHERE id = $1 AND version = $2 AND search_version < $7`,
+					it.id, it.version, idx.tokens, idx.titleTokens, idx.prefixTokens, idx.stemTokens, searchIndexVersion)
 			}
 		}
 		if errors.Is(err, ErrKey) {

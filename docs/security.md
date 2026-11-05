@@ -420,6 +420,11 @@ for the methods that the project compared.
   short words (the number of prefixes). The letters stay unknown. A
   document has approximately 5 to 10 times more prefix hashes than word
   hashes.
+- **Stems.** For the search for other forms of a word, the index also
+  contains keyed hashes of the English stems of the words
+  (`nodes.stem_tokens`), with the domain "stem:". A database
+  administrator can see which words of a document have the same stem.
+  The prefixes tell most of this already.
 - **Titles.** The database cannot sort or filter encrypted titles. Thus
   the server decrypts the titles and sorts them in memory, for the tree,
   the lists and the page picker of the editor. Wiki links and backlinks

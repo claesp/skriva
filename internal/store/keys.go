@@ -351,6 +351,14 @@ func prefixToken(key []byte, prefix string) int64 {
 	return int64(binary.BigEndian.Uint64(m.Sum(nil)[:8])) // #nosec G115 -- a hash value, any bit pattern is good.
 }
 
+// stemToken returns the keyed hash of the stem of a word. The prefix
+// "stem:" makes the hash different from the hash of a word or a prefix.
+func stemToken(key []byte, stem string) int64 {
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte("stem:" + stem))
+	return int64(binary.BigEndian.Uint64(m.Sum(nil)[:8])) // #nosec G115 -- a hash value, any bit pattern is good.
+}
+
 // slugToken returns the keyed hash of the slug of a title, for wiki
 // links, or nil for an empty slug. The prefix "slug:" makes the hash
 // different from the hash of a word.

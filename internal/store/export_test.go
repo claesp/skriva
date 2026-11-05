@@ -95,6 +95,6 @@ func (s *Store) RawIDToken(ctx context.Context, token string) ([]byte, error) {
 // ResetSearchIndex gives the nodes of a space an index of the old format,
 // without prefixes. The tests use it for ReindexBatch.
 func (s *Store) ResetSearchIndex(ctx context.Context, spaceID int64) error {
-	_, err := s.pool.Exec(ctx, "UPDATE nodes SET prefix_tokens = '{}', search_version = 1 WHERE space_id = $1", spaceID)
+	_, err := s.pool.Exec(ctx, "UPDATE nodes SET prefix_tokens = '{}', stem_tokens = '{}', search_version = 1 WHERE space_id = $1", spaceID)
 	return err
 }
