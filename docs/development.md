@@ -33,9 +33,8 @@ To connect to the database from the computer:
 psql "postgres://skriva:skriva@localhost:15432/skriva?sslmode=verify-full&sslrootcert=.dev/tls/ca.crt"
 ```
 
-Keycloak also listens for HTTP on `localhost:8180`, for tenants that
-have the old issuer URL `http://localhost:8180/realms/skriva`. Change
-the issuer URL of these tenants to the HTTPS URL.
+Keycloak listens only for HTTPS. A tenant with an `http` issuer URL
+cannot sign in. Use `https://localhost:8543/realms/skriva`.
 
 The test users have these groups and roles:
 

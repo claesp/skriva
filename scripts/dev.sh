@@ -16,9 +16,8 @@ KEYCLOAK_IMAGE=${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0@sha256:09a381c71
 APP_IMAGE=${APP_IMAGE:-localhost/skriva:dev}
 
 DB_PORT=${DB_PORT:-15432}
-# Keycloak listens for HTTPS on KC_TLS_PORT. The HTTP port KC_PORT stays
-# for tenants that have the old http issuer URL.
-KC_PORT=8180
+# Keycloak listens only for HTTPS. "start-dev" always opens an HTTP port,
+# thus the script uses "start" with the file database of development.
 KC_TLS_PORT=8543
 APP_PORT=8443
 
@@ -62,7 +61,6 @@ up() {
 	if ! podman pod exists "$POD"; then
 		podman pod create --name "$POD" \
 			-p "127.0.0.1:$DB_PORT:5432" \
-			-p "127.0.0.1:$KC_PORT:$KC_PORT" \
 			-p "127.0.0.1:$KC_TLS_PORT:$KC_TLS_PORT" \
 			-p "127.0.0.1:$APP_PORT:$APP_PORT"
 	fi
@@ -88,7 +86,8 @@ up() {
 			-v "$ROOT/deploy/keycloak:/opt/keycloak/data/import:ro,Z" \
 			-v "$TLS/keycloak.crt:/tls/keycloak.crt:ro,z" \
 			--secret "$POD-keycloak-key,target=/tls/keycloak.key,uid=1000,mode=0400" \
-			"$KEYCLOAK_IMAGE" start-dev --import-realm --http-port=$KC_PORT --https-port=$KC_TLS_PORT \
+			"$KEYCLOAK_IMAGE" start --db=dev-file --cache=local --import-realm --http-enabled=false \
+			--hostname="https://localhost:$KC_TLS_PORT" --https-port=$KC_TLS_PORT \
 			--https-certificate-file=/tls/keycloak.crt --https-certificate-key-file=/tls/keycloak.key
 	fi
 	podman start "$POD-db" "$POD-keycloak" >/dev/null
