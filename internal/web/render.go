@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -183,7 +184,33 @@ func langFuncs(p *i18n.Printer) template.FuncMap {
 }
 
 func loadTemplates() (*templates, error) {
-	all := template.FuncMap{}
+	// Each static file has a version: a part of the hash of the content.
+	// The URL contains the version, thus a browser can keep the file.
+	versions := map[string]string{}
+	for _, name := range []string{"style.css", "editor.js", "icons.svg"} {
+		data, err := staticFS.ReadFile("static/" + name)
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.Sum256(data)
+		versions[name] = hex.EncodeToString(sum[:8])
+	}
+	icons, err := iconNames()
+	if err != nil {
+		return nil, err
+	}
+	iconsURL := "/static/icons.svg?v=" + versions["icons.svg"]
+
+	all := template.FuncMap{
+		// iconhref gives the URL of an icon. An unknown icon is an error,
+		// thus the tests find a wrong name.
+		"iconhref": func(name string) (string, error) {
+			if !icons[name] {
+				return "", fmt.Errorf("unknown icon %q", name)
+			}
+			return iconsURL + "#i_" + name, nil
+		},
+	}
 	for k, f := range funcs {
 		all[k] = f
 	}
@@ -229,18 +256,24 @@ func loadTemplates() (*templates, error) {
 		t.pages[l.Code] = pages
 	}
 
-	// Each static file has a version: a part of the hash of the content.
-	// The URL contains the version, thus a browser can keep the file.
-	t.versions = map[string]string{}
-	for _, name := range []string{"style.css", "editor.js"} {
-		data, err := staticFS.ReadFile("static/" + name)
-		if err != nil {
-			return nil, err
-		}
-		sum := sha256.Sum256(data)
-		t.versions[name] = hex.EncodeToString(sum[:8])
-	}
+	t.versions = versions
 	return t, nil
+}
+
+// iconRE finds the names of the icons in static/icons.svg.
+var iconRE = regexp.MustCompile(`<symbol id="i_([a-z0-9-]+)"`)
+
+// iconNames returns the names of the icons in static/icons.svg.
+func iconNames() (map[string]bool, error) {
+	data, err := staticFS.ReadFile("static/icons.svg")
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]bool{}
+	for _, m := range iconRE.FindAllSubmatch(data, -1) {
+		names[string(m[1])] = true
+	}
+	return names, nil
 }
 
 // menuArgs is the argument of the template "menuitem".

@@ -131,6 +131,15 @@ and these guidelines for long-form text:
   `<small>` text, directly below the field. The input refers to it
   with `aria-describedby`. The label contains only the name of the
   field.
+- The icons are SVG symbols in `internal/web/static/icons.svg`. The
+  template `icon` refers to a symbol with `<use>`. The URL of the file
+  contains its version, thus the browser keeps the file in its cache. An
+  unknown icon name stops the page with an error.
+- Each icon has one meaning, and each action has one icon on all pages.
+  For example, the pencil always changes an item and the waste bin
+  always deletes an item. Two icons must not look the same. The test
+  `TestIcons` finds two icons with the same shape and icons that no
+  template uses.
 - The toolbar of the editor uses the same icon buttons as the toolbar
   of a page. It stays below the bar of the page when the user scrolls.
   The buttons for tables are visible only when the cursor is in a table.

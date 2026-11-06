@@ -750,7 +750,6 @@ ul.pages { list-style: none; padding-left: 0; }
 ul.pages li { margin: 0.3rem 0; }
 
 /* Icons. */
-.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .i {
   width: 1.1em;
   height: 1.1em;

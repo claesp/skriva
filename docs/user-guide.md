@@ -94,7 +94,7 @@ read, the wiki shows "not found".
 
 Type words in the search field of the page header and press Enter. In a
 space, the search finds the items of that space. Click **Search in all
-spaces** (the space icon) to search in all spaces of the tenant.
+spaces** (magnifying glass) to search in all spaces of the tenant.
 
 - The search finds the items with all the words, in the title or in the
   text. Upper case and lower case are the same.
