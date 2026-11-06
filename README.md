@@ -1,5 +1,9 @@
 # Skriva
 
+> **Caution!** This application was created with the aid of AI tools.
+> While managed and reviewed by humans, the code and functionality may
+> not be comparable to non-AI work.
+
 Skriva is a wiki. Users write documents in a WYSIWYG editor, with
 headings, lists, tables, alignment, images, draw.io diagrams and Mermaid
 diagrams. The server keeps the documents, their images and all their
