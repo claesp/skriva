@@ -25,6 +25,20 @@ type Config struct {
 	ListenAddr  string
 	BaseURL     *url.URL
 	DatabaseURL string
+	// TLS is true if the web server uses HTTPS. False is only for a
+	// server behind a reverse proxy that does TLS.
+	TLS bool
+	// TLSCertFile and TLSKeyFile are the certificate (with its chain) and
+	// the key of the web server, in PEM. If they are empty, the server
+	// uses the generated certificate in TLSDir, and makes it if
+	// necessary.
+	TLSCertFile string
+	TLSKeyFile  string
+	TLSDir      string
+	// TLSCAFile is a PEM file with more trusted CA certificates for the
+	// connections to the database and to the OIDC providers, for example
+	// a private CA. The system certificates are always trusted.
+	TLSCAFile string
 	// AutoMigrate permits the server to apply the database migrations at
 	// start. If it is false and the database needs migrations, the
 	// server stops. Then run "skriva migrate".
@@ -75,6 +89,10 @@ type Config struct {
 	Language string
 }
 
+// DefaultTLSDir is the folder of the generated certificate of the web
+// server.
+const DefaultTLSDir = "/var/lib/skriva/tls"
+
 // GroupRole is one item of SKRIVA_GROUP_ROLES.
 type GroupRole struct {
 	Group string
@@ -114,6 +132,10 @@ func programPath(env, value, name string) (string, error) {
 // SecureCookies reports whether cookies must have the Secure attribute.
 func (c *Config) SecureCookies() bool { return c.BaseURL.Scheme == "https" }
 
+// TLSCAFile reads only SKRIVA_TLS_CA_FILE, for the commands that need
+// only the database.
+func TLSCAFile() string { return strings.TrimSpace(os.Getenv("SKRIVA_TLS_CA_FILE")) }
+
 // DatabaseURL reads only SKRIVA_DATABASE_URL (or SKRIVA_DATABASE_URL_FILE),
 // for the commands that need only the database.
 func DatabaseURL() (string, error) {
@@ -139,7 +161,6 @@ func load(getenv func(string) string) (*Config, error) {
 
 	var errs []error
 	c := &Config{
-		ListenAddr:       get("SKRIVA_LISTEN_ADDR", ":8080"),
 		OIDCIssuer:       get("SKRIVA_OIDC_ISSUER", ""),
 		OIDCClientID:     get("SKRIVA_OIDC_CLIENT_ID", ""),
 		OIDCGroupsClaim:  get("SKRIVA_OIDC_GROUPS_CLAIM", "groups"),
@@ -200,7 +221,23 @@ func load(getenv func(string) string) (*Config, error) {
 		errs = append(errs, errors.New("SKRIVA_AUTO_MIGRATE: must be true or false"))
 	}
 
-	base, err := url.Parse(get("SKRIVA_BASE_URL", "http://localhost:8080"))
+	if c.TLS, err = strconv.ParseBool(get("SKRIVA_TLS", "true")); err != nil {
+		errs = append(errs, errors.New("SKRIVA_TLS: must be true or false"))
+	}
+	c.TLSCertFile = get("SKRIVA_TLS_CERT_FILE", "")
+	c.TLSKeyFile = get("SKRIVA_TLS_KEY_FILE", "")
+	c.TLSDir = get("SKRIVA_TLS_DIR", DefaultTLSDir)
+	c.TLSCAFile = get("SKRIVA_TLS_CA_FILE", "")
+	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
+		errs = append(errs, errors.New("SKRIVA_TLS_CERT_FILE and SKRIVA_TLS_KEY_FILE: set both or none"))
+	}
+	defaultAddr, defaultBase := ":8443", "https://localhost:8443"
+	if !c.TLS {
+		defaultAddr, defaultBase = ":8080", "http://localhost:8080"
+	}
+	c.ListenAddr = get("SKRIVA_LISTEN_ADDR", defaultAddr)
+
+	base, err := url.Parse(get("SKRIVA_BASE_URL", defaultBase))
 	switch {
 	case err != nil:
 		errs = append(errs, fmt.Errorf("SKRIVA_BASE_URL: %w", err))
@@ -210,6 +247,8 @@ func load(getenv func(string) string) (*Config, error) {
 		errs = append(errs, errors.New("SKRIVA_BASE_URL: must not have a path"))
 	case base.User != nil || base.RawQuery != "" || base.ForceQuery || base.Fragment != "":
 		errs = append(errs, errors.New("SKRIVA_BASE_URL: must not have a user, a query or a fragment"))
+	case c.TLS && base.Scheme != "https":
+		errs = append(errs, errors.New("SKRIVA_BASE_URL: must be an https URL, because the server uses TLS (see SKRIVA_TLS)"))
 	default:
 		base.Path = ""
 		c.BaseURL = base

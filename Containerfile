@@ -16,7 +16,9 @@ RUN CGO_ENABLED=0 go build -trimpath \
 	-o /out/skriva ./cmd/skriva
 # The PDF export writes temporary files. The run stage has no /tmp. COPY
 # copies the contents of a folder, thus the folder is in /out/root.
-RUN mkdir -p /out/root && mkdir -m 700 /out/root/tmp
+# The server makes its TLS certificate in /var/lib/skriva/tls if the
+# operator gives none. Mount a volume there to keep it.
+RUN mkdir -p /out/root/var/lib/skriva && mkdir -m 700 /out/root/tmp /out/root/var/lib/skriva/tls
 
 # The Typst program for the PDF export. The program is a static binary.
 FROM ghcr.io/typst/typst:0.15.1@sha256:032e292249bcd378480cc7c142cfa324b63ef8aadeb88d7e7230320c4c9c422f AS typst
@@ -51,5 +53,5 @@ COPY --from=mmdr /out/bin/mmdr /mmdr
 COPY --from=build /out/skriva /skriva
 ENV SKRIVA_TYPST=/typst SKRIVA_MMDR=/mmdr TMPDIR=/tmp
 USER 65532:65532
-EXPOSE 8080
+EXPOSE 8443
 ENTRYPOINT ["/skriva"]

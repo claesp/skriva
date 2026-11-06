@@ -5,6 +5,8 @@
 //	skriva           Start the server. At start, it applies the database
 //	                 migrations (see SKRIVA_AUTO_MIGRATE).
 //	skriva migrate   Apply the database migrations and stop.
+//	skriva certs     Make a private CA and TLS certificates for Skriva,
+//	                 Keycloak and PostgreSQL. See "skriva certs -h".
 //	skriva version   Show the version and the schema version.
 package main
 
@@ -20,6 +22,7 @@ import (
 	"time"
 
 	"github.com/claesp/skriva/internal/auth"
+	"github.com/claesp/skriva/internal/certs"
 	"github.com/claesp/skriva/internal/config"
 	"github.com/claesp/skriva/internal/db"
 	"github.com/claesp/skriva/internal/diagram"
@@ -48,10 +51,15 @@ func main() {
 			log.Error("migration failed", "error", err)
 			os.Exit(1)
 		}
+	case "certs":
+		if err := makeCerts(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "skriva certs:", err)
+			os.Exit(1)
+		}
 	case "version", "-version", "--version":
 		fmt.Printf("skriva %s (schema version %d)\n", version.String(), db.SchemaVersion())
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\nusage: skriva [migrate|version]\n", cmd)
+		fmt.Fprintf(os.Stderr, "unknown command %q\nusage: skriva [migrate|certs|version]\n", cmd)
 		os.Exit(2)
 	}
 }
@@ -63,9 +71,13 @@ func migrate(log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configuration: %w", err)
 	}
+	roots, err := certs.Pool(config.TLSCAFile())
+	if err != nil {
+		return fmt.Errorf("SKRIVA_TLS_CA_FILE: %w", err)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	pool, err := db.Open(ctx, url)
+	pool, err := db.Open(ctx, url, roots)
 	if err != nil {
 		return err
 	}
@@ -88,7 +100,23 @@ func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := db.Open(ctx, cfg.DatabaseURL)
+	// The trusted CA certificates for the database and the OIDC
+	// providers: the system certificates and SKRIVA_TLS_CA_FILE.
+	roots, err := certs.Pool(cfg.TLSCAFile)
+	if err != nil {
+		return fmt.Errorf("SKRIVA_TLS_CA_FILE: %w", err)
+	}
+	httpClient := auth.NewHTTPClient(roots)
+	var serverCert *certs.Server
+	if cfg.TLS {
+		if serverCert, err = loadServerCert(cfg, log); err != nil {
+			return err
+		}
+	} else {
+		log.Warn("SKRIVA_TLS is false: the server uses HTTP; use it only behind a reverse proxy with TLS")
+	}
+
+	pool, err := db.Open(ctx, cfg.DatabaseURL, roots)
 	if err != nil {
 		return err
 	}
@@ -135,6 +163,7 @@ func run(log *slog.Logger) error {
 		RedirectURL:  cfg.BaseURL.String() + "/admin/auth/callback",
 		Scopes:       cfg.OIDCScopes,
 		GroupsClaim:  cfg.OIDCGroupsClaim,
+		HTTPClient:   httpClient,
 	})
 	// Do the discovery early if the provider is available. If it is not
 	// available, the first login tries again.
@@ -144,7 +173,7 @@ func run(log *slog.Logger) error {
 	if cfg.SystemAdminGroup == "" {
 		log.Warn("SKRIVA_SYSTEM_ADMIN_GROUP is not set: nobody can sign in to the system administration")
 	}
-	registry := auth.NewRegistry(cfg.BaseURL.String(), st.ClientSecret)
+	registry := auth.NewRegistry(cfg.BaseURL.String(), st.ClientSecret, httpClient)
 
 	var pdf *export.PDFOptions
 	if path, err := cfg.TypstPath(); err != nil {
@@ -196,7 +225,12 @@ func run(log *slog.Logger) error {
 
 	errc := make(chan error, 1)
 	go func() {
-		log.Info("server started", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL.String())
+		log.Info("server started", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL.String(), "tls", cfg.TLS)
+		if serverCert != nil {
+			srv.TLSConfig = serverCert.Config()
+			errc <- srv.ListenAndServeTLS("", "")
+			return
+		}
 		errc <- srv.ListenAndServe()
 	}()
 

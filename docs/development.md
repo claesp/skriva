@@ -11,16 +11,31 @@
 
 The script `scripts/dev.sh` starts all services in one Podman pod with
 the name `skriva-dev`. The containers in the pod share one network.
-Thus `localhost:8180` is the same Keycloak for the browser and for the
+Thus `localhost:8543` is the same Keycloak for the browser and for the
 server. This is necessary because the OIDC issuer URL must be the same
 for all.
 
 | Service    | URL                          | Users |
 |------------|------------------------------|-------|
-| Skriva     | <http://localhost:8080>      | `alice/alice`, `bob/bob`, `carol/carol` |
-| System administration | <http://localhost:8080/admin/> | `root/root` |
-| Keycloak   | <http://localhost:8180>      | Admin console: `admin/admin` |
-| PostgreSQL | `localhost:15432`            | `skriva/skriva` |
+| Skriva     | <https://localhost:8443>     | `alice/alice`, `bob/bob`, `carol/carol` |
+| System administration | <https://localhost:8443/admin/> | `root/root` |
+| Keycloak   | <https://localhost:8543>     | Admin console: `admin/admin` |
+| PostgreSQL | `localhost:15432` (TLS)      | `skriva/skriva` |
+
+All connections use TLS. At the first start, the script makes a private
+CA and the certificates of Skriva, Keycloak and PostgreSQL with
+`skriva certs`, in the folder `.dev` (Git ignores it). Each container
+gets its key as a Podman secret. To remove the certificate warning of
+the browser, install `.dev/tls/ca.crt` in the browser as a trusted CA.
+To connect to the database from the computer:
+
+```sh
+psql "postgres://skriva:skriva@localhost:15432/skriva?sslmode=verify-full&sslrootcert=.dev/tls/ca.crt"
+```
+
+Keycloak also listens for HTTP on `localhost:8180`, for tenants that
+have the old issuer URL `http://localhost:8180/realms/skriva`. Change
+the issuer URL of these tenants to the HTTPS URL.
 
 The test users have these groups and roles:
 
@@ -32,12 +47,12 @@ The test users have these groups and roles:
 | `root`  | `skriva-system`  | System administrator |
 
 All tenants in development can use the same Keycloak client. The client
-permits all redirect URIs on `http://localhost:8080`. For a new tenant,
+permits all redirect URIs on `https://localhost:8443`. For a new tenant,
 use these settings:
 
 | Setting       | Value |
 |---------------|-------|
-| Issuer URL    | `http://localhost:8180/realms/skriva` |
+| Issuer URL    | `https://localhost:8543/realms/skriva` |
 | Client ID     | `skriva` |
 | Client secret | `skriva-dev-secret` |
 
@@ -61,13 +76,11 @@ again.
 | `scripts/dev.sh logs app`       | Show the log of a container (`db`, `keycloak` or `app`). |
 | `scripts/dev.sh status`         | Show the pod and its containers. |
 
-After a change to `0001_init.sql`, remove the database volume with
-`scripts/dev.sh down --volumes`. Then start the pod again with
-`make dev-up`. The server does not apply a changed migration file to an
-existing database.
+For a schema change, add a new migration file. The server applies it at
+the next start. See [Release: rules](release.md#rules).
 
 Do not use `make run` and `make dev-app` at the same time. Both use port
-8080.
+8443.
 
 ## Tests
 

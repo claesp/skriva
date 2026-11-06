@@ -5,3 +5,4 @@ docs
 *.out
 web/editor/node_modules
 dist
+.dev

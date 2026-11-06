@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ type Registry struct {
 	secret  SecretFunc
 
 	mu      sync.Mutex
+	http    *http.Client
 	clients map[int64]registryEntry
 }
 
@@ -32,9 +34,10 @@ type registryEntry struct {
 
 // NewRegistry makes a Registry. baseURL is the public URL of the
 // application. The redirect URL of tenant XXXX is
-// baseURL + "/XXXX/auth/callback".
-func NewRegistry(baseURL string, secret SecretFunc) *Registry {
-	return &Registry{baseURL: baseURL, secret: secret, clients: map[int64]registryEntry{}}
+// baseURL + "/XXXX/auth/callback". httpClient makes the requests to the
+// providers, or nil for a client with the system certificates.
+func NewRegistry(baseURL string, secret SecretFunc, httpClient *http.Client) *Registry {
+	return &Registry{baseURL: baseURL, secret: secret, http: httpClient, clients: map[int64]registryEntry{}}
 }
 
 // ForTenant returns the OIDC client for the tenant.
@@ -60,6 +63,7 @@ func (r *Registry) ForTenant(ctx context.Context, t *store.Tenant) (*OIDC, error
 		RedirectURL:  r.baseURL + "/" + t.Code + "/auth/callback",
 		Scopes:       t.OIDCScopes,
 		GroupsClaim:  t.OIDCGroupsClaim,
+		HTTPClient:   r.http,
 	})
 	r.mu.Lock()
 	defer r.mu.Unlock()

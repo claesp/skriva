@@ -37,7 +37,7 @@ func newDB(t *testing.T) *pgxpool.Pool {
 	}
 	u, _ := url.Parse(base)
 	u.Path = "/" + name
-	pool, err := Open(ctx, u.String())
+	pool, err := Open(ctx, u.String(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,5 +131,25 @@ func TestLoadMigrations(t *testing.T) {
 	}
 	if SchemaVersion() < 1 {
 		t.Fatalf("SchemaVersion = %d", SchemaVersion())
+	}
+}
+
+func TestVerifiedTLS(t *testing.T) {
+	for url, want := range map[string]bool{
+		"postgres://u@db/skriva":                                    false, // prefer
+		"postgres://u@db/skriva?sslmode=disable":                    false,
+		"postgres://u@db/skriva?sslmode=require":                    false,
+		"postgres://u@db/skriva?sslmode=verify-ca":                  true,
+		"postgres://u@db/skriva?sslmode=verify-full":                true,
+		"postgres://u@db1,db2/skriva?sslmode=verify-full":           true,
+		"postgres://u@/skriva?host=/run/postgresql&sslmode=disable": true,
+	} {
+		cfg, err := pgx.ParseConfig(url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := verifiedTLS(cfg); got != want {
+			t.Errorf("%s: verifiedTLS = %v, want %v", url, got, want)
+		}
 	}
 }

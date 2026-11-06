@@ -5,6 +5,7 @@
 package e2e
 
 import (
+	"crypto/tls"
 	"html"
 	"io"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/claesp/skriva/internal/certs"
 )
 
 var (
@@ -37,7 +40,14 @@ func newBrowser(t *testing.T) *browser {
 		t.Skip("SKRIVA_E2E_URL is not set")
 	}
 	jar, _ := cookiejar.New(nil)
-	return &browser{t: t, base: base, c: &http.Client{Jar: jar, Timeout: 20 * time.Second}}
+	// The development environment uses a private CA.
+	roots, err := certs.Pool(os.Getenv("SKRIVA_E2E_CA_FILE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}
+	return &browser{t: t, base: base, c: &http.Client{Jar: jar, Timeout: 20 * time.Second, Transport: tr}}
 }
 
 func (b *browser) do(req *http.Request) (*http.Response, string) {
@@ -161,12 +171,16 @@ func TestSystemAdminAndSecondTenant(t *testing.T) {
 
 	root := newBrowser(t)
 	root.login("/admin/", "root", "root")
-	resp, body := root.post("/admin/tenants", url.Values{
-		"code": {code}, "name": {"E2E tenant"}, "oidc_issuer": {"http://localhost:8180/realms/skriva"},
-		"oidc_client_id": {"skriva"}, "oidc_client_secret": {"skriva-dev-secret"},
-		"oidc_scopes": {"openid profile email"}, "oidc_groups_claim": {"groups"},
+	resp, body := root.post("/admin/tenants", url.Values{"code": {code}, "name": {"E2E tenant"}})
+	wantCode(t, resp, body, http.StatusOK)
+	resp, body = root.post("/admin/tenants/"+code+"/settings/idp", url.Values{
+		"oidc_issuer": {"https://localhost:8543/realms/skriva"}, "oidc_client_id": {"skriva"},
+		"oidc_client_secret": {"skriva-dev-secret"}, "oidc_scopes": {"openid profile email"},
+		"oidc_groups_claim": {"groups"},
+	})
+	wantCode(t, resp, body, http.StatusOK)
+	resp, body = root.post("/admin/tenants/"+code+"/settings/access", url.Values{
 		"admin_group": {"skriva-editors"}, "default_role": {""},
-		"session_ttl": {"1h"}, "max_doc_kib": {"64"},
 	})
 	wantCode(t, resp, body, http.StatusOK)
 	resp, body = root.post("/admin/tenants/"+code+"/spaces", url.Values{"name": {"E2E space"}, "slug": {"e2espace"}})

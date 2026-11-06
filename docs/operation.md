@@ -13,8 +13,11 @@ release.
 All forms contain the [Typst](https://typst.app) program for the PDF
 export and the [mmdr](https://github.com/1jehuang/mermaid-rs-renderer)
 program for Mermaid diagrams. All forms need a PostgreSQL database and
-an OpenID Connect provider. Put a reverse proxy with TLS in front of
-the server. See [Security](security.md).
+an OpenID Connect provider. All connections use TLS: HTTPS for the
+browsers, and TLS to the database and the OIDC provider. Give your own
+certificates, from a CA that the clients trust. Without them, the
+installation makes a private CA and self-signed certificates. See
+[Configuration: TLS](configuration.md#tls) and [Security](security.md).
 
 Before you install a release, verify its files. See
 [Release: verify a release](release.md#verify-a-release).
@@ -32,28 +35,39 @@ each image by its digest. Thus it always starts the same images.
    cd skriva_0.1.3f9a2c1d4e5b_compose
    ```
 
-2. Make the secrets. The script writes them into the folder `secrets`:
-   the database password, the database URL, the encryption key and the
-   OIDC client secret.
+2. Edit `skriva.env`: the base URL, the OIDC issuer, the client ID and
+   the group of the system administrators. See
+   [Configuration](configuration.md).
+3. If you have certificates, put them into the folder `secrets/tls`:
+   `skriva.crt` and `skriva.key` for the web server (the certificate
+   with its chain), `postgres.crt` and `postgres.key` for the database,
+   and `ca.crt` with the CA certificates that verify the database and
+   the OIDC provider. A file can contain more than one CA certificate.
+4. Make the secrets. The script writes them into the folder `secrets`:
+   the database password, the database URL, the encryption key, the OIDC
+   client secret, and the certificates that you did not give. It makes
+   the certificates with a private CA in `secrets/ca`, valid for 10
+   years. The certificate of the web server gets the host of
+   `SKRIVA_BASE_URL`.
 
    ```sh
    sh make-secrets.sh 'the-oidc-client-secret'
    ```
 
    Keep a copy of `secrets/encryption_key` in a safe place. Without it,
-   nobody can read the documents.
+   nobody can read the documents. With the private CA, install
+   `secrets/ca/ca.crt` in the browsers as a trusted CA.
 
-3. Edit `skriva.env`: the base URL, the OIDC issuer, the client ID and
-   the group of the system administrators. See
-   [Configuration](configuration.md).
-4. Start the containers:
+5. Start the containers:
 
    ```sh
    podman compose up -d
    podman compose logs skriva
    ```
 
-The server listens on `127.0.0.1:8080`. `podman compose` uses
+The server listens for HTTPS on port 8443. To use port 443, change the
+port in `compose.yaml` to `"443:8443"`. PostgreSQL accepts only TLS
+connections from the network. `podman compose` uses
 `podman-compose` or `docker-compose`. With `docker-compose`, start the
 Podman socket first: `systemctl --user enable --now podman.socket`. To
 use `podman-compose`, set `PODMAN_COMPOSE_PROVIDER=podman-compose`.
@@ -81,30 +95,43 @@ The packages install these files:
 
 2. Edit `/etc/skriva/skriva.env`. The file contains secrets. Only root
    can read it.
-3. Start the service:
+3. The package makes a private CA in `/etc/skriva/ca` and the
+   certificates of Skriva, Keycloak and PostgreSQL in `/etc/skriva/tls`,
+   with the host name of the computer. Replace `skriva.crt`, `skriva.key`
+   and `ca.crt` with your own files if you have them. Configure
+   PostgreSQL for TLS with `postgres.crt` and `postgres.key`, or with your
+   own certificate. See [Configuration: TLS](configuration.md#tls).
+4. Start the service:
 
    ```sh
    sudo systemctl enable --now skriva
    journalctl -u skriva
    ```
 
-The service runs with a dynamic user (`DynamicUser=yes`) and a strict
-sandbox. The server keeps no files of its own. All data is in
-PostgreSQL.
+The service runs as the system user `skriva` in a strict sandbox. The
+server keeps no files of its own. All data is in PostgreSQL. The key of
+the certificate, `/etc/skriva/tls/skriva.key`, must be readable for the
+group `skriva`: `chgrp skriva skriva.key` and `chmod 640 skriva.key`.
+The server listens for HTTPS on port 8443.
 
 ## Run the container without compose
 
-The example uses Podman secrets for the encryption key and the client
-secret. Use the image and the digest of a release. Never use the tag
-`latest`: Skriva has no such tag.
+The example uses Podman secrets for the encryption key, the client
+secret and the key of the certificate. Use the image and the digest of
+a release. Never use the tag `latest`: Skriva has no such tag.
 
 ```sh
 head -c 32 /dev/urandom | base64 | podman secret create skriva-key -
 printf '%s' 'the-client-secret' | podman secret create skriva-oidc -
+podman secret create skriva-tls-key wiki.example.com.key
 
-podman run -d --name skriva -p 8080:8080 \
+podman run -d --name skriva -p 8443:8443 \
   --read-only --tmpfs /tmp:mode=1777 \
   --secret skriva-key --secret skriva-oidc \
+  --secret skriva-tls-key,uid=65532,mode=0400 \
+  -v ./wiki.example.com.crt:/tls/skriva.crt:ro,Z \
+  -e SKRIVA_TLS_CERT_FILE=/tls/skriva.crt \
+  -e SKRIVA_TLS_KEY_FILE=/run/secrets/skriva-tls-key \
   -e SKRIVA_ENCRYPTION_KEY_FILE=/run/secrets/skriva-key \
   -e SKRIVA_OIDC_CLIENT_SECRET_FILE=/run/secrets/skriva-oidc \
   -e SKRIVA_SYSTEM_ADMIN_GROUP=wiki-system-admins \
@@ -115,6 +142,10 @@ podman run -d --name skriva -p 8080:8080 \
   -e SKRIVA_ADMIN_GROUP=wiki-admins \
   ghcr.io/claesp/skriva:0.1.3f9a2c1d4e5b@sha256:...
 ```
+
+Without a certificate, mount a volume on `/var/lib/skriva/tls`, for
+example `-v skriva-tls:/var/lib/skriva/tls`. At the first start, the
+server makes a private CA and a certificate in it.
 
 ## Build the container image
 

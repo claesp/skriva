@@ -44,14 +44,16 @@ To try Skriva on your computer, you must have Go 1.26, Podman and
    make dev-app
    ```
 
-2. Open <http://localhost:8080>. The browser goes to the default tenant
+2. Open <https://localhost:8443>. The browser goes to the default tenant
    `dflt`.
 3. Sign in as `alice` (password `alice`). Alice is an administrator of
    the default tenant.
 
 The other test users are `bob` (editor) and `carol` (viewer). For the
-system administration, open <http://localhost:8080/admin/> and sign in
-as `root` (password `root`).
+system administration, open <https://localhost:8443/admin/> and sign in
+as `root` (password `root`). The certificates come from a private CA of
+the development environment. To remove the browser warning, install
+`.dev/tls/ca.crt` in the browser.
 
 ## Documentation
 

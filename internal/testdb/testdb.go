@@ -45,7 +45,7 @@ func New(t testing.TB) *pgxpool.Pool {
 		t.Fatal(err)
 	}
 	u.Path = "/" + name
-	pool, err := db.Open(ctx, u.String())
+	pool, err := db.Open(ctx, u.String(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

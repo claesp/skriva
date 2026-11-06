@@ -57,6 +57,15 @@ contents:
     file_info:
       mode: 0644
 
+# postinstall.sh makes the user skriva with useradd.
+overrides:
+  deb:
+    depends:
+      - passwd
+  rpm:
+    depends:
+      - shadow-utils
+
 scripts:
   postinstall: deploy/packaging/postinstall.sh
   preremove: deploy/packaging/preremove.sh

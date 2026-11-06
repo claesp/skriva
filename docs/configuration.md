@@ -30,8 +30,13 @@ missing or not valid.
 | `SKRIVA_ADMIN_GROUP`             |                         | The admin group of the default tenant, if the tenant has none. |
 | `SKRIVA_GROUP_ROLES`             |                         | More group roles in the default tenant, for example `editors=editor,writers=maintainer`. |
 | `SKRIVA_SESSION_TTL`             | `4h`                    | The maximum life of a system administrator session. It must be one minute or more. |
-| `SKRIVA_BASE_URL`                | `http://localhost:8080` | The public URL of the server. It must not have a path, a user, a query or a fragment. |
-| `SKRIVA_LISTEN_ADDR`             | `:8080`                 | The address for the HTTP server. |
+| `SKRIVA_BASE_URL`                | `https://localhost:8443` | The public URL of the server. It must not have a path, a user, a query or a fragment. With TLS, it must be an `https` URL. Without TLS, the default is `http://localhost:8080`. |
+| `SKRIVA_LISTEN_ADDR`             | `:8443`                 | The address of the web server. Without TLS, the default is `:8080`. |
+| `SKRIVA_TLS`                     | `true`                  | `true`: the web server uses HTTPS. `false`: HTTP, only behind a reverse proxy that does TLS. See [TLS](#tls). |
+| `SKRIVA_TLS_CERT_FILE`           |                         | The certificate of the web server and its chain, in PEM. Set it with `SKRIVA_TLS_KEY_FILE`. |
+| `SKRIVA_TLS_KEY_FILE`            |                         | The private key of the certificate, in PEM. |
+| `SKRIVA_TLS_DIR`                 | `/var/lib/skriva/tls`   | The folder of the generated certificate, if `SKRIVA_TLS_CERT_FILE` is not set. |
+| `SKRIVA_TLS_CA_FILE`             |                         | A PEM file with more trusted CA certificates for the connections to the database and to the OIDC providers. The server always trusts the system certificates too. |
 | `SKRIVA_TYPST`                   | `/typst` in the image   | The path of the [Typst](https://typst.app) program for the PDF export. If it is set, the program must exist, or the server does not start. If it is not set, the server finds `typst` in the `PATH`. Without the program, the PDF export is not available. |
 | `SKRIVA_MMDR`                    | `/mmdr` in the image    | The path of the [mmdr](https://github.com/1jehuang/mermaid-rs-renderer) program for Mermaid diagrams. If it is set, the program must exist, or the server does not start. If it is not set, the server finds `mmdr` in the `PATH`. Without the program, a diagram is a code block. |
 | `SKRIVA_TYPST_MEMORY`            | `1024`                  | The largest data memory of one Typst process, in MiB (16 to 65536). |
@@ -98,9 +103,57 @@ The tenant page in the system administration shows the two URIs for
 the tenant.
 
 The file `deploy/keycloak/realm-skriva.json` shows a Keycloak client for
-development. It permits all redirect URIs on `http://localhost:8080`. Do
+development. It permits all redirect URIs on `https://localhost:8443`. Do
 not use a wildcard in production. In Keycloak, set "Full group path" to
 off. Then the group names do not start with `/`.
+
+## TLS
+
+The server uses TLS for all its connections:
+
+| Connection | Settings |
+|------------|----------|
+| Browser to Skriva (HTTPS) | `SKRIVA_TLS_CERT_FILE` and `SKRIVA_TLS_KEY_FILE`. |
+| Skriva to PostgreSQL | `sslmode=verify-full` in `SKRIVA_DATABASE_URL`. The server trusts the system certificates and `SKRIVA_TLS_CA_FILE`. The URL parameter `sslrootcert` replaces them. |
+| Skriva to the OIDC providers (for example Keycloak) | An `https` issuer URL. The server trusts the system certificates and `SKRIVA_TLS_CA_FILE`. |
+
+If the connection to the database does not verify the certificate of
+the server, the log shows a warning at start. A Unix socket needs no
+TLS.
+
+**Use your own certificates.** Give a certificate and its chain from a
+CA that the browsers and the servers trust. Then the clients can
+validate the certificates. The server reads the certificate files again
+when they change, thus a new certificate (for example from an ACME
+client) needs no restart.
+
+**Generated certificates.** If `SKRIVA_TLS_CERT_FILE` is not set, the
+server makes a private CA and a certificate in `SKRIVA_TLS_DIR` at the
+first start, and uses them after that. The certificate has the host of
+`SKRIVA_BASE_URL`, `localhost`, `127.0.0.1` and `::1`. The folder must be
+writable. In a container, mount a volume on it. The browsers show a
+warning, until you install the CA (`ca.crt` in the folder) in them.
+
+The command `skriva certs` makes a private CA and the certificates of
+Skriva, Keycloak and PostgreSQL, valid for 10 years. The compose files
+and the packages use it if you give no certificates. It uses a CA that
+exists, and it never replaces a file:
+
+```sh
+skriva certs -dir tls -ca-dir ca -skriva-hosts wiki.example.com \
+  -keycloak-hosts sso.example.com -postgres-hosts db.example.com
+```
+
+| File | Use |
+|------|-----|
+| `ca/ca.crt`, `ca/ca.key` | The CA. Keep the key in a safe place. Only `skriva certs` needs it. |
+| `tls/ca.crt` | A copy of the CA certificate, for the clients (`SKRIVA_TLS_CA_FILE`, the browsers). |
+| `tls/skriva.crt`, `tls/skriva.key` | Skriva (`SKRIVA_TLS_CERT_FILE`, `SKRIVA_TLS_KEY_FILE`). |
+| `tls/keycloak.crt`, `tls/keycloak.key` | Keycloak: `--https-certificate-file` and `--https-certificate-key-file`. |
+| `tls/postgres.crt`, `tls/postgres.key` | PostgreSQL: `ssl = on`, `ssl_cert_file` and `ssl_key_file`. The PostgreSQL user must own the key, with mode `0600`. |
+
+Each certificate also has the names `localhost`, `127.0.0.1` and `::1`,
+and a service name: `skriva`, `keycloak`, or `db` and `postgres`.
 
 ## Secrets
 

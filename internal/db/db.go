@@ -5,6 +5,8 @@ package db
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"embed"
 	"encoding/hex"
 	"fmt"
@@ -29,10 +31,22 @@ var migrationFS embed.FS
 const migrationLockID = 0x736b72697661 // "skriva"
 
 // Open makes a connection pool and makes sure that the database responds.
-func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
+// roots are the trusted CA certificates for TLS, or nil for the system
+// certificates. The parameter sslrootcert of the URL replaces roots.
+func Open(ctx context.Context, url string, roots *x509.CertPool) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("parse database URL: %w", err)
+	}
+	if roots != nil {
+		setRoots(cfg.ConnConfig.TLSConfig, roots)
+		for _, fb := range cfg.ConnConfig.Fallbacks {
+			setRoots(fb.TLSConfig, roots)
+		}
+	}
+	if !verifiedTLS(cfg.ConnConfig) {
+		slog.Warn("the connection to the database does not use verified TLS: " +
+			"set sslmode=verify-full in SKRIVA_DATABASE_URL")
 	}
 	cfg.MaxConnLifetime = time.Hour
 	cfg.MaxConnIdleTime = 10 * time.Minute
@@ -63,6 +77,34 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// setRoots sets the trusted certificates, if the URL did not set them.
+func setRoots(c *tls.Config, roots *x509.CertPool) {
+	if c != nil && c.RootCAs == nil {
+		c.RootCAs = roots
+	}
+}
+
+// verifiedTLS reports whether each connection attempt uses TLS and
+// verifies the certificate of the server (sslmode verify-ca or
+// verify-full). A Unix socket needs no TLS.
+func verifiedTLS(c *pgx.ConnConfig) bool {
+	ok := func(host string, t *tls.Config) bool {
+		if strings.HasPrefix(host, "/") {
+			return true
+		}
+		return t != nil && (!t.InsecureSkipVerify || t.VerifyPeerCertificate != nil)
+	}
+	if !ok(c.Host, c.TLSConfig) {
+		return false
+	}
+	for _, fb := range c.Fallbacks {
+		if !ok(fb.Host, fb.TLSConfig) {
+			return false
+		}
+	}
+	return true
 }
 
 type migration struct {

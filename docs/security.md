@@ -207,6 +207,31 @@ apply:
 - The ID of a file is random, as the ID of a document. The server checks
   the permission for each request.
 
+## TLS
+
+All connections use TLS. See [Configuration: TLS](configuration.md#tls).
+
+- **HTTPS.** The web server uses TLS 1.2 or later, with the cipher
+  suites of Go. It does not listen for HTTP. `SKRIVA_TLS=false` is only
+  for a reverse proxy that does TLS. Then the log shows a warning.
+- **Database.** The compose files and the packages use
+  `sslmode=verify-full`: the server verifies the certificate and the
+  host name of the database. The PostgreSQL of the compose files accepts
+  only TLS connections from the network. The log shows a warning if the
+  connection to the database does not verify the certificate.
+- **OIDC providers.** The server verifies the certificates of the
+  providers. A tenant can use an `http` issuer URL only for `localhost`.
+- **Trust.** The server trusts the system certificates and the
+  certificates in `SKRIVA_TLS_CA_FILE`.
+- **Generated certificates.** ECDSA P-256 keys, valid for 10 years,
+  signed by a private CA. The CA key stays in its own folder
+  (`secrets/ca` or `/etc/skriva/ca`). The containers do not get it,
+  except the CA that the server makes in `SKRIVA_TLS_DIR` when it has no
+  certificate. The key files have mode `0600`.
+- **New certificates.** The server reads the certificate files again
+  when they change (at most once a minute). If the new files are not
+  valid, it keeps the old certificate and writes an error into the log.
+
 ## HTTP headers
 
 The server sends these headers with each response:
@@ -484,8 +509,9 @@ metadata that is not encrypted.
 - The login limit applies to all clients together. Thus a flood of
   requests can stop the login for all users for a short time. Use a
   reverse proxy to limit the rate of requests for each client.
-- The server does not encrypt the connection. Use a reverse proxy with
-  TLS, or a load balancer with TLS.
+- The generated certificates come from a private CA. The clients can
+  validate them only if they trust that CA. Use certificates from a CA
+  that the clients trust.
 - Images from external `https` sites can show in pages. The external
   site can see the IP address of the reader.
 

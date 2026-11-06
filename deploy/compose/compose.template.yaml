@@ -4,6 +4,10 @@
 # release, not this file. See docs/operation.md.
 #
 # Each image has a digest. Never use the tag "latest".
+#
+# make-secrets.sh makes the secrets and the TLS certificates in the
+# folder secrets/. Put your own certificates into secrets/tls before you
+# run it, if you have them.
 name: skriva
 
 services:
@@ -16,8 +20,24 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     secrets:
       - db_password
+    # PostgreSQL must own its key. The command copies the certificate and
+    # the key, and permits only TLS connections from the network.
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        cd /var/lib/postgresql
+        install -o postgres -g postgres -m 0600 /tls/postgres.key server.key
+        install -o postgres -g postgres -m 0644 /tls/postgres.crt server.crt
+        printf 'local all all trust\nhostssl all all all scram-sha-256\n' >pg_hba.conf
+        chown postgres:postgres pg_hba.conf
+        exec docker-entrypoint.sh postgres -c ssl=on -c ssl_min_protocol_version=TLSv1.2 \
+          -c ssl_cert_file=/var/lib/postgresql/server.crt -c ssl_key_file=/var/lib/postgresql/server.key \
+          -c hba_file=/var/lib/postgresql/pg_hba.conf
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./secrets/tls:/tls:ro,z
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "skriva", "-d", "skriva"]
       interval: 5s
@@ -35,13 +55,19 @@ services:
       SKRIVA_DATABASE_URL_FILE: /run/secrets/database_url
       SKRIVA_ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
       SKRIVA_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+      SKRIVA_TLS_CERT_FILE: /tls/skriva.crt
+      SKRIVA_TLS_KEY_FILE: /tls/skriva.key
+      # Trusted for the database and the OIDC provider, in addition to
+      # the system certificates.
+      SKRIVA_TLS_CA_FILE: /tls/ca.crt
     secrets:
       - database_url
       - encryption_key
       - oidc_client_secret
-    # Put a reverse proxy with TLS in front of the server.
+    volumes:
+      - ./secrets/tls:/tls:ro,z
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8443:8443"
     read_only: true
     tmpfs:
       - /tmp:mode=1777

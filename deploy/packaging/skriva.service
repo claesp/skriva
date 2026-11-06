@@ -9,6 +9,12 @@ Wants=network-online.target
 [Service]
 Type=exec
 Environment=SKRIVA_TYPST=/usr/lib/skriva/typst SKRIVA_MMDR=/usr/lib/skriva/mmdr
+# The TLS certificate of the web server, and the trusted CA for the
+# database and the OIDC provider. The package makes them in
+# /etc/skriva/tls at installation. Replace them with your own files.
+# The key must be readable for the group skriva (mode 0640).
+Environment=SKRIVA_TLS_CERT_FILE=/etc/skriva/tls/skriva.crt SKRIVA_TLS_KEY_FILE=/etc/skriva/tls/skriva.key
+Environment=SKRIVA_TLS_CA_FILE=/etc/skriva/tls/ca.crt
 # The settings in the file replace the settings above.
 EnvironmentFile=/etc/skriva/skriva.env
 # At start, the server applies the database migrations (the boot step).
@@ -17,9 +23,10 @@ Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=30s
 
-# The server keeps all data in PostgreSQL. It needs no user of its own
-# and writes only temporary files.
-DynamicUser=yes
+# The server keeps all data in PostgreSQL and writes only temporary
+# files. The package makes the system user skriva.
+User=skriva
+Group=skriva
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes

@@ -5,6 +5,8 @@ package auth
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +38,17 @@ type Config struct {
 	RedirectURL  string
 	Scopes       []string
 	GroupsClaim  string
+	// HTTPClient makes the requests to the provider, or nil for a client
+	// with the system certificates. See NewHTTPClient.
+	HTTPClient *http.Client
+}
+
+// NewHTTPClient returns a client for the OIDC providers. roots are the
+// trusted CA certificates, or nil for the system certificates.
+func NewHTTPClient(roots *x509.CertPool) *http.Client {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}
+	return &http.Client{Timeout: 10 * time.Second, Transport: t}
 }
 
 // OIDC is an OpenID Connect relying party. It is safe for concurrent use.
@@ -55,10 +68,11 @@ type OIDC struct {
 
 // New makes an OIDC client. It does not connect to the provider.
 func New(cfg Config) *OIDC {
-	return &OIDC{
-		cfg:    cfg,
-		client: &http.Client{Timeout: 10 * time.Second},
+	client := cfg.HTTPClient
+	if client == nil {
+		client = NewHTTPClient(nil)
 	}
+	return &OIDC{cfg: cfg, client: client}
 }
 
 // Ready makes sure that the provider discovery is complete.

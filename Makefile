@@ -32,7 +32,8 @@ test-integration:
 
 # End-to-end test against the development pod (see dev-app).
 test-e2e:
-	SKRIVA_E2E_URL=http://localhost:8080 go test -count=1 -tags e2e ./e2e/
+	SKRIVA_E2E_URL=https://localhost:8443 SKRIVA_E2E_CA_FILE=.dev/tls/ca.crt \
+		go test -count=1 -tags e2e ./e2e/
 
 lint:
 	gofmt -l . | (! grep .)
@@ -67,8 +68,10 @@ dev-down:
 
 # Run the application on the host against the development pod.
 run: build
-	SKRIVA_DATABASE_URL="postgres://skriva:skriva@localhost:15432/skriva?sslmode=disable" \
-	SKRIVA_OIDC_ISSUER=http://localhost:8180/realms/skriva \
+	SKRIVA_DATABASE_URL="postgres://skriva:skriva@localhost:15432/skriva?sslmode=verify-full" \
+	SKRIVA_OIDC_ISSUER=https://localhost:8543/realms/skriva \
+	SKRIVA_TLS_CERT_FILE=.dev/tls/skriva.crt SKRIVA_TLS_KEY_FILE=.dev/tls/skriva.key \
+	SKRIVA_TLS_CA_FILE=.dev/tls/ca.crt \
 	SKRIVA_OIDC_CLIENT_ID=skriva \
 	SKRIVA_OIDC_CLIENT_SECRET=skriva-dev-secret \
 	SKRIVA_ENCRYPTION_KEY=ZGV2LWtleS1kZXYta2V5LWRldi1rZXktZGV2LWtleSE= \

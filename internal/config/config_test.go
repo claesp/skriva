@@ -26,11 +26,11 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ListenAddr != ":8080" || c.OIDCGroupsClaim != "groups" || len(c.EncryptionKey) != 32 {
+	if c.ListenAddr != ":8443" || c.OIDCGroupsClaim != "groups" || len(c.EncryptionKey) != 32 {
 		t.Fatalf("unexpected defaults: %+v", c)
 	}
-	if c.SecureCookies() {
-		t.Fatal("http base URL must not give secure cookies")
+	if !c.TLS || c.BaseURL.String() != "https://localhost:8443" || !c.SecureCookies() || c.TLSDir != DefaultTLSDir {
+		t.Fatalf("the server must use HTTPS by default: %+v", c)
 	}
 	if !c.AutoMigrate {
 		t.Fatal("the server must apply the migrations by default")
@@ -88,6 +88,34 @@ func TestLoadSecretFile(t *testing.T) {
 	}
 	if c.OIDCClientSecret != "from-file" {
 		t.Fatalf("got secret %q", c.OIDCClientSecret)
+	}
+}
+
+func TestLoadTLS(t *testing.T) {
+	m := validEnv()
+	m["SKRIVA_TLS"] = "false"
+	c, err := load(env(m))
+	if err != nil || c.TLS || c.ListenAddr != ":8080" || c.SecureCookies() {
+		t.Fatalf("SKRIVA_TLS=false: %+v, %v", c, err)
+	}
+	m = validEnv()
+	m["SKRIVA_BASE_URL"] = "http://wiki.example.com"
+	if _, err := load(env(m)); err == nil || !strings.Contains(err.Error(), "https") {
+		t.Fatalf("an http base URL with TLS: %v", err)
+	}
+	m = validEnv()
+	m["SKRIVA_TLS_CERT_FILE"] = "/etc/skriva/tls/skriva.crt"
+	if _, err := load(env(m)); err == nil || !strings.Contains(err.Error(), "SKRIVA_TLS_KEY_FILE") {
+		t.Fatalf("a certificate without a key: %v", err)
+	}
+	m["SKRIVA_TLS_KEY_FILE"] = "/etc/skriva/tls/skriva.key"
+	m["SKRIVA_TLS_CA_FILE"] = "/etc/skriva/tls/ca.crt"
+	if c, err := load(env(m)); err != nil || c.TLSKeyFile == "" || c.TLSCAFile == "" {
+		t.Fatalf("certificate files: %+v, %v", c, err)
+	}
+	m["SKRIVA_TLS"] = "maybe"
+	if _, err := load(env(m)); err == nil {
+		t.Fatal("no error for SKRIVA_TLS=maybe")
 	}
 }
 

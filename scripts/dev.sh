@@ -16,8 +16,16 @@ KEYCLOAK_IMAGE=${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0@sha256:09a381c71
 APP_IMAGE=${APP_IMAGE:-localhost/skriva:dev}
 
 DB_PORT=${DB_PORT:-15432}
+# Keycloak listens for HTTPS on KC_TLS_PORT. The HTTP port KC_PORT stays
+# for tenants that have the old http issuer URL.
 KC_PORT=8180
-APP_PORT=8080
+KC_TLS_PORT=8543
+APP_PORT=8443
+
+# The private CA and the certificates of the development environment.
+# Install $TLS/ca.crt in the browser to remove the certificate warning.
+TLS=$ROOT/.dev/tls
+CA=$ROOT/.dev/ca
 
 # The encryption key for development. Do not use it in production.
 DEV_KEY=ZGV2LWtleS1kZXYta2V5LWRldi1rZXktZGV2LWtleSE=
@@ -27,7 +35,7 @@ wait_for() {
 	url=$2
 	printf 'Waiting for %s' "$name"
 	i=0
-	until curl -fsS -o /dev/null "$url"; do
+	until curl -fsS --cacert "$TLS/ca.crt" -o /dev/null "$url"; do
 		i=$((i + 1))
 		if [ "$i" -gt 120 ]; then
 			echo
@@ -40,11 +48,22 @@ wait_for() {
 	echo ' ready'
 }
 
+# certs makes the certificates (if necessary) and gives each key to its
+# container as a Podman secret that the user of the container owns.
+certs() {
+	(cd "$ROOT" && go run ./cmd/skriva certs -dir "$TLS" -ca-dir "$CA") >/dev/null
+	for name in skriva keycloak postgres; do
+		podman secret create --replace "$POD-$name-key" "$TLS/$name.key" >/dev/null
+	done
+}
+
 up() {
+	certs
 	if ! podman pod exists "$POD"; then
 		podman pod create --name "$POD" \
 			-p "127.0.0.1:$DB_PORT:5432" \
 			-p "127.0.0.1:$KC_PORT:$KC_PORT" \
+			-p "127.0.0.1:$KC_TLS_PORT:$KC_TLS_PORT" \
 			-p "127.0.0.1:$APP_PORT:$APP_PORT"
 	fi
 
@@ -54,8 +73,11 @@ up() {
 			-e POSTGRES_PASSWORD=skriva \
 			-e POSTGRES_DB=skriva \
 			-v "$POD-pgdata:/var/lib/postgresql/data" \
+			-v "$TLS/postgres.crt:/tls/postgres.crt:ro,z" \
+			--secret "$POD-postgres-key,target=/tls/postgres.key,uid=70,gid=70,mode=0600" \
 			--health-cmd "pg_isready -U skriva" \
-			"$POSTGRES_IMAGE"
+			"$POSTGRES_IMAGE" postgres -c ssl=on -c ssl_min_protocol_version=TLSv1.2 \
+			-c ssl_cert_file=/tls/postgres.crt -c ssl_key_file=/tls/postgres.key
 	fi
 
 	if ! podman container exists "$POD-keycloak"; then
@@ -64,13 +86,17 @@ up() {
 			-e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
 			-e KC_HEALTH_ENABLED=true \
 			-v "$ROOT/deploy/keycloak:/opt/keycloak/data/import:ro,Z" \
-			"$KEYCLOAK_IMAGE" start-dev --import-realm --http-port=$KC_PORT
+			-v "$TLS/keycloak.crt:/tls/keycloak.crt:ro,z" \
+			--secret "$POD-keycloak-key,target=/tls/keycloak.key,uid=1000,mode=0400" \
+			"$KEYCLOAK_IMAGE" start-dev --import-realm --http-port=$KC_PORT --https-port=$KC_TLS_PORT \
+			--https-certificate-file=/tls/keycloak.crt --https-certificate-key-file=/tls/keycloak.key
 	fi
 	podman start "$POD-db" "$POD-keycloak" >/dev/null
 
-	wait_for keycloak "http://localhost:$KC_PORT/realms/skriva/.well-known/openid-configuration"
-	echo "PostgreSQL: postgres://skriva:skriva@localhost:$DB_PORT/skriva"
-	echo "Keycloak:   http://localhost:$KC_PORT (admin console user: admin/admin)"
+	wait_for keycloak "https://localhost:$KC_TLS_PORT/realms/skriva/.well-known/openid-configuration"
+	echo "PostgreSQL: postgres://skriva:skriva@localhost:$DB_PORT/skriva?sslmode=verify-full&sslrootcert=$TLS/ca.crt"
+	echo "Keycloak:   https://localhost:$KC_TLS_PORT (admin console user: admin/admin)"
+	echo "The CA of the certificates: $TLS/ca.crt"
 }
 
 app() {
@@ -80,9 +106,13 @@ app() {
 		-t "$APP_IMAGE" -f "$ROOT/Containerfile" "$ROOT"
 	podman rm -f "$POD-app" >/dev/null 2>&1 || true
 	podman run -d --pod "$POD" --name "$POD-app" \
-		-e SKRIVA_DATABASE_URL="postgres://skriva:skriva@localhost:5432/skriva?sslmode=disable" \
-		-e SKRIVA_BASE_URL="http://localhost:$APP_PORT" \
-		-e SKRIVA_OIDC_ISSUER="http://localhost:$KC_PORT/realms/skriva" \
+		-e SKRIVA_DATABASE_URL="postgres://skriva:skriva@localhost:5432/skriva?sslmode=verify-full" \
+		-e SKRIVA_BASE_URL="https://localhost:$APP_PORT" \
+		-e SKRIVA_OIDC_ISSUER="https://localhost:$KC_TLS_PORT/realms/skriva" \
+		-v "$TLS/skriva.crt:/tls/skriva.crt:ro,z" -v "$TLS/ca.crt:/tls/ca.crt:ro,z" \
+		--secret "$POD-skriva-key,target=/tls/skriva.key,uid=65532,mode=0400" \
+		-e SKRIVA_TLS_CERT_FILE=/tls/skriva.crt -e SKRIVA_TLS_KEY_FILE=/tls/skriva.key \
+		-e SKRIVA_TLS_CA_FILE=/tls/ca.crt \
 		-e SKRIVA_OIDC_CLIENT_ID=skriva \
 		-e SKRIVA_OIDC_CLIENT_SECRET=skriva-dev-secret \
 		-e SKRIVA_ENCRYPTION_KEY="$DEV_KEY" \
@@ -90,13 +120,16 @@ app() {
 		-e SKRIVA_ADMIN_GROUP=skriva-admins \
 		-e SKRIVA_GROUP_ROLES=skriva-editors=editor \
 		"$APP_IMAGE"
-	wait_for app "http://localhost:$APP_PORT/readyz"
-	echo "Skriva:     http://localhost:$APP_PORT (users: alice/alice, bob/bob, carol/carol)"
-	echo "System:     http://localhost:$APP_PORT/admin/ (user: root/root)"
+	wait_for app "https://localhost:$APP_PORT/readyz"
+	echo "Skriva:     https://localhost:$APP_PORT (users: alice/alice, bob/bob, carol/carol)"
+	echo "System:     https://localhost:$APP_PORT/admin/ (user: root/root)"
 }
 
 down() {
 	podman pod rm -f "$POD" >/dev/null 2>&1 || true
+	for name in skriva keycloak postgres; do
+		podman secret rm "$POD-$name-key" >/dev/null 2>&1 || true
+	done
 	if [ "${1:-}" = "--volumes" ]; then
 		podman volume rm -f "$POD-pgdata" >/dev/null 2>&1 || true
 	fi

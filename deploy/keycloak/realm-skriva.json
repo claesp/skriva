@@ -102,14 +102,14 @@
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "http://localhost:8080/*"
+        "https://localhost:8443/*"
       ],
       "webOrigins": [
-        "http://localhost:8080"
+        "https://localhost:8443"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:8080/*"
+        "post.logout.redirect.uris": "https://localhost:8443/*"
       },
       "protocolMappers": [
         {
