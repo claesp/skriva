@@ -33,8 +33,8 @@ func (s *Server) systemRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /admin/tenants/new", s.requireSystem(s.handleTenantNewForm))
 	mux.Handle("POST /admin/tenants", s.requireSystem(s.handleTenantCreate))
 	mux.Handle("GET /admin/tenants/{code}", s.requireSystem(s.handleTenant))
-	mux.Handle("GET /admin/tenants/{code}/edit", s.requireSystem(s.handleTenantForm))
-	mux.Handle("POST /admin/tenants/{code}", s.requireSystem(s.handleTenantUpdate))
+	mux.Handle("GET /admin/tenants/{code}/settings/{section}", s.requireSystem(s.handleTenantForm))
+	mux.Handle("POST /admin/tenants/{code}/settings/{section}", s.requireSystem(s.handleTenantUpdate))
 	mux.Handle("GET /admin/tenants/{code}/delete", s.requireSystem(s.handleTenantDeleteForm))
 	mux.Handle("POST /admin/tenants/{code}/delete", s.requireSystem(s.handleTenantDelete))
 	mux.Handle("GET /admin/tenants/{code}/spaces", s.requireSystem(s.handleTenantSpaces))
@@ -54,7 +54,10 @@ func (s *Server) handleTenants(w http.ResponseWriter, r *http.Request) {
 
 // tenantForm is the data for the tenant settings form.
 type tenantForm struct {
-	IsNew     bool
+	IsNew bool
+	// Section is the part of the settings that the form changes. A new
+	// tenant has no section.
+	Section   string
 	IsDefault bool
 	// Code is the value of the code field. Path is the current code of
 	// the tenant for the URLs of the form, or "" for a new tenant.
@@ -104,7 +107,7 @@ func (s *Server) newTenantForm(r *http.Request, t *store.Tenant) (*tenantForm, e
 		f.HasSecret = t.HasClientSecret
 	}
 	f.Scopes = strings.Join(f.OIDCScopes, " ")
-	f.SessionTTL = f.TenantSettings.SessionTTL.String()
+	f.SessionTTL = shortDuration(f.TenantSettings.SessionTTL)
 	f.MaxDocKiB = f.MaxDocBytes / 1024
 	f.UILanguages, f.ContentLanguages = i18n.UILanguages(), i18n.ContentLanguages()
 	f.SystemLanguage = i18n.Name(s.opts.Language)
@@ -117,6 +120,19 @@ func (s *Server) newTenantForm(r *http.Request, t *store.Tenant) (*tenantForm, e
 	return f, nil
 }
 
+// shortDuration returns d without zero minutes and seconds, for example
+// "12h" for 12h0m0s.
+func shortDuration(d time.Duration) string {
+	s := strings.TrimSuffix(d.String(), "m0s")
+	if s != d.String() {
+		s += "m"
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
+}
+
 func (f *tenantForm) setURIs(s *Server) {
 	if f.Code != "" {
 		f.RedirectURI = s.absURL("/" + f.Code + "/auth/callback")
@@ -124,59 +140,97 @@ func (f *tenantForm) setURIs(s *Server) {
 	}
 }
 
-// readTenantForm reads and checks the settings in the form. It returns an
-// error text in the language of p, or "".
-func readTenantForm(r *http.Request, p *i18n.Printer, f *tenantForm) string {
-	get := func(k string) string { return strings.TrimSpace(r.PostFormValue(k)) }
-	f.Name = get("name")
-	f.Disabled = r.PostFormValue("disabled") == "on"
-	f.OIDCIssuer = get("oidc_issuer")
-	f.OIDCClientID = get("oidc_client_id")
-	f.Scopes = get("oidc_scopes")
-	f.OIDCScopes = strings.Fields(f.Scopes)
-	f.OIDCGroupsClaim = get("oidc_groups_claim")
-	f.AdminGroup = get("admin_group")
-	f.DefaultRole = get("default_role")
-	f.SessionTTL = get("session_ttl")
-	f.Language = get("language")
-	f.ContentLanguage = get("content_language")
-
-	switch {
-	case f.Name == "" || utf8.RuneCountInString(f.Name) > 200:
-		return p.T("The name is necessary and must have 200 characters or less.")
-	case !validIssuer(f.OIDCIssuer):
-		return p.T("The issuer must be an https URL. An http URL is permitted only for localhost.")
-	case len(f.OIDCClientID) > 200 || len(f.OIDCGroupsClaim) > 100 || utf8.RuneCountInString(f.AdminGroup) > 200:
-		return p.T("A value is too long.")
-	case len(r.PostFormValue("oidc_client_secret")) > 500:
-		return p.T("The client secret is too long.")
-	case len(f.OIDCScopes) > 20 || len(f.Scopes) > 500:
-		return p.T("There are too many scopes.")
-	case f.DefaultRole != "" && !roleNameRE.MatchString(f.DefaultRole):
-		return p.T("The default role is not valid.")
-	case f.Language != "" && !i18n.IsUI(f.Language):
-		return p.T("The language is not valid.")
-	case !i18n.IsContent(f.ContentLanguage):
-		return p.T("The content language is not valid.")
+// tenantSection returns the name of a part of the tenant settings in the
+// language of p, or "" if the part does not exist.
+func tenantSection(p *i18n.Printer, section string) string {
+	switch section {
+	case "general":
+		return p.T("General")
+	case "idp":
+		return p.T("Identity provider")
+	case "access":
+		return p.T("Access")
+	case "languages":
+		return p.T("Languages")
+	case "limits":
+		return p.T("Limits")
 	}
-	for _, sc := range f.OIDCScopes {
-		for _, c := range sc {
-			if c < 0x21 || c > 0x7e || c == '"' || c == '\\' {
-				return p.T("A scope contains a character that is not permitted.")
+	return ""
+}
+
+// readTenantForm reads and checks the fields of f.Section in the form.
+// For a new tenant, it reads the code and the name. It returns an error
+// text in the language of p, or "".
+func (s *Server) readTenantForm(r *http.Request, p *i18n.Printer, f *tenantForm) string {
+	get := func(k string) string { return strings.TrimSpace(r.PostFormValue(k)) }
+	switch {
+	case f.IsNew || f.Section == "general":
+		f.Code = get("code")
+		f.Name = get("name")
+		if !f.IsNew {
+			f.Disabled = r.PostFormValue("disabled") == "on"
+		}
+		switch {
+		case f.Name == "" || utf8.RuneCountInString(f.Name) > 200:
+			return p.T("The name is necessary and must have 200 characters or less.")
+		case !s.validTenantCode(f.Code):
+			return p.T(tenantCodeError)
+		}
+	case f.Section == "idp":
+		f.OIDCIssuer = get("oidc_issuer")
+		f.OIDCClientID = get("oidc_client_id")
+		f.Scopes = get("oidc_scopes")
+		f.OIDCScopes = strings.Fields(f.Scopes)
+		f.OIDCGroupsClaim = get("oidc_groups_claim")
+		switch {
+		case !validIssuer(f.OIDCIssuer):
+			return p.T("The issuer must be an https URL. An http URL is permitted only for localhost.")
+		case len(f.OIDCClientID) > 200 || len(f.OIDCGroupsClaim) > 100:
+			return p.T("A value is too long.")
+		case len(r.PostFormValue("oidc_client_secret")) > 500:
+			return p.T("The client secret is too long.")
+		case len(f.OIDCScopes) > 20 || len(f.Scopes) > 500:
+			return p.T("There are too many scopes.")
+		}
+		for _, sc := range f.OIDCScopes {
+			for _, c := range sc {
+				if c < 0x21 || c > 0x7e || c == '"' || c == '\\' {
+					return p.T("A scope contains a character that is not permitted.")
+				}
 			}
 		}
+	case f.Section == "access":
+		f.AdminGroup = get("admin_group")
+		f.DefaultRole = get("default_role")
+		switch {
+		case utf8.RuneCountInString(f.AdminGroup) > 200:
+			return p.T("A value is too long.")
+		case f.DefaultRole != "" && !roleNameRE.MatchString(f.DefaultRole):
+			return p.T("The default role is not valid.")
+		}
+	case f.Section == "languages":
+		f.Language = get("language")
+		f.ContentLanguage = get("content_language")
+		switch {
+		case f.Language != "" && !i18n.IsUI(f.Language):
+			return p.T("The language is not valid.")
+		case !i18n.IsContent(f.ContentLanguage):
+			return p.T("The content language is not valid.")
+		}
+	case f.Section == "limits":
+		f.SessionTTL = get("session_ttl")
+		ttl, err := time.ParseDuration(f.SessionTTL)
+		if err != nil || ttl < minSessionTTL || ttl > maxSessionTTL {
+			return p.T("The session life must be a duration from 1m to 720h, for example 12h.")
+		}
+		f.TenantSettings.SessionTTL = ttl
+		kib, err := strconv.Atoi(get("max_doc_kib"))
+		if err != nil || kib < 1 || kib > maxDocKiB {
+			return p.T("The maximum document size must be from 1 to 1024 KiB.")
+		}
+		f.MaxDocKiB = kib
+		f.MaxDocBytes = kib * 1024
 	}
-	ttl, err := time.ParseDuration(f.SessionTTL)
-	if err != nil || ttl < minSessionTTL || ttl > maxSessionTTL {
-		return p.T("The session life must be a duration from 1m to 720h, for example 12h.")
-	}
-	f.TenantSettings.SessionTTL = ttl
-	kib, err := strconv.Atoi(get("max_doc_kib"))
-	if err != nil || kib < 1 || kib > maxDocKiB {
-		return p.T("The maximum document size must be from 1 to 1024 KiB.")
-	}
-	f.MaxDocKiB = kib
-	f.MaxDocBytes = kib * 1024
 	return ""
 }
 
@@ -204,7 +258,7 @@ func (s *Server) renderTenantForm(w http.ResponseWriter, r *http.Request, status
 	p := s.tr(r)
 	title := p.T("New tenant")
 	if !f.IsNew {
-		title = p.T("Tenant %s", f.Path)
+		title = tenantSection(p, f.Section)
 	}
 	s.renderAdmin(w, r, status, "tenants", "system-tenant", title, f)
 }
@@ -225,16 +279,14 @@ func (s *Server) handleTenantCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := s.tr(r)
-	f.Code = strings.TrimSpace(r.PostFormValue("code"))
-	f.Error = readTenantForm(r, p, f)
-	if f.Error == "" && !s.validTenantCode(f.Code) {
-		f.Error = p.T(tenantCodeError)
-	}
+	f.Error = s.readTenantForm(r, p, f)
 	if f.Error != "" {
 		s.renderTenantForm(w, r, http.StatusUnprocessableEntity, f)
 		return
 	}
-	t, err := s.store.CreateTenant(r.Context(), f.Code, f.TenantSettings, r.PostFormValue("oidc_client_secret"))
+	// The other settings have their default values. The administrator
+	// changes them on the page of the tenant.
+	t, err := s.store.CreateTenant(r.Context(), f.Code, f.TenantSettings, "")
 	switch {
 	case errors.Is(err, store.ErrConflict):
 		f.Error = p.T("A tenant with this code exists already.")
@@ -301,46 +353,55 @@ func (s *Server) handleTenantRotateKey(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/tenants/"+t.Code+"#encryption", http.StatusSeeOther)
 }
 
-func (s *Server) handleTenantForm(w http.ResponseWriter, r *http.Request) {
+// loadTenantSection loads the tenant and the form for the {section} path
+// value.
+func (s *Server) loadTenantSection(w http.ResponseWriter, r *http.Request) (*store.Tenant, *tenantForm, bool) {
 	t, ok := s.loadTenant(w, r)
 	if !ok {
-		return
+		return nil, nil, false
+	}
+	section := r.PathValue("section")
+	if tenantSection(s.tr(r), section) == "" {
+		s.notFound(w, r)
+		return nil, nil, false
 	}
 	f, err := s.newTenantForm(r, t)
 	if err != nil {
 		s.serverError(w, r, err)
-		return
+		return nil, nil, false
 	}
-	s.renderTenantForm(w, r, http.StatusOK, f)
+	f.Section = section
+	return t, f, true
 }
 
-func (s *Server) handleTenantUpdate(w http.ResponseWriter, r *http.Request) {
-	t, ok := s.loadTenant(w, r)
-	if !ok {
-		return
+func (s *Server) handleTenantForm(w http.ResponseWriter, r *http.Request) {
+	if _, f, ok := s.loadTenantSection(w, r); ok {
+		s.renderTenantForm(w, r, http.StatusOK, f)
 	}
-	f, err := s.newTenantForm(r, t)
-	if err != nil {
-		s.serverError(w, r, err)
+}
+
+// handleTenantUpdate changes one part of the tenant settings. The other
+// settings do not change.
+func (s *Server) handleTenantUpdate(w http.ResponseWriter, r *http.Request) {
+	t, f, ok := s.loadTenantSection(w, r)
+	if !ok {
 		return
 	}
 	p := s.tr(r)
-	f.Code = strings.TrimSpace(r.PostFormValue("code"))
-	f.Error = readTenantForm(r, p, f)
-	if f.Error == "" && !s.validTenantCode(f.Code) {
-		f.Error = p.T(tenantCodeError)
-	}
+	f.Error = s.readTenantForm(r, p, f)
 	if f.Error != "" {
 		s.renderTenantForm(w, r, http.StatusUnprocessableEntity, f)
 		return
 	}
 	// An empty secret field keeps the secret. The check box removes it.
 	var newSecret *string
-	if v := r.PostFormValue("oidc_client_secret"); v != "" {
-		newSecret = &v
-	} else if r.PostFormValue("remove_secret") == "on" {
-		empty := ""
-		newSecret = &empty
+	if f.Section == "idp" {
+		if v := r.PostFormValue("oidc_client_secret"); v != "" {
+			newSecret = &v
+		} else if r.PostFormValue("remove_secret") == "on" {
+			empty := ""
+			newSecret = &empty
+		}
 	}
 	nt, err := s.store.UpdateTenant(r.Context(), t.ID, f.Code, f.TenantSettings, newSecret)
 	switch {
@@ -356,9 +417,9 @@ func (s *Server) handleTenantUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.storeResult(w, r, err) {
 		return
 	}
-	s.log.Info("tenant changed", "tenant", nt.Code, "old_code", t.Code, "secret_changed", newSecret != nil,
-		"user_id", reqInfoFrom(r.Context()).Session.User.ID)
-	http.Redirect(w, r, "/admin/tenants/"+nt.Code, http.StatusSeeOther)
+	s.log.Info("tenant changed", "tenant", nt.Code, "old_code", t.Code, "section", f.Section,
+		"secret_changed", newSecret != nil, "user_id", reqInfoFrom(r.Context()).Session.User.ID)
+	http.Redirect(w, r, "/admin/tenants/"+nt.Code+"#"+f.Section, http.StatusSeeOther)
 }
 
 func (s *Server) handleTenantDeleteForm(w http.ResponseWriter, r *http.Request) {

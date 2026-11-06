@@ -982,29 +982,52 @@ func TestSystemAdmin(t *testing.T) {
 	// A system session does not give access to a tenant.
 	wantStatus(t, root.get("/dflt/"), http.StatusSeeOther)
 
-	tenantForm := url.Values{
-		"code": {"acme"}, "name": {"Acme"}, "oidc_issuer": {"https://idp.example"},
-		"oidc_client_id": {"acme"}, "oidc_client_secret": {"s3cret"}, "oidc_scopes": {"openid profile"},
-		"oidc_groups_claim": {"groups"}, "admin_group": {"acme-admins"}, "default_role": {"viewer"},
-		"session_ttl": {"8h"}, "max_doc_kib": {"512"},
+	// A new tenant needs only a code and a name. The other settings get
+	// default values.
+	bad := url.Values{"code": {"ACME"}, "name": {"Acme"}}
+	wantStatus(t, root.post("/admin/tenants", bad), http.StatusUnprocessableEntity)
+	bad = url.Values{"code": {"acme"}, "name": {""}}
+	wantStatus(t, root.post("/admin/tenants", bad), http.StatusUnprocessableEntity)
+	newTenant := url.Values{"code": {"acme"}, "name": {"Acme"}}
+	resp = root.post("/admin/tenants", newTenant)
+	wantStatus(t, resp, http.StatusSeeOther)
+	if loc := resp.Header.Get("Location"); loc != "/admin/tenants/acme" {
+		t.Fatalf("redirect to %q", loc)
 	}
-	bad := url.Values{}
-	for k, v := range tenantForm {
-		bad[k] = v
-	}
-	bad.Set("code", "ACME")
-	wantStatus(t, root.post("/admin/tenants", bad), http.StatusUnprocessableEntity)
-	bad.Set("code", "acm2")
-	bad.Set("oidc_issuer", "http://idp.example")
-	wantStatus(t, root.post("/admin/tenants", bad), http.StatusUnprocessableEntity)
-	bad.Set("oidc_issuer", "https://idp.example")
-	bad.Set("default_role", "nothere")
-	wantStatus(t, root.post("/admin/tenants", bad), http.StatusUnprocessableEntity)
-
-	wantStatus(t, root.post("/admin/tenants", tenantForm), http.StatusSeeOther)
-	wantStatus(t, root.post("/admin/tenants", tenantForm), http.StatusUnprocessableEntity)
+	wantStatus(t, root.post("/admin/tenants", newTenant), http.StatusUnprocessableEntity)
 	acme, err := e.st.TenantByCode(ctx, "acme")
-	if err != nil || acme.MaxDocBytes != 512*1024 || acme.SessionTTL != 8*time.Hour {
+	if err != nil || acme.MaxDocBytes != 1<<20 || acme.SessionTTL != 12*time.Hour || acme.DefaultRole != "viewer" ||
+		acme.OIDCIssuer != "" || strings.Join(acme.OIDCScopes, " ") != "openid profile email" {
+		t.Fatalf("tenant = %+v, %v", acme, err)
+	}
+
+	// Each part of the settings has its own form. A form changes only
+	// its part.
+	settings := func(section string, form url.Values) *http.Response {
+		t.Helper()
+		return root.post("/admin/tenants/acme/settings/"+section, form)
+	}
+	idpForm := url.Values{
+		"oidc_issuer": {"https://idp.example"}, "oidc_client_id": {"acme"}, "oidc_client_secret": {"s3cret"},
+		"oidc_scopes": {"openid profile"}, "oidc_groups_claim": {"groups"},
+	}
+	idpForm.Set("oidc_issuer", "http://idp.example")
+	wantStatus(t, settings("idp", idpForm), http.StatusUnprocessableEntity)
+	idpForm.Set("oidc_issuer", "https://idp.example")
+	resp = settings("idp", idpForm)
+	wantStatus(t, resp, http.StatusSeeOther)
+	if loc := resp.Header.Get("Location"); loc != "/admin/tenants/acme#idp" {
+		t.Fatalf("redirect to %q", loc)
+	}
+	wantStatus(t, settings("access", url.Values{"admin_group": {"acme-admins"}, "default_role": {"nothere"}}),
+		http.StatusUnprocessableEntity)
+	wantStatus(t, settings("access", url.Values{"admin_group": {"acme-admins"}, "default_role": {"viewer"}}),
+		http.StatusSeeOther)
+	wantStatus(t, settings("limits", url.Values{"session_ttl": {"8h"}, "max_doc_kib": {"512"}}), http.StatusSeeOther)
+	wantStatus(t, settings("nothere", url.Values{}), http.StatusNotFound)
+	acme, err = e.st.TenantByCode(ctx, "acme")
+	if err != nil || acme.MaxDocBytes != 512*1024 || acme.SessionTTL != 8*time.Hour || acme.Name != "Acme" ||
+		acme.OIDCIssuer != "https://idp.example" || acme.AdminGroup != "acme-admins" {
 		t.Fatalf("tenant = %+v, %v", acme, err)
 	}
 	if s, _ := e.st.ClientSecret(ctx, acme); s != "s3cret" {
@@ -1019,20 +1042,25 @@ func TestSystemAdmin(t *testing.T) {
 	}
 
 	// An update with an empty secret keeps the secret.
-	tenantForm.Set("name", "Acme Inc")
-	tenantForm.Set("oidc_client_secret", "")
-	wantStatus(t, root.post("/admin/tenants/acme", tenantForm), http.StatusSeeOther)
+	idpForm.Set("oidc_client_secret", "")
+	idpForm.Set("oidc_client_id", "acme2")
+	wantStatus(t, settings("idp", idpForm), http.StatusSeeOther)
+	wantStatus(t, settings("general", url.Values{"code": {"acme"}, "name": {"Acme Inc"}}), http.StatusSeeOther)
 	acme, _ = e.st.TenantByCode(ctx, "acme")
-	if s, _ := e.st.ClientSecret(ctx, acme); acme.Name != "Acme Inc" || s != "s3cret" {
-		t.Fatalf("after update: %q, %q", acme.Name, s)
+	if s, _ := e.st.ClientSecret(ctx, acme); acme.Name != "Acme Inc" || acme.OIDCClientID != "acme2" || s != "s3cret" {
+		t.Fatalf("after update: %q, %q, %q", acme.Name, acme.OIDCClientID, s)
 	}
+	idpForm.Set("oidc_client_id", "acme")
+	wantStatus(t, settings("idp", idpForm), http.StatusSeeOther)
 
 	// A space for the new tenant.
 	wantStatus(t, root.post("/admin/tenants/acme/spaces", url.Values{"name": {"Docs"}, "slug": {"acmedocs"}}), http.StatusSeeOther)
 	if b := readBody(t, root.get("/admin/tenants/acme/spaces")); !strings.Contains(b, "acmedocs") {
 		t.Fatalf("spaces page of the tenant:\n%s", b)
 	}
-	for _, p := range []string{"/admin/tenants/new", "/admin/tenants/acme/edit", "/admin/tenants/acme/spaces/new", "/admin/tenants/acme/delete"} {
+	for _, p := range []string{"/admin/tenants/new", "/admin/tenants/acme/settings/general", "/admin/tenants/acme/settings/idp",
+		"/admin/tenants/acme/settings/access", "/admin/tenants/acme/settings/languages", "/admin/tenants/acme/settings/limits",
+		"/admin/tenants/acme/spaces/new", "/admin/tenants/acme/delete"} {
 		wantStatus(t, root.get(p), http.StatusOK)
 	}
 	// The default tenant has no delete page.
@@ -1063,8 +1091,7 @@ func TestSystemAdmin(t *testing.T) {
 	wantStatus(t, alice.get("/dflt/acmedocs/"), http.StatusNotFound)
 
 	// Disable the tenant.
-	tenantForm.Set("disabled", "on")
-	wantStatus(t, root.post("/admin/tenants/acme", tenantForm), http.StatusSeeOther)
+	wantStatus(t, settings("general", url.Values{"code": {"acme"}, "name": {"Acme Inc"}, "disabled": {"on"}}), http.StatusSeeOther)
 	wantStatus(t, idp.get("/acme/acmedocs/"), http.StatusForbidden)
 
 	// Delete.
@@ -1637,11 +1664,7 @@ func TestAuditLog(t *testing.T) {
 
 	// The system log has the events of the system administration only.
 	root := e.loginAt("/admin", "root")
-	wantStatus(t, root.post("/admin/tenants", url.Values{
-		"code": {"acme"}, "name": {"Acme"}, "oidc_issuer": {"https://idp.example"},
-		"oidc_client_id": {"acme"}, "oidc_scopes": {"openid"}, "oidc_groups_claim": {"groups"},
-		"default_role": {"viewer"}, "session_ttl": {"8h"}, "max_doc_kib": {"512"},
-	}), http.StatusSeeOther)
+	wantStatus(t, root.post("/admin/tenants", url.Values{"code": {"acme"}, "name": {"Acme"}}), http.StatusSeeOther)
 	b = readBody(t, root.get("/admin/audit"))
 	if !strings.Contains(b, "Made a tenant") || !strings.Contains(b, "acme") || strings.Contains(b, "Moved an item") {
 		t.Fatalf("system audit log:\n%s", b)
@@ -2012,17 +2035,18 @@ func TestChangeCodes(t *testing.T) {
 
 	// The code of the tenant.
 	root := e.loginAt("/admin", "root")
-	form := url.Values{
-		"name": {"Default"}, "oidc_issuer": {e.dft.OIDCIssuer}, "oidc_client_id": {e.dft.OIDCClientID},
-		"oidc_client_secret": {"s3cret"}, "oidc_scopes": {"openid"}, "oidc_groups_claim": {"groups"},
-		"admin_group": {"admins"}, "default_role": {"viewer"}, "session_ttl": {"12h"}, "max_doc_kib": {"1024"},
-	}
+	// The client secret stays valid after the code changes.
+	wantStatus(t, root.post("/admin/tenants/dflt/settings/idp", url.Values{
+		"oidc_issuer": {e.dft.OIDCIssuer}, "oidc_client_id": {e.dft.OIDCClientID}, "oidc_client_secret": {"s3cret"},
+		"oidc_scopes": {"openid"}, "oidc_groups_claim": {"groups"},
+	}), http.StatusSeeOther)
+	form := url.Values{"name": {"Default"}}
 	for _, bad := range []string{"x", "admin", "static", "Main"} {
 		form.Set("code", bad)
-		wantStatus(t, root.post("/admin/tenants/dflt", form), http.StatusUnprocessableEntity)
+		wantStatus(t, root.post("/admin/tenants/dflt/settings/general", form), http.StatusUnprocessableEntity)
 	}
 	form.Set("code", "main")
-	wantStatus(t, root.post("/admin/tenants/dflt", form), http.StatusSeeOther)
+	wantStatus(t, root.post("/admin/tenants/dflt/settings/general", form), http.StatusSeeOther)
 	wantStatus(t, alice.get("/dflt/"), http.StatusNotFound)
 	// The session cookie uses the ID of the tenant, thus alice is still
 	// signed in.

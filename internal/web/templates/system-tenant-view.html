@@ -1,9 +1,9 @@
 {{define "content"}}
 {{template "tenanthead" .}}
 {{with .Data}}
-{{$edit := print "/admin/tenants/" .Code "/edit"}}
+{{$edit := print "/admin/tenants/" .Code "/settings/"}}
 <div class="pagehead"><h1>{{.Name}}{{if .IsDefault}} <span class="tag">{{t "default"}}</span>{{end}}</h1></div>
-{{template "sectionhead" (section (t "General") "" (tool (print $edit "#general") "edit" (t "Change the settings")))}}
+{{template "sectionhead" (section (t "General") "general" (tool (print $edit "general") "edit" (t "Change the settings")))}}
 <table class="settings">
   <tbody>
     <tr><th scope="row">{{t "Code"}}</th><td><code>{{.Code}}</code></td></tr>
@@ -11,7 +11,7 @@
     <tr><th scope="row">{{t "Status"}}</th><td>{{if .Disabled}}<span class="tag danger">{{t "Disabled"}}</span>{{else}}{{t "Active"}}{{end}}</td></tr>
   </tbody>
 </table>
-{{template "sectionhead" (section (t "Identity provider") "" (tool (print $edit "#idp") "edit" (t "Change the identity provider")))}}
+{{template "sectionhead" (section (t "Identity provider") "idp" (tool (print $edit "idp") "edit" (t "Change the identity provider")))}}
 <table class="settings">
   <tbody>
     <tr><th scope="row">{{t "Issuer URL"}}</th><td>{{with .OIDCIssuer}}<code>{{.}}</code>{{else}}<span class="tag danger">{{t "Not set"}}</span>{{end}}</td></tr>
@@ -23,21 +23,21 @@
     <tr><th scope="row">{{t "Post-logout redirect URI"}}</th><td><code>{{.LogoutURI}}</code></td></tr>
   </tbody>
 </table>
-{{template "sectionhead" (section (t "Access") "" (tool (print $edit "#access") "edit" (t "Change the access")))}}
+{{template "sectionhead" (section (t "Access") "access" (tool (print $edit "access") "edit" (t "Change the access")))}}
 <table class="settings">
   <tbody>
     <tr><th scope="row">{{t "Admin group"}}</th><td>{{.AdminGroup}}</td></tr>
     <tr><th scope="row">{{t "Default role"}}</th><td>{{with .DefaultRole}}{{.}}{{else}}{{t "None"}}{{end}}</td></tr>
   </tbody>
 </table>
-{{template "sectionhead" (section (t "Limits") "" (tool (print $edit "#limits") "edit" (t "Change the limits")))}}
+{{template "sectionhead" (section (t "Limits") "limits" (tool (print $edit "limits") "edit" (t "Change the limits")))}}
 <table class="settings">
   <tbody>
     <tr><th scope="row">{{t "Session life"}}</th><td>{{.SessionTTL}}</td></tr>
     <tr><th scope="row">{{t "Maximum document size"}}</th><td>{{.MaxDocKiB}} KiB</td></tr>
   </tbody>
 </table>
-{{template "sectionhead" (section (t "Languages") "" (tool (print $edit "#languages") "edit" (t "Change the languages")))}}
+{{template "sectionhead" (section (t "Languages") "languages" (tool (print $edit "languages") "edit" (t "Change the languages")))}}
 <table class="settings">
   <tbody>
     <tr><th scope="row">{{t "Language"}}</th><td>{{if .Language}}{{langname .Language}}{{else}}{{t "The default of the system (%s)" .SystemLanguage}}{{end}}</td></tr>

@@ -93,7 +93,7 @@ func TestLanguages(t *testing.T) {
 func TestTenantLanguageSettings(t *testing.T) {
 	e := newEnv(t)
 	root := e.loginAt("/admin", "root")
-	resp := root.get("/admin/tenants/dflt/edit")
+	resp := root.get("/admin/tenants/dflt/settings/languages")
 	wantStatus(t, resp, http.StatusOK)
 	body := readBody(t, resp)
 	for _, want := range []string{`name="language"`, `name="content_language"`, `<option value="sv">Svenska</option>`,
@@ -102,18 +102,13 @@ func TestTenantLanguageSettings(t *testing.T) {
 			t.Fatalf("tenant form has no %q", want)
 		}
 	}
-	form := url.Values{
-		"code": {"dflt"}, "name": {"Default"}, "oidc_issuer": {"https://idp.example"}, "oidc_client_id": {"skriva"},
-		"oidc_scopes": {"openid"}, "oidc_groups_claim": {"groups"}, "admin_group": {"admins"},
-		"default_role": {"viewer"}, "session_ttl": {"12h"}, "max_doc_kib": {"1024"},
-		"language": {"sv"}, "content_language": {"sv"},
-	}
-	wantStatus(t, root.post("/admin/tenants/dflt", form), http.StatusSeeOther)
+	form := url.Values{"language": {"sv"}, "content_language": {"sv"}}
+	wantStatus(t, root.post("/admin/tenants/dflt/settings/languages", form), http.StatusSeeOther)
 	tn, err := e.st.TenantByCode(ctx, "dflt")
 	if err != nil || tn.Language != "sv" || tn.ContentLanguage != "sv" {
 		t.Fatalf("tenant languages = %q, %q, %v", tn.Language, tn.ContentLanguage, err)
 	}
 	form.Set("content_language", "xx")
-	resp = root.post("/admin/tenants/dflt", form)
+	resp = root.post("/admin/tenants/dflt/settings/languages", form)
 	wantStatus(t, resp, http.StatusUnprocessableEntity)
 }

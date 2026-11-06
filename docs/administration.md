@@ -65,13 +65,18 @@ document, on the two levels:
 3. Type the code. See "Codes" below. The code is part of all URLs of
    the tenant.
 4. Type the name.
-5. Type the settings of the identity provider. See the table below.
-6. Type the admin group. The members of this OIDC group get the `admin`
-   role in the tenant.
-7. Click **Save**.
-8. Add the redirect URI and the post-logout redirect URI to the client
-   at the identity provider. The settings page of the tenant shows the
-   two URIs.
+5. Click **Save**. The other settings get default values. The page of
+   the tenant opens.
+6. Click **Change the identity provider** (pencil) next to
+   **Identity provider**. Type the settings. See the table below. Click
+   **Save**. Until you set the issuer URL, nobody can sign in to the
+   tenant.
+7. Add the redirect URI and the post-logout redirect URI to the client
+   at the identity provider. The page of the tenant and the form of the
+   identity provider show the two URIs.
+8. Click **Change the access** (pencil) next to **Access**. Type the
+   admin group. The members of this OIDC group get the `admin` role in
+   the tenant. Click **Save**.
 9. Click **Spaces** (four squares) in the toolbar. Then click **New
    space** (+) above the table.
 10. Type the name and the code of the space. See "Codes" below. Click
@@ -98,6 +103,25 @@ for example `/acme/handbook/`.
   users stay valid.
 
 ### Tenant settings
+
+The page of a tenant shows the settings in sections: **General**,
+**Identity provider**, **Access**, **Limits** and **Languages**. Each
+section has its own form. To change a section, click the pencil next to
+the section heading. A form changes only the settings of its section.
+
+A new tenant gets these default values:
+
+| Setting | Default value |
+|---------|---------------|
+| Issuer URL, Client ID, Client secret | Empty. Nobody can sign in. |
+| Scopes | `openid profile email` |
+| Groups claim | `groups` |
+| Admin group | Empty |
+| Default role | `viewer` |
+| Session life | `12h` |
+| Maximum document size | 1024 KiB |
+| Language | The default of the system |
+| Content language | `SKRIVA_LANGUAGE`, if it has a stemmer. Else "None". |
 
 | Setting | Description |
 |---------|-------------|
