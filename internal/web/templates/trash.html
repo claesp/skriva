@@ -26,7 +26,7 @@
     <td class="date">{{date .DeletedAt}}{{with .DeletedBy}}<br><small>{{t "by %s" .}}</small>{{end}}</td>
     <td class="actions">
       {{if .ParentInTrash}}{{template "tool" (dtool "restore" (t "Restore (restore the folder first)"))}}{{else}}{{template "post" (post (print $.SpacePath "/trash/" .PublicID "/restore") "restore" (t "Restore") $.CSRF "")}}{{end}}
-      {{template "tool" (when .CanPurge (tool (print $.SpacePath "/trash/" .PublicID "/delete") "delete" (t "Delete permanently")))}}
+      {{template "tool" (when .CanPurge (tool (print $.SpacePath "/trash/" .PublicID "/delete") "purge" (t "Delete permanently")))}}
     </td>
   </tr>
   {{end}}

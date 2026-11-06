@@ -76,7 +76,7 @@
 {{define "csrf"}}<input type="hidden" name="csrf_token" value="{{.}}">{{end}}
 {{/* An icon from static/icons.svg. The browser keeps the file in its cache. */}}
 {{define "icon"}}<svg class="i i-{{.}}" aria-hidden="true" focusable="false"><use href="{{iconhref .}}"></use></svg>{{end}}
-{{define "tool"}}{{if .Disabled}}<span class="tool disabled" role="link" aria-disabled="true" title="{{t "%s (not available)" .Label}}" aria-label="{{.Label}}">{{template "icon" .Icon}}</span>{{else}}<a class="tool{{if eq .Icon "delete"}} danger{{end}}{{if .Current}} current{{end}}" href="{{.Href}}" title="{{.Label}}" aria-label="{{.Label}}"{{if .Current}} aria-current="page"{{end}}>{{template "icon" .Icon}}</a>{{end}}{{end}}
+{{define "tool"}}{{if .Disabled}}<span class="tool disabled" role="link" aria-disabled="true" title="{{t "%s (not available)" .Label}}" aria-label="{{.Label}}">{{template "icon" .Icon}}</span>{{else}}<a class="tool{{if or (eq .Icon "delete") (eq .Icon "purge")}} danger{{end}}{{if .Current}} current{{end}}" href="{{.Href}}" title="{{.Label}}" aria-label="{{.Label}}"{{if .Current}} aria-current="page"{{end}}>{{template "icon" .Icon}}</a>{{end}}{{end}}
 {{define "post"}}<form method="post" action="{{.Action}}" class="toolform">
   <input type="hidden" name="csrf_token" value="{{.CSRF}}">
   {{with .ReturnTo}}<input type="hidden" name="return_to" value="{{.}}">{{end}}

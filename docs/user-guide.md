@@ -260,8 +260,8 @@ place of the item, who deleted it and when.
 - If the old folder of an item is also in the trash, restore the folder
   first. Thus an item cannot go to a place with different permissions.
 - An administrator of the space can click **Delete permanently** (waste
-  bin). You cannot undo this. This also deletes the items that were in
-  the item, also if they are separate items in the trash.
+  bin with an x). You cannot undo this. This also deletes the items that
+  were in the item, also if they are separate items in the trash.
 
 While an item is in the trash, nobody can open it. The search, the tree
 and the wiki links do not show it.

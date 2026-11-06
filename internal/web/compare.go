@@ -182,6 +182,11 @@ func revisionText(r *http.Request, rev *store.Revision) (string, error) {
 // the change from the version before "to", and "to" is the current
 // version by default.
 func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	if n.IsFolder() {
+		// A folder has no versions of its own text.
+		s.notFound(w, r)
+		return
+	}
 	q := r.URL.Query()
 	to := n.Version
 	if v := q.Get("to"); v != "" {

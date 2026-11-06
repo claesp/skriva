@@ -902,6 +902,11 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, n *store.N
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	if n.IsFolder() {
+		// A folder has no versions of its own text.
+		s.notFound(w, r)
+		return
+	}
 	revs, err := s.store.Revisions(r.Context(), n.ID)
 	if err != nil {
 		s.serverError(w, r, err)
@@ -922,6 +927,11 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, n *store.
 }
 
 func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request, n *store.Node) {
+	if n.IsFolder() {
+		// A folder has no versions of its own text.
+		s.notFound(w, r)
+		return
+	}
 	version, ok := parseVersion(r.PathValue("version"))
 	if !ok || version < 1 {
 		s.notFound(w, r)

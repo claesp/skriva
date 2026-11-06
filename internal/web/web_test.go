@@ -1852,6 +1852,10 @@ func TestExport(t *testing.T) {
 	// A folder and an unknown format have no export.
 	wantStatus(t, bob.get(sp+"/export/"+folder), http.StatusNotFound)
 	wantStatus(t, bob.get(sp+"/export/"+folder+"/markdown"), http.StatusNotFound)
+	// A folder has no history.
+	for _, p := range []string{"/history/" + folder, "/history/" + folder + "/1", "/compare/" + folder} {
+		wantStatus(t, bob.get(sp+p), http.StatusNotFound)
+	}
 	wantStatus(t, bob.get(sp+"/export/"+id+"/docx"), http.StatusNotFound)
 	// The Export button of a folder is disabled.
 	if b := readBody(t, bob.get(sp+"/d/"+folder+"/guides")); strings.Contains(b, sp+"/export/"+folder) {
