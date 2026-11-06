@@ -25,6 +25,10 @@ type Config struct {
 	ListenAddr  string
 	BaseURL     *url.URL
 	DatabaseURL string
+	// AutoMigrate permits the server to apply the database migrations at
+	// start. If it is false and the database needs migrations, the
+	// server stops. Then run "skriva migrate".
+	AutoMigrate bool
 	// EncryptionKey is the key encryption key (KEK). It encrypts the OIDC
 	// client secrets of the tenants and the keys of the tenants.
 	EncryptionKey []byte
@@ -110,6 +114,16 @@ func programPath(env, value, name string) (string, error) {
 // SecureCookies reports whether cookies must have the Secure attribute.
 func (c *Config) SecureCookies() bool { return c.BaseURL.Scheme == "https" }
 
+// DatabaseURL reads only SKRIVA_DATABASE_URL (or SKRIVA_DATABASE_URL_FILE),
+// for the commands that need only the database.
+func DatabaseURL() (string, error) {
+	v, err := fromEnvOrFile(os.Getenv, "SKRIVA_DATABASE_URL")
+	if err == nil && v == "" {
+		err = errors.New("SKRIVA_DATABASE_URL: value is necessary")
+	}
+	return v, err
+}
+
 // Load reads the configuration from the environment.
 func Load() (*Config, error) {
 	return load(os.Getenv)
@@ -126,7 +140,6 @@ func load(getenv func(string) string) (*Config, error) {
 	var errs []error
 	c := &Config{
 		ListenAddr:       get("SKRIVA_LISTEN_ADDR", ":8080"),
-		DatabaseURL:      get("SKRIVA_DATABASE_URL", ""),
 		OIDCIssuer:       get("SKRIVA_OIDC_ISSUER", ""),
 		OIDCClientID:     get("SKRIVA_OIDC_CLIENT_ID", ""),
 		OIDCGroupsClaim:  get("SKRIVA_OIDC_GROUPS_CLAIM", "groups"),
@@ -135,6 +148,13 @@ func load(getenv func(string) string) (*Config, error) {
 		Typst:            get("SKRIVA_TYPST", ""),
 		Mmdr:             get("SKRIVA_MMDR", ""),
 	}
+
+	// The URL can contain the password of the database.
+	dbURL, err := fromEnvOrFile(getenv, "SKRIVA_DATABASE_URL")
+	if err != nil {
+		errs = append(errs, err)
+	}
+	c.DatabaseURL = dbURL
 
 	secretValue, err := fromEnvOrFile(getenv, "SKRIVA_OIDC_CLIENT_SECRET")
 	if err != nil {
@@ -175,6 +195,10 @@ func load(getenv func(string) string) (*Config, error) {
 	}
 
 	c.OIDCScopes = strings.Fields(get("SKRIVA_OIDC_SCOPES", "openid profile email"))
+
+	if c.AutoMigrate, err = strconv.ParseBool(get("SKRIVA_AUTO_MIGRATE", "true")); err != nil {
+		errs = append(errs, errors.New("SKRIVA_AUTO_MIGRATE: must be true or false"))
+	}
 
 	base, err := url.Parse(get("SKRIVA_BASE_URL", "http://localhost:8080"))
 	switch {

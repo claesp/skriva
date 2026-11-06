@@ -1,0 +1,39 @@
+# Checks for each push to main and each pull request. See
+# docs/release.md. Each action has a full commit SHA, not a tag.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The release rules compare with the last release tag.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Release rules
+        run: scripts/check-release.sh
+      - name: Lint
+        run: make lint
+      - name: Workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Unit tests
+        run: make test
+      - name: Integration tests
+        run: scripts/test-integration.sh

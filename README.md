@@ -19,9 +19,18 @@ classification, and users can export it as Markdown, HTML or PDF.
 The web pages do not use JavaScript. The only exception is the editor
 of a document.
 
+## Install
+
+Each [release](https://github.com/claesp/skriva/releases) has a
+container image with a Podman Compose file, and Debian and RPM packages
+for `amd64` and `arm64`. All files have SHA-256 checksums, SBOMs and
+attestations. See [Operation](docs/operation.md) and
+[Release](docs/release.md).
+
 ## Quick start
 
-You must have Go 1.26, Podman and `make`.
+To try Skriva on your computer, you must have Go 1.26, Podman and
+`make`.
 
 1. Start PostgreSQL, Keycloak and Skriva in a Podman pod:
 
@@ -51,4 +60,5 @@ as `root` (password `root`).
 - [Security](docs/security.md)
 - [Development and tests](docs/development.md)
 - [Operation](docs/operation.md)
+- [Release](docs/release.md)
 - [User guide](docs/user-guide.md)

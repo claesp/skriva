@@ -333,7 +333,16 @@ temporary folder and CA certificates. The programs run as user 65532,
 not as root. The Containerfile gets Typst from its official image. The
 project of mmdr has no static binary. Thus the Containerfile builds mmdr
 from source, with a fixed version and the lock file of the crate
-(`cargo install --locked`).
+(`cargo install --locked`). `cargo auditable` records the crates in the
+binary, for the SBOM.
+
+Each release has SHA-256 checksums, SBOMs (SPDX) and attestations of
+the provenance and of the SBOM, for each file and for the container
+image. The attestations prove that the release workflow of the
+repository made the files. See
+[Release: verify a release](release.md#verify-a-release).
+The release workflow and the CI workflow refer to each GitHub action by
+its full commit SHA. Each job has only the permissions that it needs.
 
 Each base image has a tag and a digest (`name:tag@sha256:...`), also
 the images in the scripts. The digest is the digest of the multi-arch

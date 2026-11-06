@@ -32,6 +32,34 @@ func TestLoadDefaults(t *testing.T) {
 	if c.SecureCookies() {
 		t.Fatal("http base URL must not give secure cookies")
 	}
+	if !c.AutoMigrate {
+		t.Fatal("the server must apply the migrations by default")
+	}
+}
+
+func TestLoadDatabaseURLFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "url")
+	if err := os.WriteFile(path, []byte("postgres://u:p@db/skriva\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e := validEnv()
+	delete(e, "SKRIVA_DATABASE_URL")
+	e["SKRIVA_DATABASE_URL_FILE"] = path
+	if c, err := load(env(e)); err != nil || c.DatabaseURL != "postgres://u:p@db/skriva" {
+		t.Fatalf("DatabaseURL = %q, %v", c.DatabaseURL, err)
+	}
+}
+
+func TestLoadAutoMigrate(t *testing.T) {
+	e := validEnv()
+	e["SKRIVA_AUTO_MIGRATE"] = "false"
+	if c, err := load(env(e)); err != nil || c.AutoMigrate {
+		t.Fatalf("SKRIVA_AUTO_MIGRATE=false: %v, %v", c.AutoMigrate, err)
+	}
+	e["SKRIVA_AUTO_MIGRATE"] = "maybe"
+	if _, err := load(env(e)); err == nil || !strings.Contains(err.Error(), "SKRIVA_AUTO_MIGRATE") {
+		t.Fatalf("bad SKRIVA_AUTO_MIGRATE: %v", err)
+	}
 }
 
 func TestLoadMissingValues(t *testing.T) {

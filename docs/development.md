@@ -181,7 +181,7 @@ not change a file in a folder. A new version must have a new folder.
 
 ## Checks before a commit
 
-1. Run `make lint`.
+1. Run `make lint` and `make check-release`.
 2. Run `make test-integration`.
 3. If you changed the login or RBAC, run `make dev-app` and
    `make test-e2e`.
@@ -198,5 +198,9 @@ not change a file in a folder. A new version must have a new folder.
 - Put all SQL queries in the `internal/store` package.
 - Give the tenant ID to each store function for tenant data. Use it in
   each query.
-- Before the first release, change `0001_init.sql` for a schema change.
-  Do not add migration code for old data.
+- For a schema change, add a new file in `internal/db/migrations`.
+  Never change a migration of a release. A schema change needs a new
+  major version in `internal/version/version.go`. See
+  [Release: rules](release.md#rules).
+- Never use the tag `latest` for a container image. Give each image a
+  digest, and each GitHub action a commit SHA.

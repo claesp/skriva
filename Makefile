@@ -1,4 +1,10 @@
-.PHONY: editor fonts build test test-integration test-e2e lint image dev-up dev-app dev-down run
+.PHONY: editor fonts build test test-integration test-e2e lint check-release image packages version dev-up dev-app dev-down run
+
+# The version: major.minor from internal/version/version.go, and the Git
+# commit as the revision. See docs/release.md.
+VERSION := $(shell sed -n 's/^const Version = "\(.*\)"$$/\1/p' internal/version/version.go)
+REVISION := $(shell git rev-parse --short=12 HEAD)
+LDFLAGS := -X github.com/claesp/skriva/internal/version.Revision=$(REVISION)
 
 # Build the script of the editor (needs Podman). The result is in
 # internal/web/static/editor.js.
@@ -11,7 +17,10 @@ fonts:
 	scripts/fetch-fonts.sh
 
 build:
-	go build -trimpath -o bin/skriva ./cmd/skriva
+	go build -trimpath -ldflags="$(LDFLAGS)" -o bin/skriva ./cmd/skriva
+
+version:
+	@echo $(VERSION).$(REVISION)
 
 # Unit tests. The tests that need PostgreSQL do not run.
 test:
@@ -29,8 +38,21 @@ lint:
 	gofmt -l . | (! grep .)
 	go vet ./...
 
+# The release rules: digests, no "latest" tags, schema and version.
+check-release:
+	scripts/check-release.sh >/dev/null
+
+# The container image, with the tag major.minor.revision. Never use the
+# tag "latest".
 image:
-	podman build -t localhost/skriva:latest -f Containerfile .
+	podman build --build-arg VERSION=$(VERSION) --build-arg REVISION=$(REVISION) \
+		-t localhost/skriva:$(VERSION).$(REVISION) -f Containerfile .
+
+# The release files for one architecture (amd64 or arm64) in dist/:
+# the container image, the archive, and the Debian and RPM packages.
+ARCH ?= amd64
+packages:
+	scripts/release-build.sh $(ARCH)
 
 # Start PostgreSQL and Keycloak.
 dev-up:

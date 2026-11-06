@@ -116,7 +116,8 @@ space `default0` ("Default").
 |---------------------|----------|
 | `cmd/skriva`        | Reads the configuration. Prepares the default tenant. Starts and stops the server. |
 | `internal/config`   | Reads the installation settings from environment variables. |
-| `internal/db`       | Opens the connection pool. Applies the migrations. |
+| `internal/db`       | Opens the connection pool. Compares the schema versions and applies the migrations (the boot step). |
+| `internal/version`  | The version of the program: major.minor and the Git commit. See [Release](release.md). |
 | `internal/store`    | Contains all SQL queries. |
 | `internal/rbac`     | Defines the permissions and the permission set. |
 | `internal/auth`     | Connects to the OIDC providers. Keeps one client for each tenant. |
@@ -174,7 +175,7 @@ space `default0` ("Default").
 | `audit_events`     | The audit log. A row with no tenant is an event of the system administration. |
 | `sessions`         | Browser sessions. The table keeps a hash of the token, not the token. It also keeps the CSRF token and the ID token for the logout, encrypted with a key from the session token. |
 | `oidc_states`      | Data for logins that are in progress. |
-| `schema_migrations`| The migrations that the server applied. |
+| `schema_migrations`| The migrations that the server applied, with their checksums and the version of the program. |
 
 ### Tenant isolation
 
@@ -678,8 +679,18 @@ The files in `internal/db/migrations` are SQL files with the name
 did not apply before. Each file runs in one transaction. An advisory
 lock makes sure that only one server applies migrations at a time.
 
-The application has no release yet. Thus there is only one file,
-`0001_init.sql`, with the full schema. Change this file for a schema
-change, and make the development database again (see
-[development.md](development.md)). After the first release, do not
-change a migration file. Add a new file.
+The table `schema_migrations` records each migration with its SHA-256
+checksum and the version of the program that applied it. The program
+makes this table, not a migration. The highest number is the schema
+version of the database. At start, the server compares it with the
+schema version of the program (the boot step, see
+[Operation: start and stop](operation.md#start-and-stop)):
+
+- An older database gets the missing migrations, if
+  `SKRIVA_AUTO_MIGRATE` is `true`.
+- A newer database stops the server.
+- A migration with a different checksum stops the server.
+
+`0001_init.sql` is the schema of the release 0.1. Never change a
+migration of a release. A new migration needs a new major version. See
+[Release](release.md).

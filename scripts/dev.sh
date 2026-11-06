@@ -75,7 +75,9 @@ up() {
 
 app() {
 	up
-	podman build -t "$APP_IMAGE" -f "$ROOT/Containerfile" "$ROOT"
+	eval "$("$ROOT/scripts/version.sh")"
+	podman build --build-arg VERSION="$VERSION" --build-arg REVISION="$REVISION" \
+		-t "$APP_IMAGE" -f "$ROOT/Containerfile" "$ROOT"
 	podman rm -f "$POD-app" >/dev/null 2>&1 || true
 	podman run -d --pod "$POD" --name "$POD-app" \
 		-e SKRIVA_DATABASE_URL="postgres://skriva:skriva@localhost:5432/skriva?sslmode=disable" \

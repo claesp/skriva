@@ -15,6 +15,8 @@ missing or not valid.
 | Variable                         | Default                 | Description |
 |----------------------------------|-------------------------|-------------|
 | `SKRIVA_DATABASE_URL`            | (necessary)             | PostgreSQL URL, for example `postgres://user@host:5432/skriva?sslmode=verify-full`. |
+| `SKRIVA_DATABASE_URL_FILE`       |                         | A file that contains the URL, if the URL contains a password. Use this or the previous variable. |
+| `SKRIVA_AUTO_MIGRATE`            | `true`                  | `true`: at start, the server applies the database migrations. `false`: the server stops if the database needs migrations. Then run `skriva migrate`. See [Operation: updates](operation.md#update). |
 | `SKRIVA_ENCRYPTION_KEY`          | (necessary)             | 32 random bytes in base64. The key encryption key (KEK). It encrypts the client secrets and the keys of the tenants. See [Security: encryption at rest](security.md#encryption-at-rest). |
 | `SKRIVA_ENCRYPTION_KEY_FILE`     |                         | A file that contains the key. Use this or the previous variable. |
 | `SKRIVA_ENCRYPTION_KEY_PREVIOUS` |                         | The old KEK, only after a change of the KEK. At start, the server encrypts the keys and the client secrets again with the new KEK. Then remove this variable. `SKRIVA_ENCRYPTION_KEY_PREVIOUS_FILE` is also possible. |

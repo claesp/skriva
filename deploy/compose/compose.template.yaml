@@ -1,0 +1,60 @@
+# Skriva and PostgreSQL for Podman Compose (podman compose). The release
+# workflow writes compose.yaml from this file: it replaces @IMAGE@ with
+# the image of the release and its digest. Use the compose.yaml of a
+# release, not this file. See docs/operation.md.
+#
+# Each image has a digest. Never use the tag "latest".
+name: skriva
+
+services:
+  db:
+    image: docker.io/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: skriva
+      POSTGRES_DB: skriva
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "skriva", "-d", "skriva"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  skriva:
+    image: @IMAGE@
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: skriva.env
+    environment:
+      SKRIVA_DATABASE_URL_FILE: /run/secrets/database_url
+      SKRIVA_ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
+      SKRIVA_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+    secrets:
+      - database_url
+      - encryption_key
+      - oidc_client_secret
+    # Put a reverse proxy with TLS in front of the server.
+    ports:
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+
+volumes:
+  pgdata:
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  database_url:
+    file: ./secrets/database_url
+  encryption_key:
+    file: ./secrets/encryption_key
+  oidc_client_secret:
+    file: ./secrets/oidc_client_secret

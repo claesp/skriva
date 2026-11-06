@@ -8,7 +8,12 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/skriva ./cmd/skriva
+# REVISION is the Git commit. The build context has no .git folder, thus
+# Go cannot find the commit. Without REVISION the revision is "dev".
+ARG REVISION=""
+RUN CGO_ENABLED=0 go build -trimpath \
+	-ldflags="-s -w -X github.com/claesp/skriva/internal/version.Revision=${REVISION}" \
+	-o /out/skriva ./cmd/skriva
 # The PDF export writes temporary files. The run stage has no /tmp. COPY
 # copies the contents of a folder, thus the folder is in /out/root.
 RUN mkdir -p /out/root && mkdir -m 700 /out/root/tmp
@@ -19,14 +24,24 @@ FROM ghcr.io/typst/typst:0.15.1@sha256:032e292249bcd378480cc7c142cfa324b63ef8aad
 # The mmdr program for Mermaid diagrams (mermaid-rs-renderer). The
 # project has no static binary, thus the stage builds the program from
 # source. The build on Alpine Linux makes a static binary. The lock file
-# of the crate sets the versions of all dependencies.
+# of the crate sets the versions of all dependencies. cargo-auditable
+# records the dependencies in the binary. Thus the SBOM of a release can
+# list them.
 FROM docker.io/library/rust:1.99-alpine@sha256:27cd9befd4a05d6f6eb407c3e28365f5092f008bfc5946207cca76ae5179ef23 AS mmdr
-RUN cargo install --locked --no-default-features --features cli \
+RUN cargo install --locked cargo-auditable@0.7.7 && \
+	cargo auditable install --locked --no-default-features --features cli \
 	--root /out mermaid-rs-renderer@0.3.1
 
 # Run stage. The image contains only the binaries, a temporary folder
 # and CA certificates.
 FROM scratch
+ARG VERSION=""
+ARG REVISION=""
+LABEL org.opencontainers.image.title="Skriva" \
+	org.opencontainers.image.description="A wiki with encrypted documents" \
+	org.opencontainers.image.source="https://github.com/claesp/skriva" \
+	org.opencontainers.image.version="${VERSION}" \
+	org.opencontainers.image.revision="${REVISION}"
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build --chown=65532:65532 /out/root/ /
 COPY --from=typst /bin/typst /typst

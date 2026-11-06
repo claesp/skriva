@@ -1,0 +1,43 @@
+# The systemd service of the Skriva package. The settings are in
+# /etc/skriva/skriva.env. See docs/operation.md.
+[Unit]
+Description=Skriva wiki server
+Documentation=https://github.com/claesp/skriva/blob/main/docs/operation.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+Environment=SKRIVA_TYPST=/usr/lib/skriva/typst SKRIVA_MMDR=/usr/lib/skriva/mmdr
+# The settings in the file replace the settings above.
+EnvironmentFile=/etc/skriva/skriva.env
+# At start, the server applies the database migrations (the boot step).
+ExecStart=/usr/bin/skriva
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+
+# The server keeps all data in PostgreSQL. It needs no user of its own
+# and writes only temporary files.
+DynamicUser=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

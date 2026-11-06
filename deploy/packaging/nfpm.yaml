@@ -1,0 +1,59 @@
+# The Debian and RPM packages. scripts/release-build.sh makes them with
+# nFPM (https://nfpm.goreleaser.com). It replaces these variables:
+#   PKG_VERSION     major.minor.revision
+#   PKG_ARCH        amd64 or arm64
+#   PKG_BIN         the folder with the programs skriva, typst and mmdr
+#   PKG_MAINTAINER  the maintainer, "Name <email>"
+name: skriva
+arch: ${PKG_ARCH}
+platform: linux
+# The revision is a Git commit, not a number. Thus the version has no
+# schema. A release always has a new major or minor version, thus the
+# order of the versions is correct.
+version: ${PKG_VERSION}
+version_schema: none
+release: "1"
+section: web
+priority: optional
+maintainer: ${PKG_MAINTAINER}
+description: |-
+  Skriva wiki server.
+  A wiki with a WYSIWYG editor, encrypted documents, OpenID Connect
+  sign-in and role-based access. It needs a PostgreSQL database.
+vendor: Skriva
+homepage: https://github.com/claesp/skriva
+
+contents:
+  - src: ${PKG_BIN}/skriva
+    dst: /usr/bin/skriva
+    file_info:
+      mode: 0755
+  # The programs for the PDF export and the Mermaid diagrams.
+  - src: ${PKG_BIN}/typst
+    dst: /usr/lib/skriva/typst
+    file_info:
+      mode: 0755
+  - src: ${PKG_BIN}/mmdr
+    dst: /usr/lib/skriva/mmdr
+    file_info:
+      mode: 0755
+  - src: deploy/packaging/skriva.service
+    dst: /usr/lib/systemd/system/skriva.service
+    file_info:
+      mode: 0644
+  # The settings contain secrets. An update keeps the changes of the
+  # administrator.
+  - src: deploy/packaging/skriva.env
+    dst: /etc/skriva/skriva.env
+    type: config|noreplace
+    file_info:
+      mode: 0600
+  - src: README.md
+    dst: /usr/share/doc/skriva/README.md
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: deploy/packaging/postinstall.sh
+  preremove: deploy/packaging/preremove.sh
+  postremove: deploy/packaging/postremove.sh

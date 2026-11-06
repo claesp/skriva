@@ -1,0 +1,254 @@
+# Make a release. A tag v<major>.<minor> starts the workflow, for
+# example v0.2. See docs/release.md.
+#
+# 1. check:   the release rules and all tests.
+# 2. build:   for each architecture, the container image, the archive,
+#             the Debian and the RPM package, their SBOMs and attestations.
+# 3. publish: the multi-architecture image, compose.yaml, SHA256SUMS and
+#             the GitHub release.
+#
+# Each action has a full commit SHA, not a tag.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.rules.outputs.version }}
+      full: ${{ steps.rules.outputs.full }}
+      previous: ${{ steps.rules.outputs.previous }}
+      schema_changed: ${{ steps.rules.outputs.schema_changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Release rules
+        id: rules
+        run: scripts/check-release.sh "$GITHUB_REF_NAME" >>"$GITHUB_OUTPUT"
+      - name: Lint
+        run: make lint
+      - name: Unit tests
+        run: make test
+      - name: Integration tests
+        run: scripts/test-integration.sh
+
+  build:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      ARCH: ${{ matrix.arch }}
+      FULL: ${{ needs.check.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Podman
+        run: command -v podman || { sudo apt-get update && sudo apt-get install -y podman; }
+      - name: Build
+        run: scripts/release-build.sh "$ARCH"
+      - name: Push the image
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          printf '%s' "$TOKEN" | podman login ghcr.io -u "$ACTOR" --password-stdin
+          podman push --digestfile "dist/image-$ARCH.digest" \
+            "localhost/skriva:$FULL-$ARCH" "docker://$IMAGE:$FULL-$ARCH"
+          echo "IMAGE_DIGEST=$(cat "dist/image-$ARCH.digest")" >>"$GITHUB_ENV"
+      - name: SBOM of the programs
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: dist/${{ matrix.arch }}/bin
+          format: spdx-json
+          output-file: dist/skriva_${{ env.FULL }}_linux_${{ matrix.arch }}.spdx.json
+          upload-artifact: false
+          dependency-snapshot: false
+      - name: SBOM of the image
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ env.IMAGE }}@${{ env.IMAGE_DIGEST }}
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          format: spdx-json
+          output-file: dist/skriva_${{ env.FULL }}_image_${{ matrix.arch }}.spdx.json
+          upload-artifact: false
+          dependency-snapshot: false
+      - name: Provenance of the files
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.rpm
+      - name: SBOM attestation of the files
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.rpm
+          sbom-path: dist/skriva_${{ env.FULL }}_linux_${{ matrix.arch }}.spdx.json
+      - name: Provenance of the image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.IMAGE_DIGEST }}
+          push-to-registry: true
+      - name: SBOM attestation of the image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.IMAGE_DIGEST }}
+          sbom-path: dist/skriva_${{ env.FULL }}_image_${{ matrix.arch }}.spdx.json
+          push-to-registry: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.rpm
+            dist/*.spdx.json
+          if-no-files-found: error
+
+  publish:
+    needs: [check, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      FULL: ${{ needs.check.outputs.full }}
+      PREVIOUS: ${{ needs.check.outputs.previous }}
+      SCHEMA_CHANGED: ${{ needs.check.outputs.schema_changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Multi-architecture image
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          printf '%s' "$TOKEN" | podman login ghcr.io -u "$ACTOR" --password-stdin
+          podman manifest create skriva-release
+          for arch in amd64 arm64; do
+            podman manifest add skriva-release "docker://$IMAGE:$FULL-$arch"
+          done
+          # The tags major.minor.revision and major.minor. Never "latest".
+          podman manifest push --all --digestfile index.digest skriva-release "docker://$IMAGE:$FULL"
+          podman manifest push --all skriva-release "docker://$IMAGE:$VERSION"
+          echo "INDEX_DIGEST=$(cat index.digest)" >>"$GITHUB_ENV"
+      - name: Provenance of the multi-architecture image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.INDEX_DIGEST }}
+          push-to-registry: true
+      - name: Compose files
+        run: |
+          # compose.yaml refers to the image by its digest.
+          sed "s|@IMAGE@|$IMAGE:$FULL@$INDEX_DIGEST|" deploy/compose/compose.template.yaml >dist/compose.yaml
+          if grep -q '@IMAGE@' dist/compose.yaml; then exit 1; fi
+          name="skriva_${FULL}_compose"
+          mkdir "$name"
+          cp dist/compose.yaml deploy/compose/skriva.env deploy/compose/make-secrets.sh "$name/"
+          tar --sort=name --mtime="@$(git log -1 --format=%ct HEAD)" --owner=0 --group=0 --numeric-owner \
+            -cf - "$name" | gzip -n >"dist/$name.tar.gz"
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum -- * >SHA256SUMS
+          cat SHA256SUMS
+      - name: Provenance of the compose files and the checksums
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/compose.yaml
+            dist/skriva_*_compose.tar.gz
+            dist/*.spdx.json
+            dist/SHA256SUMS
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          {
+            echo "## Skriva $VERSION"
+            echo
+            echo "Revision \`$FULL\`."
+            echo
+            if [ "$SCHEMA_CHANGED" = true ]; then
+              echo "**This release changes the database schema.** Make a backup of the database first."
+              echo "At start, the server applies the migrations. Stop all servers of the old version before you start the new version."
+              echo "You cannot go back to an older version without the backup."
+              echo
+            fi
+            echo "### Container image"
+            echo
+            echo '```'
+            echo "$IMAGE:$FULL@$INDEX_DIGEST"
+            echo '```'
+            echo
+            echo "Use \`compose.yaml\` or \`skriva_${FULL}_compose.tar.gz\` with \`podman compose\`. See docs/operation.md."
+            echo
+            echo "### Verify"
+            echo
+            echo '```sh'
+            echo "sha256sum --check --ignore-missing SHA256SUMS"
+            echo "gh attestation verify skriva_${FULL}-1_amd64.deb --repo $REPO"
+            echo "gh attestation verify oci://$IMAGE@$INDEX_DIGEST --repo $REPO"
+            echo '```'
+          } >notes.md
+          if [ -n "$PREVIOUS" ]; then
+            start=(--notes-start-tag "$PREVIOUS")
+          else
+            start=()
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$REPO" --title "Skriva $VERSION" \
+            --notes-file notes.md --generate-notes "${start[@]}" --verify-tag

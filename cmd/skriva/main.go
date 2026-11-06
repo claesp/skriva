@@ -1,4 +1,11 @@
 // Command skriva runs the Skriva wiki server.
+//
+// Usage:
+//
+//	skriva           Start the server. At start, it applies the database
+//	                 migrations (see SKRIVA_AUTO_MIGRATE).
+//	skriva migrate   Apply the database migrations and stop.
+//	skriva version   Show the version and the schema version.
 package main
 
 import (
@@ -19,16 +26,56 @@ import (
 	"github.com/claesp/skriva/internal/export"
 	"github.com/claesp/skriva/internal/secret"
 	"github.com/claesp/skriva/internal/store"
+	"github.com/claesp/skriva/internal/version"
 	"github.com/claesp/skriva/internal/web"
 )
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(log)
-	if err := run(log); err != nil {
-		log.Error("server stopped", "error", err)
-		os.Exit(1)
+	cmd := ""
+	if len(os.Args) > 1 {
+		cmd = os.Args[1]
 	}
+	switch cmd {
+	case "":
+		if err := run(log); err != nil {
+			log.Error("server stopped", "error", err)
+			os.Exit(1)
+		}
+	case "migrate":
+		if err := migrate(log); err != nil {
+			log.Error("migration failed", "error", err)
+			os.Exit(1)
+		}
+	case "version", "-version", "--version":
+		fmt.Printf("skriva %s (schema version %d)\n", version.String(), db.SchemaVersion())
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command %q\nusage: skriva [migrate|version]\n", cmd)
+		os.Exit(2)
+	}
+}
+
+// migrate applies the database migrations. It needs only
+// SKRIVA_DATABASE_URL.
+func migrate(log *slog.Logger) error {
+	url, err := config.DatabaseURL()
+	if err != nil {
+		return fmt.Errorf("configuration: %w", err)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	pool, err := db.Open(ctx, url)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	res, err := db.Upgrade(ctx, pool, db.Options{AppVersion: version.String(), Apply: true})
+	if err != nil {
+		return err
+	}
+	log.Info("database schema is current", "from", res.From, "to", res.To, "applied", len(res.Applied))
+	return nil
 }
 
 func run(log *slog.Logger) error {
@@ -36,6 +83,7 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configuration: %w", err)
 	}
+	log.Info("starting", "version", version.String(), "schema_version", db.SchemaVersion())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -45,8 +93,14 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer pool.Close()
-	if err := db.Migrate(ctx, pool); err != nil {
+	// The boot step: compare the schema of the database with the schema
+	// of the program, and apply the missing migrations.
+	res, err := db.Upgrade(ctx, pool, db.Options{AppVersion: version.String(), Apply: cfg.AutoMigrate})
+	if err != nil {
 		return err
+	}
+	if len(res.Applied) > 0 {
+		log.Info("database schema upgraded", "from", res.From, "to", res.To, "migrations", res.Applied)
 	}
 	box, err := secret.New(cfg.EncryptionKey)
 	if err != nil {
