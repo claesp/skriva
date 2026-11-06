@@ -18,7 +18,7 @@ import (
 //   - Other changes need a new minor version.
 //
 // scripts/check-release.sh reads this line. Keep its form.
-const Version = "0.1"
+const Version = "0.3"
 
 // revisionLength is the number of hexadecimal digits of the revision.
 const revisionLength = 12
