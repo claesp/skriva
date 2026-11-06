@@ -87,6 +87,11 @@ jobs:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACTOR: ${{ github.actor }}
         run: |
+          # actions/attest reads the credentials from the Docker file.
+          # Podman writes them there in the same format.
+          export REGISTRY_AUTH_FILE="$HOME/.docker/config.json"
+          echo "REGISTRY_AUTH_FILE=$REGISTRY_AUTH_FILE" >>"$GITHUB_ENV"
+          mkdir -p "$HOME/.docker"
           printf '%s' "$TOKEN" | podman login ghcr.io -u "$ACTOR" --password-stdin
           podman push --digestfile "dist/image-$ARCH.digest" \
             "localhost/skriva:$FULL-$ARCH" "docker://$IMAGE:$FULL-$ARCH"
@@ -175,6 +180,11 @@ jobs:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACTOR: ${{ github.actor }}
         run: |
+          # actions/attest reads the credentials from the Docker file.
+          # Podman writes them there in the same format.
+          export REGISTRY_AUTH_FILE="$HOME/.docker/config.json"
+          echo "REGISTRY_AUTH_FILE=$REGISTRY_AUTH_FILE" >>"$GITHUB_ENV"
+          mkdir -p "$HOME/.docker"
           printf '%s' "$TOKEN" | podman login ghcr.io -u "$ACTOR" --password-stdin
           podman manifest create skriva-release
           for arch in amd64 arm64; do
