@@ -43,7 +43,13 @@ podman build --platform "linux/$ARCH" \
 	--timestamp "$SOURCE_DATE_EPOCH" \
 	-t "$IMAGE" -f Containerfile .
 
+# Remove the files of an older build of this architecture.
+case "$ARCH" in
+amd64) rpm_arch=x86_64 ;;
+arm64) rpm_arch=aarch64 ;;
+esac
 rm -rf "${OUT:?}/$ARCH"
+rm -f "$OUT"/skriva_*_linux_"$ARCH".tar.gz "$OUT"/skriva_*_"$ARCH".deb "$OUT"/skriva-*."$rpm_arch".rpm
 mkdir -p "$BIN"
 cid=$(podman create --platform "linux/$ARCH" "$IMAGE")
 trap 'podman rm -f "$cid" >/dev/null 2>&1 || true' EXIT
@@ -55,7 +61,7 @@ done
 name=skriva_${FULL}_linux_$ARCH
 stage=$OUT/$ARCH/$name
 mkdir -p "$stage"
-cp "$BIN/skriva" "$BIN/typst" "$BIN/mmdr" README.md \
+cp "$BIN/skriva" "$BIN/typst" "$BIN/mmdr" README.md LICENSE \
 	deploy/packaging/skriva.service deploy/packaging/skriva.env "$stage/"
 tar -C "$OUT/$ARCH" --sort=name --mtime="@$SOURCE_DATE_EPOCH" \
 	--owner=0 --group=0 --numeric-owner -cf - "$name" | gzip -n >"$OUT/$name.tar.gz"
@@ -63,9 +69,7 @@ rm -rf "$stage"
 
 # The packages. nFPM does not expand variables in all fields, thus the
 # script writes the values into a copy of the configuration.
-maintainer=${PKG_MAINTAINER:-$(git log -1 --format='%an <%ae>' HEAD)}
-sed -e "s|\${PKG_VERSION}|$FULL|g" -e "s|\${PKG_ARCH}|$ARCH|g" \
-	-e "s|\${PKG_BIN}|$BIN|g" -e "s|\${PKG_MAINTAINER}|$maintainer|g" \
+sed -e "s|\${PKG_VERSION}|$FULL|g" -e "s|\${PKG_ARCH}|$ARCH|g" -e "s|\${PKG_BIN}|$BIN|g" \
 	deploy/packaging/nfpm.yaml >"$OUT/$ARCH/nfpm.yaml"
 for p in deb rpm; do
 	go run "$NFPM" package -f "$OUT/$ARCH/nfpm.yaml" -p "$p" -t "$OUT/"

@@ -19,6 +19,12 @@ classification, and users can export it as Markdown, HTML or PDF.
 The web pages do not use JavaScript. The only exception is the editor
 of a document.
 
+## License
+
+Skriva is free software under the [MIT License](LICENSE). The fonts in
+`internal/web/static/fonts` have their own licenses (SIL Open Font
+License), in the folder of each font.
+
 ## Install
 
 Each [release](https://github.com/claesp/skriva/releases) has a
